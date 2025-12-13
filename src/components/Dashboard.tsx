@@ -17,6 +17,7 @@ interface TestState {
   status: "idle" | "loading" | "success" | "error";
   response?: string;
   time?: number;
+  httpStatus?: number;
 }
 
 export function Dashboard() {
@@ -144,22 +145,27 @@ export function Dashboard() {
         endpoint.needsAuth  // maps to 'auth' parameter
       );
 
+      // 添加调试日志
+      console.log(`Test ${endpoint.id}:`, result);
+
       setTestResults((prev) => ({
         ...prev,
         [endpoint.id]: {
           endpoint: endpoint.path,
           status: result.success ? "success" : "error",
-          response: result.body,
+          response: result.body || `HTTP ${result.status}: 无响应内容`,
           time: result.time_ms,
+          httpStatus: result.status,
         },
       }));
     } catch (e: any) {
+      console.error(`Test ${endpoint.id} error:`, e);
       setTestResults((prev) => ({
         ...prev,
         [endpoint.id]: {
           endpoint: endpoint.path,
           status: "error",
-          response: e.toString(),
+          response: `请求失败: ${e.toString()}`,
         },
       }));
     }
@@ -190,7 +196,9 @@ export function Dashboard() {
   };
 
   const getStatusBadge = (result?: TestState) => {
-    if (!result || result.status === "idle") return null;
+    if (!result || result.status === "idle") {
+      return <span className="text-xs text-gray-400">未测试</span>;
+    }
     if (result.status === "loading") {
       return <span className="text-xs text-blue-500">测试中...</span>;
     }
@@ -201,7 +209,11 @@ export function Dashboard() {
         </span>
       );
     }
-    return <span className="text-xs text-red-500">✗ 失败</span>;
+    return (
+      <span className="text-xs text-red-500">
+        ✗ 失败 {result.httpStatus ? `(${result.httpStatus})` : ''}
+      </span>
+    );
   };
 
   return (
@@ -281,7 +293,12 @@ export function Dashboard() {
       {/* API 测试 */}
       <div className="rounded-lg border bg-card p-6">
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="font-semibold">API 测试</h3>
+          <div>
+            <h3 className="font-semibold">API 测试</h3>
+            <p className="text-xs text-muted-foreground">
+              如遇问题，请打开浏览器开发者工具查看控制台日志
+            </p>
+          </div>
           <button
             onClick={runAllTests}
             disabled={!status?.running}
@@ -347,7 +364,9 @@ export function Dashboard() {
                     </div>
                     {result?.response && (
                       <div>
-                        <p className="mb-1 text-xs font-medium text-muted-foreground">响应</p>
+                        <p className="mb-1 text-xs font-medium text-muted-foreground">
+                          响应 {result.httpStatus && `(HTTP ${result.httpStatus})`}
+                        </p>
                         <pre className={`rounded p-2 text-xs overflow-x-auto max-h-40 ${
                           result.status === "success" ? "bg-green-50" : "bg-red-50"
                         }`}>
@@ -355,7 +374,7 @@ export function Dashboard() {
                             try {
                               return JSON.stringify(JSON.parse(result.response), null, 2);
                             } catch {
-                              return result.response;
+                              return result.response || '(空响应)';
                             }
                           })()}
                         </pre>

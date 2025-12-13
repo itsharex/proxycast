@@ -689,34 +689,43 @@ async fn test_api(
     let s = state.read().await;
     let base_url = format!("http://{}:{}", s.config.server.host, s.config.server.port);
     let api_key = &s.config.server.api_key;
-    
-    let client = reqwest::Client::new();
+
+    // 创建一个禁用代理的客户端
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| e.to_string())?;
+
     let url = format!("{}{}", base_url, path);
-    
+
+    tracing::info!("Testing API: {} {}", method, url);
+
     let start = std::time::Instant::now();
-    
+
     let mut req = match method.as_str() {
         "GET" => client.get(&url),
         "POST" => client.post(&url),
         _ => return Err("Unsupported method".to_string()),
     };
-    
+
     req = req.header("Content-Type", "application/json");
-    
+
     if auth {
         req = req.header("Authorization", format!("Bearer {}", api_key));
     }
-    
+
     if let Some(b) = body {
         req = req.body(b);
     }
-    
+
     match req.send().await {
         Ok(resp) => {
             let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
             let time_ms = start.elapsed().as_millis() as u64;
-            
+
+            tracing::info!("API test result: status={}, body_len={}", status, body.len());
+
             Ok(TestResult {
                 success: status >= 200 && status < 300,
                 status,
@@ -724,7 +733,10 @@ async fn test_api(
                 time_ms,
             })
         }
-        Err(e) => Err(e.to_string()),
+        Err(e) => {
+            tracing::error!("API test error: {}", e);
+            Err(e.to_string())
+        }
     }
 }
 
