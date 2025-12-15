@@ -12,6 +12,7 @@ import { CredentialCard } from "./CredentialCard";
 import { AddCredentialModal } from "./AddCredentialModal";
 import { EditCredentialModal } from "./EditCredentialModal";
 import { ErrorDisplay, useErrorDisplay } from "./ErrorDisplay";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type {
   PoolProviderType,
   CredentialDisplay,
@@ -51,6 +52,7 @@ export const ProviderPoolPage = forwardRef<ProviderPoolPageRef>(
     const [deletingCredentials, setDeletingCredentials] = useState<Set<string>>(
       new Set(),
     );
+    const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
     const { errors, showError, showSuccess, dismissError } = useErrorDisplay();
 
     const {
@@ -74,8 +76,14 @@ export const ProviderPoolPage = forwardRef<ProviderPoolPageRef>(
       refresh,
     }));
 
-    const handleDelete = async (uuid: string) => {
-      if (!confirm("确定要删除这个凭证吗？")) return;
+    const handleDeleteClick = (uuid: string) => {
+      setDeleteConfirm(uuid);
+    };
+
+    const handleDeleteConfirm = async () => {
+      if (!deleteConfirm) return;
+      const uuid = deleteConfirm;
+      setDeleteConfirm(null);
       setDeletingCredentials((prev) => new Set(prev).add(uuid));
       try {
         await deleteCredential(uuid);
@@ -322,7 +330,7 @@ export const ProviderPoolPage = forwardRef<ProviderPoolPageRef>(
                     key={credential.uuid}
                     credential={credential}
                     onToggle={() => handleToggle(credential)}
-                    onDelete={() => handleDelete(credential.uuid)}
+                    onDelete={() => handleDeleteClick(credential.uuid)}
                     onReset={() => handleReset(credential.uuid)}
                     onCheckHealth={() => handleCheckHealth(credential.uuid)}
                     onRefreshToken={() => handleRefreshToken(credential.uuid)}
@@ -384,6 +392,14 @@ export const ProviderPoolPage = forwardRef<ProviderPoolPageRef>(
             }
             dismissError(error.id);
           }}
+        />
+
+        <ConfirmDialog
+          isOpen={!!deleteConfirm}
+          title="删除确认"
+          message="确定要删除这个凭证吗？"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteConfirm(null)}
         />
       </div>
     );

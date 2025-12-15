@@ -3,6 +3,7 @@ import { Plus, RefreshCw, Trash2, Download, Upload } from "lucide-react";
 import { useMcpServers } from "@/hooks/useMcpServers";
 import { McpServer } from "@/lib/api/mcp";
 import { cn } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 // 预设 MCP 服务器配置
 const mcpPresets = [
@@ -86,6 +87,7 @@ export function McpPage() {
   const [configError, setConfigError] = useState<string | null>(null);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [showImportMenu, setShowImportMenu] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const handleImport = async (appType?: string) => {
     setShowImportMenu(false);
@@ -207,13 +209,17 @@ export function McpPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm("确定要删除这个 MCP 服务器吗？")) {
-      await deleteServer(id);
-      if (selectedServer?.id === id) {
-        setSelectedServer(null);
-      }
+  const handleDeleteClick = (id: string) => {
+    setDeleteConfirm(id);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirm) return;
+    await deleteServer(deleteConfirm);
+    if (selectedServer?.id === deleteConfirm) {
+      setSelectedServer(null);
     }
+    setDeleteConfirm(null);
   };
 
   // 获取启用的应用标签
@@ -391,7 +397,7 @@ export function McpPage() {
                   </h3>
                   {selectedServer && (
                     <button
-                      onClick={() => handleDelete(selectedServer.id)}
+                      onClick={() => handleDeleteClick(selectedServer.id)}
                       className="p-1.5 rounded hover:bg-destructive/10 text-destructive"
                       title="删除"
                     >
@@ -530,6 +536,14 @@ export function McpPage() {
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={!!deleteConfirm}
+        title="删除确认"
+        message="确定要删除这个 MCP 服务器吗？"
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setDeleteConfirm(null)}
+      />
     </div>
   );
 }

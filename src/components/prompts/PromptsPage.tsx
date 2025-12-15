@@ -10,6 +10,7 @@ import {
 import { AppType, Prompt } from "@/lib/api/prompts";
 import { usePrompts } from "@/hooks/usePrompts";
 import { cn } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 const apps: { id: AppType; label: string; filename: string }[] = [
   { id: "claude", label: "Claude Code", filename: "CLAUDE.md" },
@@ -74,6 +75,7 @@ export function PromptsPage() {
   const [editContent, setEditContent] = useState("");
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   // Convert prompts map to array
   const promptList = useMemo(() => Object.entries(prompts), [prompts]);
@@ -127,18 +129,22 @@ export function PromptsPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDeleteClick = (id: string) => {
     const prompt = prompts[id];
     if (prompt?.enabled) {
       alert("无法删除已启用的提示词。请先禁用它。");
       return;
     }
-    if (confirm("确定要删除这个 Prompt 吗？")) {
-      await deletePrompt(id);
-      if (selectedPromptId === id) {
-        setSelectedPromptId(null);
-      }
+    setDeleteConfirm(id);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirm) return;
+    await deletePrompt(deleteConfirm);
+    if (selectedPromptId === deleteConfirm) {
+      setSelectedPromptId(null);
     }
+    setDeleteConfirm(null);
   };
 
   const handleToggle = async (id: string, enabled: boolean) => {
@@ -329,7 +335,7 @@ export function PromptsPage() {
                         />
                       </div>
                       <button
-                        onClick={() => handleDelete(selectedPromptId!)}
+                        onClick={() => handleDeleteClick(selectedPromptId!)}
                         disabled={selectedPrompt.enabled}
                         className={cn(
                           "p-1.5 rounded",
@@ -414,6 +420,14 @@ export function PromptsPage() {
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={!!deleteConfirm}
+        title="删除确认"
+        message="确定要删除这个 Prompt 吗？"
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setDeleteConfirm(null)}
+      />
     </div>
   );
 }

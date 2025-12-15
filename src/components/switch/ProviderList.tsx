@@ -5,6 +5,7 @@ import { useSwitch } from "@/hooks/useSwitch";
 import { ProviderCard } from "./ProviderCard";
 import { ProviderForm } from "./ProviderForm";
 import { LiveConfigModal } from "./LiveConfigModal";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface ProviderListProps {
   appType: AppType;
@@ -28,6 +29,7 @@ export function ProviderList({ appType }: ProviderListProps) {
     (typeof providers)[0] | null
   >(null);
   const [showLiveConfig, setShowLiveConfig] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const handleAdd = () => {
     setEditingProvider(null);
@@ -49,18 +51,23 @@ export function ProviderList({ appType }: ProviderListProps) {
     setEditingProvider(null);
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDeleteClick = (id: string) => {
     // 不能删除当前使用中的 provider
     if (currentProvider?.id === id) {
       alert("无法删除当前使用中的配置");
       return;
     }
-    if (confirm("确定要删除这个 Provider 吗？")) {
-      try {
-        await deleteProvider(id);
-      } catch (e) {
-        alert("删除失败: " + (e instanceof Error ? e.message : String(e)));
-      }
+    setDeleteConfirm(id);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirm) return;
+    try {
+      await deleteProvider(deleteConfirm);
+    } catch (e) {
+      alert("删除失败: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setDeleteConfirm(null);
     }
   };
 
@@ -133,7 +140,7 @@ export function ProviderList({ appType }: ProviderListProps) {
               isCurrent={provider.id === currentProvider?.id}
               onSwitch={() => switchToProvider(provider.id)}
               onEdit={() => handleEdit(provider)}
-              onDelete={() => handleDelete(provider.id)}
+              onDelete={() => handleDeleteClick(provider.id)}
             />
           ))}
         </div>
@@ -157,6 +164,14 @@ export function ProviderList({ appType }: ProviderListProps) {
           onClose={() => setShowLiveConfig(false)}
         />
       )}
+
+      <ConfirmDialog
+        isOpen={!!deleteConfirm}
+        title="删除确认"
+        message="确定要删除这个 Provider 吗？"
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setDeleteConfirm(null)}
+      />
     </div>
   );
 }
