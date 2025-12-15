@@ -94,5 +94,62 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
         [],
     )?;
 
+    // Provider Pool 凭证表
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS provider_pool_credentials (
+            uuid TEXT PRIMARY KEY,
+            provider_type TEXT NOT NULL,
+            credential_data TEXT NOT NULL,
+            name TEXT,
+            is_healthy INTEGER DEFAULT 1,
+            is_disabled INTEGER DEFAULT 0,
+            check_health INTEGER DEFAULT 1,
+            check_model_name TEXT,
+            not_supported_models TEXT,
+            usage_count INTEGER DEFAULT 0,
+            error_count INTEGER DEFAULT 0,
+            last_used INTEGER,
+            last_error_time INTEGER,
+            last_error_message TEXT,
+            last_health_check_time INTEGER,
+            last_health_check_model TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )",
+        [],
+    )?;
+
+    // 创建 provider_type 索引
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_provider_pool_type ON provider_pool_credentials(provider_type)",
+        [],
+    )?;
+
+    // Migration: 添加 Token 缓存字段
+    let _ = conn.execute(
+        "ALTER TABLE provider_pool_credentials ADD COLUMN cached_access_token TEXT",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE provider_pool_credentials ADD COLUMN cached_refresh_token TEXT",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE provider_pool_credentials ADD COLUMN token_expiry_time TEXT",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE provider_pool_credentials ADD COLUMN last_refresh_time TEXT",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE provider_pool_credentials ADD COLUMN refresh_error_count INTEGER DEFAULT 0",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE provider_pool_credentials ADD COLUMN last_refresh_error TEXT",
+        [],
+    );
+
     Ok(())
 }

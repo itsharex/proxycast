@@ -12,8 +12,14 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use commands::provider_pool_cmd::ProviderPoolServiceState;
 use commands::skill_cmd::SkillServiceState;
+use services::provider_pool_service::ProviderPoolService;
 use services::skill_service::SkillService;
+use services::token_cache_service::TokenCacheService;
+
+/// TokenCacheService 状态封装
+pub struct TokenCacheServiceState(pub Arc<TokenCacheService>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -125,12 +131,20 @@ pub type LogState = Arc<RwLock<logger::LogStore>>;
 async fn start_server(
     state: tauri::State<'_, AppState>,
     logs: tauri::State<'_, LogState>,
+    db: tauri::State<'_, database::DbConnection>,
+    pool_service: tauri::State<'_, ProviderPoolServiceState>,
+    token_cache: tauri::State<'_, TokenCacheServiceState>,
 ) -> Result<String, String> {
     let mut s = state.write().await;
     logs.write().await.add("info", "Starting server...");
-    s.start(logs.inner().clone())
-        .await
-        .map_err(|e| e.to_string())?;
+    s.start(
+        logs.inner().clone(),
+        pool_service.0.clone(),
+        token_cache.0.clone(),
+        Some(db.inner().clone()),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     logs.write().await.add(
         "info",
         &format!(
@@ -1269,6 +1283,14 @@ pub fn run() {
     let skill_service = SkillService::new().expect("Failed to initialize SkillService");
     let skill_service_state = SkillServiceState(Arc::new(skill_service));
 
+    // Initialize ProviderPoolService
+    let provider_pool_service = ProviderPoolService::new();
+    let provider_pool_service_state = ProviderPoolServiceState(Arc::new(provider_pool_service));
+
+    // Initialize TokenCacheService
+    let token_cache_service = TokenCacheService::new();
+    let token_cache_service_state = TokenCacheServiceState(Arc::new(token_cache_service));
+
     // Initialize default skill repos
     {
         let conn = db.lock().expect("Failed to lock database");
@@ -1279,9 +1301,13 @@ pub fn run() {
     // Clone for setup hook
     let state_clone = state.clone();
     let logs_clone = logs.clone();
+    let db_clone = db.clone();
+    let pool_service_clone = provider_pool_service_state.0.clone();
+    let token_cache_clone = token_cache_service_state.0.clone();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
@@ -1290,10 +1316,15 @@ pub fn run() {
         .manage(logs)
         .manage(db)
         .manage(skill_service_state)
+        .manage(provider_pool_service_state)
+        .manage(token_cache_service_state)
         .setup(move |_app| {
             // 自动启动服务器
             let state = state_clone.clone();
             let logs = logs_clone.clone();
+            let db = db_clone.clone();
+            let pool_service = pool_service_clone.clone();
+            let token_cache = token_cache_clone.clone();
             tauri::async_runtime::spawn(async move {
                 // 先加载凭证
                 {
@@ -1312,7 +1343,7 @@ pub fn run() {
                     logs.write()
                         .await
                         .add("info", "[启动] 正在自动启动服务器...");
-                    match s.start(logs.clone()).await {
+                    match s.start(logs.clone(), pool_service, token_cache, Some(db)).await {
                         Ok(_) => {
                             let host = s.config.server.host.clone();
                             let port = s.config.server.port;
@@ -1425,6 +1456,29 @@ pub fn run() {
             commands::skill_cmd::get_skill_repos,
             commands::skill_cmd::add_skill_repo,
             commands::skill_cmd::remove_skill_repo,
+            // Provider Pool commands
+            commands::provider_pool_cmd::get_provider_pool_overview,
+            commands::provider_pool_cmd::get_provider_pool_credentials,
+            commands::provider_pool_cmd::add_provider_pool_credential,
+            commands::provider_pool_cmd::update_provider_pool_credential,
+            commands::provider_pool_cmd::delete_provider_pool_credential,
+            commands::provider_pool_cmd::toggle_provider_pool_credential,
+            commands::provider_pool_cmd::reset_provider_pool_credential,
+            commands::provider_pool_cmd::reset_provider_pool_health,
+            commands::provider_pool_cmd::check_provider_pool_credential_health,
+            commands::provider_pool_cmd::check_provider_pool_type_health,
+            commands::provider_pool_cmd::add_kiro_oauth_credential,
+            commands::provider_pool_cmd::add_gemini_oauth_credential,
+            commands::provider_pool_cmd::add_qwen_oauth_credential,
+            commands::provider_pool_cmd::add_openai_key_credential,
+            commands::provider_pool_cmd::add_claude_key_credential,
+            commands::provider_pool_cmd::refresh_pool_credential_token,
+            commands::provider_pool_cmd::get_pool_credential_oauth_status,
+            commands::provider_pool_cmd::debug_kiro_credentials,
+            commands::provider_pool_cmd::test_user_credentials,
+            // Route commands
+            commands::route_cmd::get_available_routes,
+            commands::route_cmd::get_route_curl_examples,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

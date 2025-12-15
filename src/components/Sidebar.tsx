@@ -3,16 +3,15 @@ import {
   Settings,
   Plug,
   MessageSquare,
-  Key,
   Monitor,
   Globe,
   Boxes,
+  Database,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Page =
   | "dashboard"
-  | "credentials"
   | "clients"
   | "api-server"
   | "providers"
@@ -20,7 +19,8 @@ type Page =
   | "switch"
   | "mcp"
   | "prompts"
-  | "skills";
+  | "skills"
+  | "provider-pool";
 
 interface SidebarProps {
   currentPage: Page;
@@ -29,7 +29,7 @@ interface SidebarProps {
 
 const navItems = [
   { id: "dashboard" as Page, label: "仪表盘", icon: LayoutDashboard },
-  { id: "credentials" as Page, label: "凭证管理", icon: Key },
+  { id: "provider-pool" as Page, label: "凭证池", icon: Database },
   { id: "clients" as Page, label: "AI Clients", icon: Monitor },
   { id: "api-server" as Page, label: "API Server", icon: Globe },
   { id: "mcp" as Page, label: "MCP", icon: Plug },

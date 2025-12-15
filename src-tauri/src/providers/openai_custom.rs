@@ -1,4 +1,5 @@
 //! OpenAI Custom Provider (自定义 OpenAI 兼容 API)
+use crate::models::openai::ChatCompletionRequest;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -29,6 +30,18 @@ impl OpenAICustomProvider {
         Self::default()
     }
 
+    /// 使用 API key 和 base_url 创建 Provider
+    pub fn with_config(api_key: String, base_url: Option<String>) -> Self {
+        Self {
+            config: OpenAICustomConfig {
+                api_key: Some(api_key),
+                base_url,
+                enabled: true,
+            },
+            client: Client::new(),
+        }
+    }
+
     pub fn get_base_url(&self) -> String {
         self.config
             .base_url
@@ -38,6 +51,32 @@ impl OpenAICustomProvider {
 
     pub fn is_configured(&self) -> bool {
         self.config.api_key.is_some() && self.config.enabled
+    }
+
+    /// 调用 OpenAI API（使用类型化请求）
+    pub async fn call_api(
+        &self,
+        request: &ChatCompletionRequest,
+    ) -> Result<reqwest::Response, Box<dyn Error + Send + Sync>> {
+        let api_key = self
+            .config
+            .api_key
+            .as_ref()
+            .ok_or("OpenAI API key not configured")?;
+
+        let base_url = self.get_base_url();
+        let url = format!("{base_url}/chat/completions");
+
+        let resp = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Bearer {api_key}"))
+            .header("Content-Type", "application/json")
+            .json(request)
+            .send()
+            .await?;
+
+        Ok(resp)
     }
 
     pub async fn chat_completions(

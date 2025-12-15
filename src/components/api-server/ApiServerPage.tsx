@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { ModelsTab } from "./ModelsTab";
 import { LogsTab } from "./LogsTab";
+import { RoutesTab } from "./RoutesTab";
 import {
   startServer,
   stopServer,
@@ -44,7 +45,7 @@ interface TestState {
   httpStatus?: number;
 }
 
-type TabId = "server" | "openai" | "claude" | "models" | "logs";
+type TabId = "server" | "routes" | "openai" | "claude" | "models" | "logs";
 
 export function ApiServerPage() {
   const [status, setStatus] = useState<ServerStatus | null>(null);
@@ -453,6 +454,7 @@ export function ApiServerPage() {
       <div className="flex gap-2 border-b overflow-x-auto">
         {[
           { id: "server" as TabId, name: "服务器控制" },
+          { id: "routes" as TabId, name: "路由端点" },
           { id: "openai" as TabId, name: "OpenAI 自定义" },
           { id: "claude" as TabId, name: "Claude 自定义" },
           { id: "models" as TabId, name: "可用模型" },
@@ -690,6 +692,9 @@ export function ApiServerPage() {
           </div>
         </div>
       )}
+
+      {/* Routes Tab */}
+      {activeTab === "routes" && <RoutesTab />}
 
       {/* OpenAI Custom Tab */}
       {activeTab === "openai" && (

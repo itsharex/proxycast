@@ -1,17 +1,21 @@
 //! HTTP API 服务器
 use crate::config::Config;
 use crate::converter::anthropic_to_openai::convert_anthropic_to_openai;
+use crate::database::DbConnection;
 use crate::logger::LogStore;
 use crate::models::anthropic::*;
 use crate::models::openai::*;
+use crate::models::route_model::{RouteInfo, RouteListResponse};
 use crate::providers::claude_custom::ClaudeCustomProvider;
 use crate::providers::gemini::GeminiProvider;
 use crate::providers::kiro::KiroProvider;
 use crate::providers::openai_custom::OpenAICustomProvider;
 use crate::providers::qwen::QwenProvider;
+use crate::services::provider_pool_service::ProviderPoolService;
+use crate::services::token_cache_service::TokenCacheService;
 use axum::{
     body::Body,
-    extract::State,
+    extract::{Path, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -89,6 +93,9 @@ impl ServerState {
     pub async fn start(
         &mut self,
         logs: Arc<RwLock<LogStore>>,
+        pool_service: Arc<ProviderPoolService>,
+        token_cache: Arc<TokenCacheService>,
+        db: Option<DbConnection>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if self.running {
             return Ok(());
@@ -106,7 +113,7 @@ impl ServerState {
         let kiro = self.kiro_provider.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = run_server(&host, port, &api_key, kiro, logs, rx).await {
+            if let Err(e) = run_server(&host, port, &api_key, kiro, logs, rx, pool_service, token_cache, db).await {
                 tracing::error!("Server error: {}", e);
             }
         });
@@ -130,6 +137,7 @@ impl Clone for KiroProvider {
         Self {
             credentials: self.credentials.clone(),
             client: reqwest::Client::new(),
+            creds_path: self.creds_path.clone(),
         }
     }
 }
@@ -138,11 +146,15 @@ impl Clone for KiroProvider {
 #[allow(dead_code)]
 struct AppState {
     api_key: String,
+    base_url: String,
     kiro: Arc<RwLock<KiroProvider>>,
     logs: Arc<RwLock<LogStore>>,
     kiro_refresh_lock: Arc<tokio::sync::Mutex<()>>,
     gemini_refresh_lock: Arc<tokio::sync::Mutex<()>>,
     qwen_refresh_lock: Arc<tokio::sync::Mutex<()>>,
+    pool_service: Arc<ProviderPoolService>,
+    token_cache: Arc<TokenCacheService>,
+    db: Option<DbConnection>,
 }
 
 async fn run_server(
@@ -152,22 +164,34 @@ async fn run_server(
     kiro: KiroProvider,
     logs: Arc<RwLock<LogStore>>,
     shutdown: oneshot::Receiver<()>,
+    pool_service: Arc<ProviderPoolService>,
+    token_cache: Arc<TokenCacheService>,
+    db: Option<DbConnection>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let base_url = format!("http://{}:{}", host, port);
     let state = AppState {
         api_key: api_key.to_string(),
+        base_url,
         kiro: Arc::new(RwLock::new(kiro)),
         logs,
         kiro_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
         gemini_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
         qwen_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
+        pool_service,
+        token_cache,
+        db,
     };
 
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/models", get(models))
+        .route("/v1/routes", get(list_routes))
         .route("/v1/chat/completions", post(chat_completions))
         .route("/v1/messages", post(anthropic_messages))
         .route("/v1/messages/count_tokens", post(count_tokens))
+        // 多供应商路由
+        .route("/{selector}/v1/messages", post(anthropic_messages_with_selector))
+        .route("/{selector}/v1/chat/completions", post(chat_completions_with_selector))
         .with_state(state);
 
     let addr: std::net::SocketAddr = format!("{host}:{port}").parse()?;
@@ -1308,5 +1332,776 @@ fn parse_bracket_tool_calls(result: &mut CWParsedResponse) {
             result.content = result.content.replace(&s, "");
         }
         result.content = result.content.trim().to_string();
+    }
+}
+
+/// 列出所有可用路由
+async fn list_routes(State(state): State<AppState>) -> impl IntoResponse {
+    let routes = match &state.db {
+        Some(db) => state
+            .pool_service
+            .get_available_routes(db, &state.base_url)
+            .unwrap_or_default(),
+        None => Vec::new(),
+    };
+
+    // 添加默认路由
+    let mut all_routes = vec![RouteInfo {
+        selector: "default".to_string(),
+        provider_type: "kiro".to_string(),
+        credential_count: 1,
+        endpoints: vec![
+            crate::models::route_model::RouteEndpoint {
+                path: "/v1/messages".to_string(),
+                protocol: "claude".to_string(),
+                url: format!("{}/v1/messages", state.base_url),
+            },
+            crate::models::route_model::RouteEndpoint {
+                path: "/v1/chat/completions".to_string(),
+                protocol: "openai".to_string(),
+                url: format!("{}/v1/chat/completions", state.base_url),
+            },
+        ],
+        tags: vec!["默认".to_string()],
+        enabled: true,
+    }];
+    all_routes.extend(routes);
+
+    let response = RouteListResponse {
+        base_url: state.base_url.clone(),
+        default_provider: "kiro".to_string(),
+        routes: all_routes,
+    };
+
+    Json(response)
+}
+
+/// 带选择器的 Anthropic messages 处理
+async fn anthropic_messages_with_selector(
+    State(state): State<AppState>,
+    Path(selector): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<AnthropicMessagesRequest>,
+) -> Response {
+    if let Err(e) = verify_api_key(&headers, &state.api_key).await {
+        state
+            .logs
+            .write()
+            .await
+            .add("warn", &format!("Unauthorized request to /{}/v1/messages", selector));
+        return e.into_response();
+    }
+
+    state.logs.write().await.add(
+        "info",
+        &format!(
+            "[REQ] POST /{}/v1/messages model={} stream={}",
+            selector, request.model, request.stream
+        ),
+    );
+
+    // 尝试解析凭证
+    let credential = match &state.db {
+        Some(db) => {
+            // 首先尝试按名称查找
+            if let Ok(Some(cred)) = state.pool_service.get_by_name(db, &selector) {
+                Some(cred)
+            }
+            // 然后尝试按 UUID 查找
+            else if let Ok(Some(cred)) = state.pool_service.get_by_uuid(db, &selector) {
+                Some(cred)
+            }
+            // 最后尝试按 provider 类型轮询
+            else if let Ok(Some(cred)) = state
+                .pool_service
+                .select_credential(db, &selector, Some(&request.model))
+            {
+                Some(cred)
+            } else {
+                None
+            }
+        }
+        None => None,
+    };
+
+    match credential {
+        Some(cred) => {
+            state.logs.write().await.add(
+                "info",
+                &format!(
+                    "[ROUTE] Using credential: type={} name={:?} uuid={}",
+                    cred.provider_type,
+                    cred.name,
+                    &cred.uuid[..8]
+                ),
+            );
+
+            // 根据凭证类型调用相应的 Provider
+            call_provider_anthropic(&state, &cred, &request).await
+        }
+        None => {
+            // 回退到默认 Kiro provider
+            state.logs.write().await.add(
+                "warn",
+                &format!(
+                    "[ROUTE] Credential not found for selector '{}', falling back to default",
+                    selector
+                ),
+            );
+            // 调用原有的 Kiro 处理逻辑
+            anthropic_messages_internal(&state, &request).await
+        }
+    }
+}
+
+/// 带选择器的 OpenAI chat completions 处理
+async fn chat_completions_with_selector(
+    State(state): State<AppState>,
+    Path(selector): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<ChatCompletionRequest>,
+) -> Response {
+    if let Err(e) = verify_api_key(&headers, &state.api_key).await {
+        state
+            .logs
+            .write()
+            .await
+            .add("warn", &format!("Unauthorized request to /{}/v1/chat/completions", selector));
+        return e.into_response();
+    }
+
+    state.logs.write().await.add(
+        "info",
+        &format!(
+            "[REQ] POST /{}/v1/chat/completions model={} stream={}",
+            selector, request.model, request.stream
+        ),
+    );
+
+    // 尝试解析凭证
+    let credential = match &state.db {
+        Some(db) => {
+            if let Ok(Some(cred)) = state.pool_service.get_by_name(db, &selector) {
+                Some(cred)
+            } else if let Ok(Some(cred)) = state.pool_service.get_by_uuid(db, &selector) {
+                Some(cred)
+            } else if let Ok(Some(cred)) = state
+                .pool_service
+                .select_credential(db, &selector, Some(&request.model))
+            {
+                Some(cred)
+            } else {
+                None
+            }
+        }
+        None => None,
+    };
+
+    match credential {
+        Some(cred) => {
+            state.logs.write().await.add(
+                "info",
+                &format!(
+                    "[ROUTE] Using credential: type={} name={:?} uuid={}",
+                    cred.provider_type,
+                    cred.name,
+                    &cred.uuid[..8]
+                ),
+            );
+
+            call_provider_openai(&state, &cred, &request).await
+        }
+        None => {
+            state.logs.write().await.add(
+                "warn",
+                &format!(
+                    "[ROUTE] Credential not found for selector '{}', falling back to default",
+                    selector
+                ),
+            );
+            chat_completions_internal(&state, &request).await
+        }
+    }
+}
+
+/// 内部 Anthropic messages 处理 (使用默认 Kiro)
+async fn anthropic_messages_internal(
+    state: &AppState,
+    request: &AnthropicMessagesRequest,
+) -> Response {
+    // 检查 token
+    {
+        let _guard = state.kiro_refresh_lock.lock().await;
+        let mut kiro = state.kiro.write().await;
+        let needs_refresh =
+            kiro.credentials.access_token.is_none() || kiro.is_token_expiring_soon();
+        if needs_refresh {
+            if let Err(e) = kiro.refresh_token().await {
+                state
+                    .logs
+                    .write()
+                    .await
+                    .add("error", &format!("[AUTH] Token refresh failed: {e}"));
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"error": {"message": format!("Token refresh failed: {e}")}})),
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    let openai_request = convert_anthropic_to_openai(request);
+    let kiro = state.kiro.read().await;
+
+    match kiro.call_api(&openai_request).await {
+        Ok(resp) => {
+            let status = resp.status();
+            if status.is_success() {
+                match resp.bytes().await {
+                    Ok(bytes) => {
+                        let body = String::from_utf8_lossy(&bytes).to_string();
+                        let parsed = parse_cw_response(&body);
+                        if request.stream {
+                            build_anthropic_stream_response(&request.model, &parsed)
+                        } else {
+                            build_anthropic_response(&request.model, &parsed)
+                        }
+                    }
+                    Err(e) => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({"error": {"message": e.to_string()}})),
+                    )
+                        .into_response(),
+                }
+            } else {
+                let body = resp.text().await.unwrap_or_default();
+                (
+                    StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                    Json(serde_json::json!({"error": {"message": format!("Upstream error: {}", body)}})),
+                )
+                    .into_response()
+            }
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": {"message": e.to_string()}})),
+        )
+            .into_response(),
+    }
+}
+
+/// 内部 OpenAI chat completions 处理 (使用默认 Kiro)
+async fn chat_completions_internal(state: &AppState, request: &ChatCompletionRequest) -> Response {
+    {
+        let _guard = state.kiro_refresh_lock.lock().await;
+        let mut kiro = state.kiro.write().await;
+        let needs_refresh =
+            kiro.credentials.access_token.is_none() || kiro.is_token_expiring_soon();
+        if needs_refresh {
+            if let Err(e) = kiro.refresh_token().await {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"error": {"message": format!("Token refresh failed: {e}")}})),
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    let kiro = state.kiro.read().await;
+    match kiro.call_api(request).await {
+        Ok(resp) => {
+            let status = resp.status();
+            if status.is_success() {
+                match resp.text().await {
+                    Ok(body) => {
+                        let parsed = parse_cw_response(&body);
+                        let has_tool_calls = !parsed.tool_calls.is_empty();
+
+                        let message = if has_tool_calls {
+                            serde_json::json!({
+                                "role": "assistant",
+                                "content": if parsed.content.is_empty() { serde_json::Value::Null } else { serde_json::json!(parsed.content) },
+                                "tool_calls": parsed.tool_calls.iter().map(|tc| {
+                                    serde_json::json!({
+                                        "id": tc.id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": tc.function.name,
+                                            "arguments": tc.function.arguments
+                                        }
+                                    })
+                                }).collect::<Vec<_>>()
+                            })
+                        } else {
+                            serde_json::json!({
+                                "role": "assistant",
+                                "content": parsed.content
+                            })
+                        };
+
+                        let response = serde_json::json!({
+                            "id": format!("chatcmpl-{}", uuid::Uuid::new_v4()),
+                            "object": "chat.completion",
+                            "created": std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs(),
+                            "model": request.model,
+                            "choices": [{
+                                "index": 0,
+                                "message": message,
+                                "finish_reason": if has_tool_calls { "tool_calls" } else { "stop" }
+                            }],
+                            "usage": {
+                                "prompt_tokens": 0,
+                                "completion_tokens": 0,
+                                "total_tokens": 0
+                            }
+                        });
+                        Json(response).into_response()
+                    }
+                    Err(e) => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({"error": {"message": e.to_string()}})),
+                    )
+                        .into_response(),
+                }
+            } else {
+                let body = resp.text().await.unwrap_or_default();
+                (
+                    StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                    Json(serde_json::json!({"error": {"message": format!("Upstream error: {}", body)}})),
+                )
+                    .into_response()
+            }
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": {"message": e.to_string()}})),
+        )
+            .into_response(),
+    }
+}
+
+use crate::models::provider_pool_model::{CredentialData, ProviderCredential};
+
+/// 根据凭证调用 Provider (Anthropic 格式)
+async fn call_provider_anthropic(
+    state: &AppState,
+    credential: &ProviderCredential,
+    request: &AnthropicMessagesRequest,
+) -> Response {
+    match &credential.credential {
+        CredentialData::KiroOAuth { creds_file_path } => {
+            // 使用 TokenCacheService 获取有效 token
+            let db = match &state.db {
+                Some(db) => db,
+                None => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({"error": {"message": "Database not available"}})),
+                    )
+                        .into_response();
+                }
+            };
+
+            // 获取缓存的 token
+            let token = match state.token_cache.get_valid_token(db, &credential.uuid).await {
+                Ok(t) => t,
+                Err(e) => {
+                    tracing::warn!("[POOL] Token cache miss, loading from source: {}", e);
+                    // 回退到从源文件加载
+                    let mut kiro = KiroProvider::new();
+                    if let Err(e) = kiro.load_credentials_from_path(creds_file_path).await {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(serde_json::json!({"error": {"message": format!("Failed to load Kiro credentials: {}", e)}})),
+                        )
+                            .into_response();
+                    }
+                    if let Err(e) = kiro.refresh_token().await {
+                        return (
+                            StatusCode::UNAUTHORIZED,
+                            Json(serde_json::json!({"error": {"message": format!("Token refresh failed: {}", e)}})),
+                        )
+                            .into_response();
+                    }
+                    kiro.credentials.access_token.unwrap_or_default()
+                }
+            };
+
+            // 使用获取到的 token 创建 KiroProvider
+            let mut kiro = KiroProvider::new();
+            kiro.credentials.access_token = Some(token);
+            // 从源文件加载其他配置（region, profile_arn 等）
+            let _ = kiro.load_credentials_from_path(creds_file_path).await;
+
+            let openai_request = convert_anthropic_to_openai(request);
+            let resp = match kiro.call_api(&openai_request).await {
+                Ok(r) => r,
+                Err(e) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({"error": {"message": e.to_string()}})),
+                    )
+                        .into_response();
+                }
+            };
+
+            let status = resp.status();
+            if status.is_success() {
+                match resp.bytes().await {
+                    Ok(bytes) => {
+                        let body = String::from_utf8_lossy(&bytes).to_string();
+                        let parsed = parse_cw_response(&body);
+                        if request.stream {
+                            build_anthropic_stream_response(&request.model, &parsed)
+                        } else {
+                            build_anthropic_response(&request.model, &parsed)
+                        }
+                    }
+                    Err(e) => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({"error": {"message": e.to_string()}})),
+                    )
+                        .into_response(),
+                }
+            } else if status.as_u16() == 401 || status.as_u16() == 403 {
+                // Token 过期，强制刷新并重试
+                tracing::info!("[POOL] Got {}, forcing token refresh for {}", status, &credential.uuid[..8]);
+
+                let new_token = match state.token_cache.refresh_and_cache(db, &credential.uuid, true).await {
+                    Ok(t) => t,
+                    Err(e) => {
+                        return (
+                            StatusCode::UNAUTHORIZED,
+                            Json(serde_json::json!({"error": {"message": format!("Token refresh failed: {}", e)}})),
+                        )
+                            .into_response();
+                    }
+                };
+
+                // 使用新 token 重试
+                kiro.credentials.access_token = Some(new_token);
+                match kiro.call_api(&openai_request).await {
+                    Ok(retry_resp) => {
+                        if retry_resp.status().is_success() {
+                            match retry_resp.bytes().await {
+                                Ok(bytes) => {
+                                    let body = String::from_utf8_lossy(&bytes).to_string();
+                                    let parsed = parse_cw_response(&body);
+                                    if request.stream {
+                                        build_anthropic_stream_response(&request.model, &parsed)
+                                    } else {
+                                        build_anthropic_response(&request.model, &parsed)
+                                    }
+                                }
+                                Err(e) => (
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    Json(serde_json::json!({"error": {"message": e.to_string()}})),
+                                )
+                                    .into_response(),
+                            }
+                        } else {
+                            let body = retry_resp.text().await.unwrap_or_default();
+                            (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(serde_json::json!({"error": {"message": format!("Retry failed: {}", body)}})),
+                            )
+                                .into_response()
+                        }
+                    }
+                    Err(e) => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({"error": {"message": e.to_string()}})),
+                    )
+                        .into_response(),
+                }
+            } else {
+                let body = resp.text().await.unwrap_or_default();
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": {"message": body}})),
+                )
+                    .into_response()
+            }
+        }
+        CredentialData::GeminiOAuth { .. } => {
+            // Gemini OAuth 路由暂不支持
+            (
+                StatusCode::NOT_IMPLEMENTED,
+                Json(serde_json::json!({"error": {"message": "Gemini OAuth routing not yet implemented. Use /v1/messages with Gemini models instead."}})),
+            )
+                .into_response()
+        }
+        CredentialData::QwenOAuth { .. } => {
+            // Qwen OAuth 路由暂不支持
+            (
+                StatusCode::NOT_IMPLEMENTED,
+                Json(serde_json::json!({"error": {"message": "Qwen OAuth routing not yet implemented. Use /v1/messages with Qwen models instead."}})),
+            )
+                .into_response()
+        }
+        CredentialData::OpenAIKey { api_key, base_url } => {
+            let openai = OpenAICustomProvider::with_config(api_key.clone(), base_url.clone());
+            let openai_request = convert_anthropic_to_openai(request);
+            match openai.call_api(&openai_request).await {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        match resp.text().await {
+                            Ok(body) => {
+                                if let Ok(openai_resp) = serde_json::from_str::<serde_json::Value>(&body) {
+                                    let content = openai_resp["choices"][0]["message"]["content"]
+                                        .as_str()
+                                        .unwrap_or("");
+                                    let parsed = CWParsedResponse {
+                                        content: content.to_string(),
+                                        tool_calls: Vec::new(),
+                                        usage_credits: 0.0,
+                                        context_usage_percentage: 0.0,
+                                    };
+                                    if request.stream {
+                                        build_anthropic_stream_response(&request.model, &parsed)
+                                    } else {
+                                        build_anthropic_response(&request.model, &parsed)
+                                    }
+                                } else {
+                                    (
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        Json(serde_json::json!({"error": {"message": "Failed to parse OpenAI response"}})),
+                                    )
+                                        .into_response()
+                                }
+                            }
+                            Err(e) => (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(serde_json::json!({"error": {"message": e.to_string()}})),
+                            )
+                                .into_response(),
+                        }
+                    } else {
+                        let body = resp.text().await.unwrap_or_default();
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(serde_json::json!({"error": {"message": body}})),
+                        )
+                            .into_response()
+                    }
+                }
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": {"message": e.to_string()}})),
+                )
+                    .into_response(),
+            }
+        }
+        CredentialData::ClaudeKey { api_key, base_url } => {
+            let claude = ClaudeCustomProvider::with_config(api_key.clone(), base_url.clone());
+            match claude.call_api(request).await {
+                Ok(resp) => {
+                    let status = resp.status();
+                    match resp.text().await {
+                        Ok(body) => {
+                            if status.is_success() {
+                                Response::builder()
+                                    .status(StatusCode::OK)
+                                    .header(header::CONTENT_TYPE, "application/json")
+                                    .body(Body::from(body))
+                                    .unwrap_or_else(|_| {
+                                        (
+                                            StatusCode::INTERNAL_SERVER_ERROR,
+                                            Json(serde_json::json!({"error": {"message": "Failed to build response"}})),
+                                        )
+                                            .into_response()
+                                    })
+                            } else {
+                                (
+                                    StatusCode::from_u16(status.as_u16())
+                                        .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                                    Json(serde_json::json!({"error": {"message": body}})),
+                                )
+                                    .into_response()
+                            }
+                        }
+                        Err(e) => (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(serde_json::json!({"error": {"message": e.to_string()}})),
+                        )
+                            .into_response(),
+                    }
+                }
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": {"message": e.to_string()}})),
+                )
+                    .into_response(),
+            }
+        }
+    }
+}
+
+/// 根据凭证调用 Provider (OpenAI 格式)
+async fn call_provider_openai(
+    _state: &AppState,
+    credential: &ProviderCredential,
+    request: &ChatCompletionRequest,
+) -> Response {
+    match &credential.credential {
+        CredentialData::KiroOAuth { creds_file_path } => {
+            let mut kiro = KiroProvider::new();
+            if let Err(e) = kiro.load_credentials_from_path(creds_file_path).await {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": {"message": format!("Failed to load Kiro credentials: {}", e)}})),
+                )
+                    .into_response();
+            }
+            if let Err(e) = kiro.refresh_token().await {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"error": {"message": format!("Token refresh failed: {}", e)}})),
+                )
+                    .into_response();
+            }
+
+            match kiro.call_api(request).await {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        match resp.text().await {
+                            Ok(body) => {
+                                let parsed = parse_cw_response(&body);
+                                let has_tool_calls = !parsed.tool_calls.is_empty();
+
+                                let message = if has_tool_calls {
+                                    serde_json::json!({
+                                        "role": "assistant",
+                                        "content": if parsed.content.is_empty() { serde_json::Value::Null } else { serde_json::json!(parsed.content) },
+                                        "tool_calls": parsed.tool_calls.iter().map(|tc| {
+                                            serde_json::json!({
+                                                "id": tc.id,
+                                                "type": "function",
+                                                "function": {
+                                                    "name": tc.function.name,
+                                                    "arguments": tc.function.arguments
+                                                }
+                                            })
+                                        }).collect::<Vec<_>>()
+                                    })
+                                } else {
+                                    serde_json::json!({
+                                        "role": "assistant",
+                                        "content": parsed.content
+                                    })
+                                };
+
+                                Json(serde_json::json!({
+                                    "id": format!("chatcmpl-{}", uuid::Uuid::new_v4()),
+                                    "object": "chat.completion",
+                                    "created": std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_secs(),
+                                    "model": request.model,
+                                    "choices": [{
+                                        "index": 0,
+                                        "message": message,
+                                        "finish_reason": if has_tool_calls { "tool_calls" } else { "stop" }
+                                    }],
+                                    "usage": {
+                                        "prompt_tokens": 0,
+                                        "completion_tokens": 0,
+                                        "total_tokens": 0
+                                    }
+                                }))
+                                .into_response()
+                            }
+                            Err(e) => (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(serde_json::json!({"error": {"message": e.to_string()}})),
+                            )
+                                .into_response(),
+                        }
+                    } else {
+                        let body = resp.text().await.unwrap_or_default();
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(serde_json::json!({"error": {"message": body}})),
+                        )
+                            .into_response()
+                    }
+                }
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": {"message": e.to_string()}})),
+                )
+                    .into_response(),
+            }
+        }
+        CredentialData::GeminiOAuth { .. } => {
+            (
+                StatusCode::NOT_IMPLEMENTED,
+                Json(serde_json::json!({"error": {"message": "Gemini OAuth routing not yet implemented."}})),
+            )
+                .into_response()
+        }
+        CredentialData::QwenOAuth { .. } => {
+            (
+                StatusCode::NOT_IMPLEMENTED,
+                Json(serde_json::json!({"error": {"message": "Qwen OAuth routing not yet implemented."}})),
+            )
+                .into_response()
+        }
+        CredentialData::OpenAIKey { api_key, base_url } => {
+            let openai = OpenAICustomProvider::with_config(api_key.clone(), base_url.clone());
+            match openai.call_api(request).await {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        match resp.text().await {
+                            Ok(body) => {
+                                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
+                                    Json(json).into_response()
+                                } else {
+                                    (
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        Json(serde_json::json!({"error": {"message": "Invalid JSON response"}})),
+                                    )
+                                        .into_response()
+                                }
+                            }
+                            Err(e) => (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(serde_json::json!({"error": {"message": e.to_string()}})),
+                            )
+                                .into_response(),
+                        }
+                    } else {
+                        let body = resp.text().await.unwrap_or_default();
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(serde_json::json!({"error": {"message": body}})),
+                        )
+                            .into_response()
+                    }
+                }
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": {"message": e.to_string()}})),
+                )
+                    .into_response(),
+            }
+        }
+        CredentialData::ClaudeKey { api_key, base_url } => {
+            let claude = ClaudeCustomProvider::with_config(api_key.clone(), base_url.clone());
+            match claude.call_openai_api(request).await {
+                Ok(resp) => Json(resp).into_response(),
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": {"message": e.to_string()}})),
+                )
+                    .into_response(),
+            }
+        }
     }
 }

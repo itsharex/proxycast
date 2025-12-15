@@ -13,7 +13,10 @@
       "Bash(cargo check:*)",
       "Bash(rm:*)",
       "Bash(cargo clippy:*)",
-      "Bash(cargo fmt:*)"
+      "Bash(cargo fmt:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Bash(cargo run:*)"
     ],
     "deny": [],
     "ask": []

@@ -157,6 +157,16 @@ impl GeminiProvider {
         Ok(())
     }
 
+    pub async fn load_credentials_from_path(
+        &mut self,
+        path: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let content = tokio::fs::read_to_string(path).await?;
+        let creds: GeminiCredentials = serde_json::from_str(&content)?;
+        self.credentials = creds;
+        Ok(())
+    }
+
     pub async fn save_credentials(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let path = Self::default_creds_path();
         if let Some(parent) = path.parent() {

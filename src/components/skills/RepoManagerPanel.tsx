@@ -70,9 +70,7 @@ export function RepoManagerPanel({
         <div className="flex items-center justify-between p-4 border-b">
           <div>
             <h3 className="text-lg font-semibold">仓库管理</h3>
-            <p className="text-sm text-muted-foreground">
-              管理 Skill 仓库源
-            </p>
+            <p className="text-sm text-muted-foreground">管理 Skill 仓库源</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -82,10 +80,7 @@ export function RepoManagerPanel({
             >
               <RefreshCw className="h-4 w-4" />
             </button>
-            <button
-              onClick={onClose}
-              className="rounded-lg p-2 hover:bg-muted"
-            >
+            <button onClick={onClose} className="rounded-lg p-2 hover:bg-muted">
               <X className="h-4 w-4" />
             </button>
           </div>

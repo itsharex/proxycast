@@ -5,6 +5,8 @@ pub mod mcp_model;
 pub mod openai;
 pub mod prompt_model;
 pub mod provider_model;
+pub mod provider_pool_model;
+pub mod route_model;
 pub mod skill_model;
 
 #[allow(unused_imports)]
@@ -17,4 +19,5 @@ pub use mcp_model::McpServer;
 pub use openai::*;
 pub use prompt_model::Prompt;
 pub use provider_model::Provider;
+pub use provider_pool_model::*;
 pub use skill_model::{Skill, SkillMetadata, SkillRepo, SkillState, SkillStates};

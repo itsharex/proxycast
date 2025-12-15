@@ -7,13 +7,12 @@ import { SwitchPage } from "./components/switch";
 import { ClientsPage } from "./components/clients";
 import { McpPage } from "./components/mcp";
 import { PromptsPage } from "./components/prompts";
-import { CredentialsPage } from "./components/credentials/CredentialsPage";
 import { ApiServerPage } from "./components/api-server/ApiServerPage";
 import { SkillsPage } from "./components/skills";
+import { ProviderPoolPage } from "./components/provider-pool";
 
 type Page =
   | "dashboard"
-  | "credentials"
   | "clients"
   | "api-server"
   | "providers"
@@ -21,7 +20,8 @@ type Page =
   | "switch"
   | "mcp"
   | "prompts"
-  | "skills";
+  | "skills"
+  | "provider-pool";
 
 function App() {
   const [currentPage, setCurrentPage] = useState<Page>("dashboard");
@@ -30,8 +30,8 @@ function App() {
     switch (currentPage) {
       case "dashboard":
         return <Dashboard />;
-      case "credentials":
-        return <CredentialsPage />;
+      case "provider-pool":
+        return <ProviderPoolPage />;
       case "clients":
         return <ClientsPage />;
       case "api-server":

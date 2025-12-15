@@ -1,4 +1,6 @@
 //! Claude Custom Provider (自定义 Claude API)
+use crate::models::anthropic::AnthropicMessagesRequest;
+use crate::models::openai::{ChatCompletionRequest, ContentPart, MessageContent};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -29,6 +31,18 @@ impl ClaudeCustomProvider {
         Self::default()
     }
 
+    /// 使用 API key 和 base_url 创建 Provider
+    pub fn with_config(api_key: String, base_url: Option<String>) -> Self {
+        Self {
+            config: ClaudeCustomConfig {
+                api_key: Some(api_key),
+                base_url,
+                enabled: true,
+            },
+            client: Client::new(),
+        }
+    }
+
     pub fn get_base_url(&self) -> String {
         self.config
             .base_url
@@ -38,6 +52,148 @@ impl ClaudeCustomProvider {
 
     pub fn is_configured(&self) -> bool {
         self.config.api_key.is_some() && self.config.enabled
+    }
+
+    /// 调用 Anthropic API（原生格式）
+    pub async fn call_api(
+        &self,
+        request: &AnthropicMessagesRequest,
+    ) -> Result<reqwest::Response, Box<dyn Error + Send + Sync>> {
+        let api_key = self
+            .config
+            .api_key
+            .as_ref()
+            .ok_or("Claude API key not configured")?;
+
+        let base_url = self.get_base_url();
+        let url = format!("{base_url}/v1/messages");
+
+        let resp = self
+            .client
+            .post(&url)
+            .header("x-api-key", api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("Content-Type", "application/json")
+            .json(request)
+            .send()
+            .await?;
+
+        Ok(resp)
+    }
+
+    /// 调用 OpenAI 格式的 API（内部转换为 Anthropic 格式）
+    pub async fn call_openai_api(
+        &self,
+        request: &ChatCompletionRequest,
+    ) -> Result<serde_json::Value, Box<dyn Error + Send + Sync>> {
+        // 手动转换 OpenAI 请求为 Anthropic 格式
+        let mut anthropic_messages = Vec::new();
+        let mut system_content = None;
+
+        for msg in &request.messages {
+            let role = &msg.role;
+
+            // 提取消息内容
+            let content = match &msg.content {
+                Some(MessageContent::Text(text)) => text.clone(),
+                Some(MessageContent::Parts(parts)) => {
+                    // 合并所有文本部分
+                    parts
+                        .iter()
+                        .filter_map(|p| {
+                            if let ContentPart::Text { text } = p {
+                                Some(text.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("")
+                }
+                None => String::new(),
+            };
+
+            if role == "system" {
+                system_content = Some(content);
+            } else {
+                let anthropic_role = if role == "assistant" {
+                    "assistant"
+                } else {
+                    "user"
+                };
+                anthropic_messages.push(serde_json::json!({
+                    "role": anthropic_role,
+                    "content": content
+                }));
+            }
+        }
+
+        let mut anthropic_body = serde_json::json!({
+            "model": request.model,
+            "max_tokens": request.max_tokens.unwrap_or(4096),
+            "messages": anthropic_messages
+        });
+
+        if let Some(sys) = system_content {
+            anthropic_body["system"] = serde_json::json!(sys);
+        }
+
+        let api_key = self
+            .config
+            .api_key
+            .as_ref()
+            .ok_or("Claude API key not configured")?;
+
+        let base_url = self.get_base_url();
+        let url = format!("{base_url}/v1/messages");
+
+        let resp = self
+            .client
+            .post(&url)
+            .header("x-api-key", api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("Content-Type", "application/json")
+            .json(&anthropic_body)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("Claude API error: {status} - {body}").into());
+        }
+
+        let anthropic_resp: serde_json::Value = resp.json().await?;
+
+        // 转换回 OpenAI 格式
+        let content = anthropic_resp["content"]
+            .as_array()
+            .and_then(|arr| arr.first())
+            .and_then(|block| block["text"].as_str())
+            .unwrap_or("");
+
+        Ok(serde_json::json!({
+            "id": format!("chatcmpl-{}", uuid::Uuid::new_v4()),
+            "object": "chat.completion",
+            "created": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            "model": request.model,
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": content
+                },
+                "finish_reason": "stop"
+            }],
+            "usage": {
+                "prompt_tokens": anthropic_resp["usage"]["input_tokens"].as_u64().unwrap_or(0),
+                "completion_tokens": anthropic_resp["usage"]["output_tokens"].as_u64().unwrap_or(0),
+                "total_tokens": 0
+            }
+        }))
     }
 
     pub async fn messages(
