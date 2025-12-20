@@ -640,10 +640,43 @@ export function ProviderForm({
   const handleCredentialSelect = async (credential: CredentialDisplay) => {
     setSelectedCredentialUuid(credential.uuid);
     setName(credential.name || `${credential.provider_type} 凭证`);
-    setIconColor("#22c55e");
 
-    // 根据凭证类型和 appType 设置配置
-    // 使用 ProxyCast 代理，凭证池中的凭证通过本地代理访问
+    // 判断是否为 API Key 类型凭证（非 OAuth）
+    const isApiKeyType = !credential.credential_type.includes("oauth");
+
+    // API Key 类型凭证：直接使用凭证中的 api_key 和 base_url
+    if (isApiKeyType && credential.api_key) {
+      setIconColor("#22c55e");
+
+      if (appType === "claude") {
+        setApiKey(credential.api_key);
+        setBaseUrl(credential.base_url || "");
+        setJsonManuallyEdited(false);
+      } else if (appType === "codex") {
+        setCodexAuth(
+          JSON.stringify(
+            {
+              api_key: credential.api_key,
+              api_base_url: credential.base_url || "",
+            },
+            null,
+            2,
+          ),
+        );
+      } else if (appType === "gemini") {
+        setGeminiEnv(
+          `GEMINI_API_KEY=${credential.api_key}\nGOOGLE_GEMINI_BASE_URL=${credential.base_url || ""}\nGEMINI_MODEL=gemini-2.0-flash`,
+        );
+      }
+
+      setNotes(
+        `API Key 凭证: ${credential.provider_type} - ${credential.uuid.slice(0, 8)}`,
+      );
+      return;
+    }
+
+    // OAuth 类型凭证：使用 ProxyCast 代理
+    setIconColor("#3b82f6");
     try {
       const config = await getConfig();
       const proxyApiKey = config.server.api_key || "";
@@ -673,7 +706,7 @@ export function ProviderForm({
       }
 
       setNotes(
-        `使用凭证池: ${credential.provider_type} - ${credential.uuid.slice(0, 8)}`,
+        `代理凭证: ${credential.provider_type} - ${credential.uuid.slice(0, 8)}`,
       );
     } catch (e) {
       console.error("Failed to load config:", e);
