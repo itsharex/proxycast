@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
 import { switchApi, Provider, AppType } from "@/lib/api/switch";
 
 export function useSwitch(appType: AppType) {
@@ -40,21 +41,25 @@ export function useSwitch(appType: AppType) {
     };
     await switchApi.addProvider(newProvider);
     await fetchProviders();
+    toast.success("配置已添加");
   };
 
   const updateProvider = async (provider: Provider) => {
     await switchApi.updateProvider(provider);
     await fetchProviders();
+    toast.success("配置已更新");
   };
 
   const deleteProvider = async (id: string) => {
     await switchApi.deleteProvider(appType, id);
     await fetchProviders();
+    toast.success("配置已删除");
   };
 
   const switchToProvider = async (id: string) => {
     await switchApi.switchProvider(appType, id);
     await fetchProviders();
+    toast.success("切换成功");
   };
 
   return {

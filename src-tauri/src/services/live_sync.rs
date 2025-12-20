@@ -27,6 +27,35 @@ pub fn sync_to_live(
     }
 }
 
+/// 清理 Claude 配置中冲突的认证环境变量
+///
+/// Claude Code 同时检测到 ANTHROPIC_AUTH_TOKEN 和 ANTHROPIC_API_KEY 时会报警告。
+/// 此函数确保只保留一个认证变量：
+/// - 优先保留 ANTHROPIC_AUTH_TOKEN（OAuth token）
+/// - 如果只有 ANTHROPIC_API_KEY，则保留它
+fn clean_claude_auth_conflict(settings: &mut Value) {
+    if let Some(env) = settings.get_mut("env").and_then(|v| v.as_object_mut()) {
+        let has_auth_token = env
+            .get("ANTHROPIC_AUTH_TOKEN")
+            .and_then(|v| v.as_str())
+            .map(|s| !s.is_empty())
+            .unwrap_or(false);
+        let has_api_key = env
+            .get("ANTHROPIC_API_KEY")
+            .and_then(|v| v.as_str())
+            .map(|s| !s.is_empty())
+            .unwrap_or(false);
+
+        // 如果两者都存在，移除 ANTHROPIC_API_KEY（优先使用 AUTH_TOKEN）
+        if has_auth_token && has_api_key {
+            tracing::info!(
+                "检测到 Claude 认证冲突：同时存在 ANTHROPIC_AUTH_TOKEN 和 ANTHROPIC_API_KEY，移除 ANTHROPIC_API_KEY"
+            );
+            env.remove("ANTHROPIC_API_KEY");
+        }
+    }
+}
+
 /// Sync Claude settings to ~/.claude/settings.json
 fn sync_claude_settings(
     provider: &Provider,
@@ -68,6 +97,9 @@ fn sync_claude_settings(
         // If settings_config is the full settings object, use it directly
         settings = provider.settings_config.clone();
     }
+
+    // 清理冲突的认证环境变量
+    clean_claude_auth_conflict(&mut settings);
 
     // Write settings
     let content = serde_json::to_string_pretty(&settings)?;
