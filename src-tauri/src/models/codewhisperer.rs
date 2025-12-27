@@ -1,4 +1,10 @@
 //! CodeWhisperer/Kiro API 数据模型
+//!
+//! 支持标准工具和特殊工具类型（如 web_search）。
+//!
+//! # 更新日志
+//!
+//! - 2025-12-27: 添加 CWWebSearchTool 支持，修复 Issue #49
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,15 +47,40 @@ pub struct UserInputMessage {
 #[serde(rename_all = "camelCase")]
 pub struct UserInputMessageContext {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<CWTool>>,
+    pub tools: Option<Vec<CWToolItem>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_results: Option<Vec<CWToolResult>>,
 }
 
+/// CodeWhisperer 工具项
+///
+/// 支持两种类型：
+/// - 标准工具（带 tool_specification）
+/// - 联网搜索工具（仅 type 字段）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CWToolItem {
+    /// 标准工具定义
+    Standard(CWTool),
+    /// 联网搜索工具
+    WebSearch(CWWebSearchTool),
+}
+
+/// 标准工具定义
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CWTool {
     pub tool_specification: ToolSpecification,
+}
+
+/// 联网搜索工具
+///
+/// Codex/Kiro API 支持的特殊工具类型，用于联网搜索。
+/// 格式：`{"type": "web_search"}`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CWWebSearchTool {
+    #[serde(rename = "type")]
+    pub tool_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

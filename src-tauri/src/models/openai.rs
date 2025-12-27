@@ -1,4 +1,15 @@
 //! OpenAI API 数据模型
+//!
+//! 支持标准 OpenAI 格式以及扩展的工具类型（如 web_search）。
+//!
+//! # 工具类型支持
+//!
+//! - `function`: 标准函数调用工具
+//! - `web_search`: 联网搜索工具（Claude Code 使用 `web_search_20250305`）
+//!
+//! # 更新日志
+//!
+//! - 2025-12-27: 添加 web_search 工具支持，修复 Issue #49
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,11 +89,24 @@ pub struct FunctionDef {
     pub parameters: Option<serde_json::Value>,
 }
 
+/// 工具定义
+///
+/// 支持多种工具类型：
+/// - `function`: 标准函数调用工具，包含 function 字段
+/// - `web_search`: 联网搜索工具，无需额外字段
+/// - `web_search_20250305`: Claude Code 的联网搜索工具类型
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Tool {
-    #[serde(rename = "type")]
-    pub tool_type: String,
-    pub function: FunctionDef,
+#[serde(tag = "type")]
+pub enum Tool {
+    /// 标准函数调用工具
+    #[serde(rename = "function")]
+    Function { function: FunctionDef },
+    /// 联网搜索工具（Codex/Kiro 格式）
+    #[serde(rename = "web_search")]
+    WebSearch,
+    /// 联网搜索工具（Claude Code 格式）
+    #[serde(rename = "web_search_20250305")]
+    WebSearch20250305,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

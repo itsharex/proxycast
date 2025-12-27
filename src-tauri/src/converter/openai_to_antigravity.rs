@@ -274,12 +274,18 @@ pub fn convert_openai_to_antigravity_with_context(
     let tools = request.tools.as_ref().map(|tools| {
         tools
             .iter()
-            .map(|t| GeminiTool {
-                function_declarations: vec![GeminiFunctionDeclaration {
-                    name: t.function.name.clone(),
-                    description: t.function.description.clone(),
-                    parameters: clean_parameters(t.function.parameters.clone()),
-                }],
+            .filter_map(|t| {
+                match t {
+                    Tool::Function { function } => Some(GeminiTool {
+                        function_declarations: vec![GeminiFunctionDeclaration {
+                            name: function.name.clone(),
+                            description: function.description.clone(),
+                            parameters: clean_parameters(function.parameters.clone()),
+                        }],
+                    }),
+                    // web_search 工具不转换为 Antigravity 格式
+                    Tool::WebSearch | Tool::WebSearch20250305 => None,
+                }
             })
             .collect()
     });

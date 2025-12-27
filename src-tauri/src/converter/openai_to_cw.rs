@@ -1,4 +1,10 @@
 //! OpenAI 格式转换为 CodeWhisperer 格式
+//!
+//! 支持标准工具和特殊工具类型（如 web_search）。
+//!
+//! # 更新日志
+//!
+//! - 2025-12-27: 添加 web_search 工具支持，修复 Issue #49
 use crate::models::codewhisperer::*;
 use crate::models::openai::*;
 use std::collections::HashMap;
@@ -307,37 +313,61 @@ pub fn convert_openai_to_codewhisperer(
 
     // 构建 tools
     let tools = request.tools.as_ref().map(|tools| {
-        tools
-            .iter()
-            .take(50)
-            .map(|t| {
-                let params = t
-                    .function
-                    .parameters
-                    .clone()
-                    .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}}));
+        let mut cw_tools: Vec<CWToolItem> = Vec::new();
+        let mut function_count = 0;
 
-                let desc = t
-                    .function
-                    .description
-                    .clone()
-                    .unwrap_or_else(|| format!("Tool: {}", t.function.name));
+        for t in tools.iter() {
+            match t {
+                // 标准函数工具
+                Tool::Function { function } => {
+                    // 限制最多 50 个函数工具
+                    if function_count >= 50 {
+                        continue;
+                    }
+                    function_count += 1;
 
-                CWTool {
-                    tool_specification: ToolSpecification {
-                        name: t.function.name.clone(),
-                        // P1 安全修复：使用字符边界安全的截断，防止 UTF-8 panic
-                        description: if desc.len() > 500 {
-                            let truncated: String = desc.chars().take(497).collect();
-                            format!("{}...", truncated)
-                        } else {
-                            desc
+                    let params = function
+                        .parameters
+                        .clone()
+                        .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}}));
+
+                    let desc = function
+                        .description
+                        .clone()
+                        .unwrap_or_else(|| format!("Tool: {}", function.name));
+
+                    cw_tools.push(CWToolItem::Standard(CWTool {
+                        tool_specification: ToolSpecification {
+                            name: function.name.clone(),
+                            // P1 安全修复：使用字符边界安全的截断，防止 UTF-8 panic
+                            description: if desc.len() > 500 {
+                                let truncated: String = desc.chars().take(497).collect();
+                                format!("{}...", truncated)
+                            } else {
+                                desc
+                            },
+                            input_schema: InputSchema { json: params },
                         },
-                        input_schema: InputSchema { json: params },
-                    },
+                    }));
                 }
-            })
-            .collect()
+                // 联网搜索工具（Codex 格式）
+                Tool::WebSearch => {
+                    tracing::info!("[CW_TOOLS] 添加 web_search 工具");
+                    cw_tools.push(CWToolItem::WebSearch(CWWebSearchTool {
+                        tool_type: "web_search".to_string(),
+                    }));
+                }
+                // 联网搜索工具（Claude Code 格式）
+                Tool::WebSearch20250305 => {
+                    tracing::info!("[CW_TOOLS] 添加 web_search 工具 (from web_search_20250305)");
+                    cw_tools.push(CWToolItem::WebSearch(CWWebSearchTool {
+                        tool_type: "web_search".to_string(),
+                    }));
+                }
+            }
+        }
+
+        cw_tools
     });
 
     let user_input_message_context = if tools.is_some() || current_tool_results.is_some() {

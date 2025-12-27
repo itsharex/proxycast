@@ -1153,8 +1153,7 @@ async fn check_api_compatibility(
                     temperature: None,
                     max_tokens: Some(100),
                     stream: false,
-                    tools: Some(vec![crate::models::openai::Tool {
-                        tool_type: "function".to_string(),
+                    tools: Some(vec![crate::models::openai::Tool::Function {
                         function: crate::models::openai::FunctionDef {
                             name: "calculator".to_string(),
                             description: Some("Perform basic arithmetic calculations".to_string()),

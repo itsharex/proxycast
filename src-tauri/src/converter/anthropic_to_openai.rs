@@ -30,8 +30,7 @@ pub fn convert_anthropic_to_openai(request: &AnthropicMessagesRequest) -> ChatCo
     let tools = request.tools.as_ref().map(|tools| {
         tools
             .iter()
-            .map(|t| Tool {
-                tool_type: "function".to_string(),
+            .map(|t| Tool::Function {
                 function: FunctionDef {
                     name: t.name.clone(),
                     description: t.description.clone(),

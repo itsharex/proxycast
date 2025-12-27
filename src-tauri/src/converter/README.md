@@ -11,10 +11,23 @@
 
 - `mod.rs` - 模块入口
 - `protocol_selector.rs` - 协议选择器
-- `openai_to_cw.rs` - OpenAI → CodeWhisperer 转换
+- `openai_to_cw.rs` - OpenAI → CodeWhisperer 转换（支持 web_search 工具）
 - `cw_to_openai.rs` - CodeWhisperer → OpenAI 转换
 - `anthropic_to_openai.rs` - Anthropic → OpenAI 转换
 - `openai_to_antigravity.rs` - OpenAI → Antigravity 转换
+
+## 工具类型支持
+
+### 标准工具
+- `function`: 标准函数调用工具
+
+### 特殊工具
+- `web_search`: 联网搜索工具（Codex/Kiro 格式）
+- `web_search_20250305`: 联网搜索工具（Claude Code 格式）
+
+## 更新日志
+
+- 2025-12-27: 添加 web_search 工具支持，修复 Issue #49
 
 ## 更新提醒
 
