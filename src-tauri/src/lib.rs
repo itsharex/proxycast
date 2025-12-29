@@ -38,6 +38,7 @@ use commands::flow_monitor_cmd::{
 };
 use commands::machine_id_cmd::MachineIdState;
 use commands::plugin_cmd::PluginManagerState;
+use commands::plugin_install_cmd::PluginInstallerState;
 use commands::provider_pool_cmd::{CredentialSyncServiceState, ProviderPoolServiceState};
 use commands::resilience_cmd::ResilienceConfigState;
 use commands::router_cmd::RouterConfigState;
@@ -1551,6 +1552,48 @@ pub fn run() {
     let plugin_manager = plugin::PluginManager::with_defaults();
     let plugin_manager_state = PluginManagerState(Arc::new(RwLock::new(plugin_manager)));
 
+    // Initialize PluginInstaller
+    let plugin_installer_state = {
+        let db_path =
+            database::get_db_path().expect("Failed to get database path for PluginInstaller");
+        let plugins_dir = dirs::data_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("proxycast")
+            .join("plugins");
+        let temp_dir = std::env::temp_dir().join("proxycast_plugin_install");
+
+        // 创建目录（如果不存在）
+        if let Err(e) = std::fs::create_dir_all(&plugins_dir) {
+            tracing::warn!("无法创建插件目录: {}", e);
+        }
+        if let Err(e) = std::fs::create_dir_all(&temp_dir) {
+            tracing::warn!("无法创建插件临时目录: {}", e);
+        }
+
+        match plugin::installer::PluginInstaller::from_paths(plugins_dir, temp_dir, &db_path) {
+            Ok(installer) => {
+                tracing::info!("[启动] 插件安装器初始化成功");
+                PluginInstallerState(Arc::new(RwLock::new(installer)))
+            }
+            Err(e) => {
+                tracing::error!("[启动] 插件安装器初始化失败: {}", e);
+                // 创建一个默认的安装器（使用临时目录）
+                let fallback_plugins_dir = std::env::temp_dir().join("proxycast_plugins_fallback");
+                let fallback_temp_dir =
+                    std::env::temp_dir().join("proxycast_plugin_install_fallback");
+                let _ = std::fs::create_dir_all(&fallback_plugins_dir);
+                let _ = std::fs::create_dir_all(&fallback_temp_dir);
+                let installer = plugin::installer::PluginInstaller::from_paths(
+                    fallback_plugins_dir,
+                    fallback_temp_dir,
+                    &db_path,
+                )
+                .expect("Failed to create fallback PluginInstaller");
+                PluginInstallerState(Arc::new(RwLock::new(installer)))
+            }
+        }
+    };
+
     // Initialize shared telemetry instances for both TelemetryState and RequestProcessor
     // This allows the frontend monitoring page to display data recorded by the request processor
     let shared_stats = Arc::new(parking_lot::RwLock::new(
@@ -1739,6 +1782,7 @@ pub fn run() {
         .manage(resilience_config_state)
         .manage(telemetry_state)
         .manage(plugin_manager_state)
+        .manage(plugin_installer_state)
         .manage(flow_monitor_state)
         .manage(flow_query_service_state)
         .manage(flow_interceptor_state)
@@ -2188,6 +2232,15 @@ pub fn run() {
             commands::plugin_cmd::reload_plugins,
             commands::plugin_cmd::unload_plugin,
             commands::plugin_cmd::get_plugins_dir,
+            // Plugin Install commands
+            commands::plugin_install_cmd::install_plugin_from_file,
+            commands::plugin_install_cmd::install_plugin_from_url,
+            commands::plugin_install_cmd::uninstall_plugin,
+            commands::plugin_install_cmd::list_installed_plugins,
+            commands::plugin_install_cmd::get_installed_plugin,
+            commands::plugin_install_cmd::is_plugin_installed,
+            // Plugin UI commands
+            commands::plugin_cmd::get_plugins_with_ui,
             // Flow Monitor commands
             commands::flow_monitor_cmd::query_flows,
             commands::flow_monitor_cmd::get_flow_detail,

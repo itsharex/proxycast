@@ -18,6 +18,8 @@ fn test_plugin_manifest_validation() {
         config_schema: None,
         hooks: vec!["on_request".to_string()],
         min_proxycast_version: None,
+        binary: None,
+        ui: None,
     };
     assert!(valid.validate().is_ok());
 
@@ -154,6 +156,8 @@ fn test_plugin_manifest_serde() {
         })),
         hooks: vec!["on_request".to_string(), "on_response".to_string()],
         min_proxycast_version: Some("0.13.0".to_string()),
+        binary: None,
+        ui: None,
     };
 
     // 序列化

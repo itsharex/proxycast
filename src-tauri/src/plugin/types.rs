@@ -79,8 +79,11 @@ impl fmt::Display for PluginStatus {
     }
 }
 
-/// 插件清单 (manifest.json)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// 插件清单 (manifest.json / plugin.json)
+///
+/// 描述插件的元数据、依赖和入口点
+/// _需求: 5.1, 5.2, 5.3_
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PluginManifest {
     /// 插件名称
     pub name: String,
@@ -113,6 +116,14 @@ pub struct PluginManifest {
     /// 最低 ProxyCast 版本要求
     #[serde(default)]
     pub min_proxycast_version: Option<String>,
+    /// Binary 类型插件的扩展配置
+    /// _需求: 5.2_
+    #[serde(default)]
+    pub binary: Option<BinaryManifest>,
+    /// UI 配置
+    /// _需求: 5.3_
+    #[serde(default)]
+    pub ui: Option<UiManifest>,
 }
 
 fn default_entry() -> String {
@@ -147,7 +158,7 @@ pub enum PluginType {
 }
 
 /// 平台二进制文件名映射
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PlatformBinaries {
     /// macOS ARM64 (Apple Silicon)
     #[serde(rename = "macos-arm64")]
@@ -181,7 +192,7 @@ impl PlatformBinaries {
 }
 
 /// Binary 类型的 manifest 扩展字段
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BinaryManifest {
     /// 二进制文件名（不含平台后缀）
     pub binary_name: String,
@@ -194,6 +205,29 @@ pub struct BinaryManifest {
     /// 校验文件名（可选）
     #[serde(default)]
     pub checksum_file: Option<String>,
+}
+
+/// UI 配置扩展字段
+///
+/// 定义插件的 UI 展示配置
+/// _需求: 5.2, 5.3_
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UiManifest {
+    /// UI 展示位置 (如 "main", "settings", "sidebar")
+    #[serde(default)]
+    pub surfaces: Vec<String>,
+    /// 图标名称 (使用 Lucide 图标名)
+    #[serde(default)]
+    pub icon: Option<String>,
+    /// 窗口标题
+    #[serde(default)]
+    pub title: Option<String>,
+    /// 窗口默认宽度
+    #[serde(default)]
+    pub default_width: Option<u32>,
+    /// 窗口默认高度
+    #[serde(default)]
+    pub default_height: Option<u32>,
 }
 
 /// 二进制组件状态
@@ -497,5 +531,227 @@ impl PluginInstance {
     /// 是否启用
     pub fn is_enabled(&self) -> bool {
         self.config.enabled && self.state.status == PluginStatus::Enabled
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// 生成随机的 PlatformBinaries
+    fn arb_platform_binaries() -> impl Strategy<Value = PlatformBinaries> {
+        (
+            "[a-z0-9_-]{1,30}",
+            "[a-z0-9_-]{1,30}",
+            "[a-z0-9_-]{1,30}",
+            "[a-z0-9_-]{1,30}",
+            "[a-z0-9_-]{1,30}",
+        )
+            .prop_map(
+                |(macos_arm64, macos_x64, linux_x64, linux_arm64, windows_x64)| PlatformBinaries {
+                    macos_arm64,
+                    macos_x64,
+                    linux_x64,
+                    linux_arm64,
+                    windows_x64,
+                },
+            )
+    }
+
+    /// 生成随机的 BinaryManifest
+    fn arb_binary_manifest() -> impl Strategy<Value = BinaryManifest> {
+        (
+            "[a-z0-9_-]{1,20}",
+            "[a-z0-9_-]{1,20}",
+            "[a-z0-9_-]{1,20}",
+            arb_platform_binaries(),
+            proptest::option::of("[a-z0-9_-]{1,20}"),
+        )
+            .prop_map(
+                |(binary_name, github_owner, github_repo, platform_binaries, checksum_file)| {
+                    BinaryManifest {
+                        binary_name,
+                        github_owner,
+                        github_repo,
+                        platform_binaries,
+                        checksum_file,
+                    }
+                },
+            )
+    }
+
+    /// 生成随机的 UiManifest
+    fn arb_ui_manifest() -> impl Strategy<Value = UiManifest> {
+        (
+            prop::collection::vec("[a-z]{1,10}", 0..3),
+            proptest::option::of("[a-z-]{1,20}"),
+            proptest::option::of("[a-zA-Z0-9 ]{1,30}"),
+            proptest::option::of(100u32..2000u32),
+            proptest::option::of(100u32..2000u32),
+        )
+            .prop_map(|(surfaces, icon, title, default_width, default_height)| {
+                UiManifest {
+                    surfaces,
+                    icon,
+                    title,
+                    default_width,
+                    default_height,
+                }
+            })
+    }
+
+    /// 生成随机的 PluginType
+    fn arb_plugin_type() -> impl Strategy<Value = PluginType> {
+        prop_oneof![
+            Just(PluginType::Script),
+            Just(PluginType::Native),
+            Just(PluginType::Binary),
+        ]
+    }
+
+    /// 生成随机的 PluginManifest
+    ///
+    /// 用于属性测试，生成包含所有字段的完整清单
+    fn arb_plugin_manifest() -> impl Strategy<Value = PluginManifest> {
+        (
+            "[a-z0-9_-]{1,20}",                                           // name
+            "[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}",                       // version
+            "[a-zA-Z0-9 ]{0,50}",                                         // description
+            proptest::option::of("[a-zA-Z ]{1,30}"),                      // author
+            proptest::option::of("https://[a-z]{1,20}\\.com"),            // homepage
+            proptest::option::of("[A-Z]{2,5}"),                           // license
+            "[a-z0-9_-]{1,20}",                                           // entry
+            arb_plugin_type(),                                            // plugin_type
+            prop::collection::vec("[a-z_]{1,15}", 0..5),                  // hooks
+            proptest::option::of("[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}"), // min_proxycast_version
+            proptest::option::of(arb_binary_manifest()),                  // binary
+            proptest::option::of(arb_ui_manifest()),                      // ui
+        )
+            .prop_map(
+                |(
+                    name,
+                    version,
+                    description,
+                    author,
+                    homepage,
+                    license,
+                    entry,
+                    plugin_type,
+                    hooks,
+                    min_proxycast_version,
+                    binary,
+                    ui,
+                )| {
+                    PluginManifest {
+                        name,
+                        version,
+                        description,
+                        author,
+                        homepage,
+                        license,
+                        entry,
+                        plugin_type,
+                        config_schema: None, // JSON Schema 太复杂，跳过
+                        hooks,
+                        min_proxycast_version,
+                        binary,
+                        ui,
+                    }
+                },
+            )
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+
+        /// **Feature: plugin-installation, 属性 5: 清单 Round-Trip**
+        /// **验证需求: 5.1, 5.2, 5.3**
+        ///
+        /// *对于任意*有效的 PluginManifest 对象，序列化为 JSON 然后反序列化必须产生等价的对象。
+        #[test]
+        fn manifest_roundtrip(manifest in arb_plugin_manifest()) {
+            // 序列化为 JSON
+            let json = serde_json::to_string(&manifest).expect("序列化应该成功");
+
+            // 反序列化回 PluginManifest
+            let parsed: PluginManifest = serde_json::from_str(&json).expect("反序列化应该成功");
+
+            // 验证整体相等
+            prop_assert_eq!(manifest, parsed, "整个 PluginManifest 应该相等");
+        }
+    }
+
+    #[test]
+    fn test_ui_manifest_serialization() {
+        let ui = UiManifest {
+            surfaces: vec!["main".to_string(), "settings".to_string()],
+            icon: Some("puzzle".to_string()),
+            title: Some("Test Plugin".to_string()),
+            default_width: Some(800),
+            default_height: Some(600),
+        };
+
+        let json = serde_json::to_string(&ui).unwrap();
+        assert!(json.contains("main"));
+        assert!(json.contains("puzzle"));
+
+        let parsed: UiManifest = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.surfaces, ui.surfaces);
+        assert_eq!(parsed.icon, ui.icon);
+    }
+
+    #[test]
+    fn test_plugin_manifest_with_binary_and_ui() {
+        let manifest = PluginManifest {
+            name: "machine-id-tool".to_string(),
+            version: "0.1.0".to_string(),
+            description: "Machine ID 管理工具".to_string(),
+            author: Some("ProxyCast Team".to_string()),
+            homepage: Some("https://github.com/user/machine-id-tool".to_string()),
+            license: Some("MIT".to_string()),
+            entry: "machine-id-tool".to_string(),
+            plugin_type: PluginType::Binary,
+            config_schema: None,
+            hooks: vec![],
+            min_proxycast_version: Some("1.0.0".to_string()),
+            binary: Some(BinaryManifest {
+                binary_name: "machine-id-tool".to_string(),
+                github_owner: "user".to_string(),
+                github_repo: "machine-id-tool".to_string(),
+                platform_binaries: PlatformBinaries {
+                    macos_arm64: "machine-id-tool-aarch64-apple-darwin".to_string(),
+                    macos_x64: "machine-id-tool-x86_64-apple-darwin".to_string(),
+                    linux_x64: "machine-id-tool-x86_64-unknown-linux-gnu".to_string(),
+                    linux_arm64: "machine-id-tool-aarch64-unknown-linux-gnu".to_string(),
+                    windows_x64: "machine-id-tool-x86_64-pc-windows-msvc.exe".to_string(),
+                },
+                checksum_file: None,
+            }),
+            ui: Some(UiManifest {
+                surfaces: vec!["main".to_string()],
+                icon: Some("puzzle".to_string()),
+                title: None,
+                default_width: None,
+                default_height: None,
+            }),
+        };
+
+        // 序列化
+        let json = serde_json::to_string_pretty(&manifest).unwrap();
+        assert!(json.contains("machine-id-tool"));
+        assert!(json.contains("binary"));
+        assert!(json.contains("platform_binaries"));
+        assert!(json.contains("macos-arm64"));
+
+        // 反序列化
+        let parsed: PluginManifest = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.name, manifest.name);
+        assert!(parsed.binary.is_some());
+        assert!(parsed.ui.is_some());
+
+        let binary = parsed.binary.unwrap();
+        assert_eq!(binary.binary_name, "machine-id-tool");
+        assert_eq!(binary.github_owner, "user");
     }
 }

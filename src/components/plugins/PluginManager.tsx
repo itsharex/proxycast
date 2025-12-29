@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Puzzle,
@@ -12,8 +12,16 @@ import {
   Clock,
   ChevronDown,
   ChevronUp,
+  Plus,
+  Package,
+  Download,
+  Cpu,
 } from "lucide-react";
 import { BinaryComponents } from "@/components/extensions/BinaryComponents";
+import { PluginInstallDialog } from "./PluginInstallDialog";
+import { PluginUninstallDialog } from "./PluginUninstallDialog";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 interface PluginState {
   name: string;
@@ -50,33 +58,118 @@ interface PluginServiceStatus {
   plugins_dir: string;
 }
 
+/** 安装来源 */
+interface InstallSource {
+  type: "local" | "url" | "github";
+  path?: string;
+  url?: string;
+  owner?: string;
+  repo?: string;
+  tag?: string;
+}
+
+/** 已安装插件信息（通过安装器安装的） */
+interface InstalledPlugin {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  author: string | null;
+  install_path: string;
+  installed_at: string;
+  source: InstallSource;
+  enabled: boolean;
+}
+
+/**
+ * 推荐插件配置
+ */
+interface RecommendedPlugin {
+  /** 插件 ID */
+  id: string;
+  /** 插件名称 */
+  name: string;
+  /** 插件描述 */
+  description: string;
+  /** 图标组件 */
+  icon: React.ComponentType<{ className?: string }>;
+  /** 下载 URL */
+  downloadUrl: string;
+}
+
+/**
+ * 推荐插件列表
+ */
+const recommendedPlugins: RecommendedPlugin[] = [
+  {
+    id: "machine-id-tool",
+    name: "机器码管理工具",
+    description: "查看、修改和管理系统机器码，支持跨平台操作",
+    icon: Cpu,
+    // 插件包从 ProxyCast release 下载
+    downloadUrl:
+      "https://github.com/aiclientproxy/proxycast/releases/latest/download/machine-id-tool.zip",
+  },
+];
+
 export function PluginManager() {
   const [status, setStatus] = useState<PluginServiceStatus | null>(null);
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
+  const [installedPlugins, setInstalledPlugins] = useState<InstalledPlugin[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedPlugin, setExpandedPlugin] = useState<string | null>(null);
 
-  const fetchData = async () => {
+  // 对话框状态
+  const [showInstallDialog, setShowInstallDialog] = useState(false);
+  const [pluginToUninstall, setPluginToUninstall] =
+    useState<InstalledPlugin | null>(null);
+  const [pendingInstallUrl, setPendingInstallUrl] = useState<string | null>(
+    null,
+  );
+
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const [serviceStatus, pluginList] = await Promise.all([
+      const [serviceStatus, pluginList, installedList] = await Promise.all([
         invoke<PluginServiceStatus>("get_plugin_status"),
         invoke<PluginInfo[]>("get_plugins"),
+        invoke<InstalledPlugin[]>("list_installed_plugins").catch(() => []),
       ]);
       setStatus(serviceStatus);
       setPlugins(pluginList);
+      setInstalledPlugins(installedList);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchData();
+  }, [fetchData]);
+
+  // 处理一键安装
+  const handleQuickInstall = useCallback((downloadUrl: string) => {
+    setPendingInstallUrl(downloadUrl);
+    setShowInstallDialog(true);
   }, []);
+
+  // 处理安装成功
+  const handleInstallSuccess = useCallback(() => {
+    fetchData();
+    setPendingInstallUrl(null);
+  }, [fetchData]);
+
+  // 过滤出未安装的推荐插件
+  const installedPluginIds = new Set(installedPlugins.map((p) => p.id));
+  const uninstalledRecommendedPlugins = recommendedPlugins.filter(
+    (plugin) => !installedPluginIds.has(plugin.id),
+  );
 
   const handleTogglePlugin = async (name: string, currentEnabled: boolean) => {
     try {
@@ -161,6 +254,14 @@ export function PluginManager() {
             插件系统
           </h3>
           <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => setShowInstallDialog(true)}
+              className="gap-1"
+            >
+              <Plus className="h-4 w-4" />
+              安装插件
+            </Button>
             <button
               onClick={handleReloadPlugins}
               className="p-1 hover:bg-muted rounded"
@@ -178,10 +279,16 @@ export function PluginManager() {
         )}
 
         {status && (
-          <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-3 gap-4 mb-4">
             <div className="text-center">
               <div className="text-2xl font-bold">{status.plugin_count}</div>
               <div className="text-xs text-muted-foreground">已加载插件</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold">
+                {installedPlugins.length}
+              </div>
+              <div className="text-xs text-muted-foreground">已安装插件</div>
             </div>
             <div className="text-center">
               <div
@@ -197,17 +304,82 @@ export function PluginManager() {
         )}
       </div>
 
+      {/* 推荐插件 */}
+      {uninstalledRecommendedPlugins.length > 0 && (
+        <div className="rounded-lg border bg-card">
+          <div className="p-4 border-b">
+            <h4 className="font-semibold flex items-center gap-2">
+              <Download className="h-4 w-4" />
+              推荐插件
+            </h4>
+          </div>
+          <div className="divide-y">
+            {uninstalledRecommendedPlugins.map((plugin) => (
+              <div key={plugin.id} className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-primary/10 rounded-lg">
+                      <plugin.icon className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{plugin.name}</span>
+                        <Badge variant="outline" className="text-xs">
+                          推荐
+                        </Badge>
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {plugin.description}
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => handleQuickInstall(plugin.downloadUrl)}
+                    className="gap-1"
+                  >
+                    <Download className="h-4 w-4" />
+                    一键安装
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 已安装插件列表（通过安装器安装的） */}
+      {installedPlugins.length > 0 && (
+        <div className="rounded-lg border bg-card">
+          <div className="p-4 border-b flex items-center justify-between">
+            <h4 className="font-semibold flex items-center gap-2">
+              <Package className="h-4 w-4" />
+              已安装插件包
+            </h4>
+          </div>
+          <div className="divide-y">
+            {installedPlugins.map((plugin) => (
+              <InstalledPluginItem
+                key={plugin.id}
+                plugin={plugin}
+                onUninstall={() => setPluginToUninstall(plugin)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 插件列表 */}
       <div className="rounded-lg border bg-card">
         <div className="p-4 border-b">
-          <h4 className="font-semibold">已安装插件</h4>
+          <h4 className="font-semibold">已加载插件</h4>
         </div>
 
         {plugins.length === 0 ? (
           <div className="p-8 text-center text-muted-foreground">
             <Puzzle className="h-12 w-12 mx-auto mb-2 opacity-50" />
-            <p>暂无已安装的插件</p>
-            <p className="text-sm mt-1">将插件放入插件目录即可自动加载</p>
+            <p>暂无已加载的插件</p>
+            <p className="text-sm mt-1">点击"安装插件"按钮添加新插件</p>
           </div>
         ) : (
           <div className="divide-y">
@@ -232,6 +404,25 @@ export function PluginManager() {
           </div>
         )}
       </div>
+
+      {/* 安装对话框 */}
+      <PluginInstallDialog
+        isOpen={showInstallDialog}
+        onClose={() => {
+          setShowInstallDialog(false);
+          setPendingInstallUrl(null);
+        }}
+        onSuccess={handleInstallSuccess}
+        initialUrl={pendingInstallUrl || undefined}
+      />
+
+      {/* 卸载确认对话框 */}
+      <PluginUninstallDialog
+        isOpen={pluginToUninstall !== null}
+        plugin={pluginToUninstall}
+        onClose={() => setPluginToUninstall(null)}
+        onSuccess={fetchData}
+      />
     </div>
   );
 }
@@ -375,3 +566,70 @@ function PluginItem({
 }
 
 export default PluginManager;
+
+/** 已安装插件项组件 */
+interface InstalledPluginItemProps {
+  plugin: InstalledPlugin;
+  onUninstall: () => void;
+}
+
+function InstalledPluginItem({
+  plugin,
+  onUninstall,
+}: InstalledPluginItemProps) {
+  // 获取安装来源显示文本
+  const getSourceText = (source: InstallSource): string => {
+    switch (source.type) {
+      case "local":
+        return `本地文件: ${source.path?.split("/").pop() || "未知"}`;
+      case "url":
+        return `URL: ${source.url?.split("/").pop() || "未知"}`;
+      case "github":
+        return `GitHub: ${source.owner}/${source.repo}@${source.tag}`;
+      default:
+        return "未知来源";
+    }
+  };
+
+  return (
+    <div className="p-4">
+      <div className="flex items-center justify-between">
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{plugin.name}</span>
+            <span className="text-xs text-muted-foreground">
+              v{plugin.version}
+            </span>
+            {plugin.enabled ? (
+              <span className="flex items-center gap-1 text-xs text-green-600">
+                <CheckCircle className="h-3 w-3" />
+                已启用
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-xs text-gray-400">
+                <PowerOff className="h-3 w-3" />
+                已禁用
+              </span>
+            )}
+          </div>
+          <div className="text-sm text-muted-foreground mt-1">
+            {plugin.description || "无描述"}
+          </div>
+          <div className="text-xs text-muted-foreground mt-1">
+            {getSourceText(plugin.source)}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onUninstall}
+            className="p-2 rounded bg-red-100 text-red-600 hover:bg-red-200"
+            title="卸载插件"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

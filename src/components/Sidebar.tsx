@@ -9,6 +9,15 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+/**
+ * 页面类型定义
+ *
+ * 支持静态页面和动态插件页面
+ * - 静态页面: 预定义的页面标识符
+ * - 动态插件页面: `plugin:${string}` 格式
+ *
+ * _需求: 2.2, 3.2_
+ */
 type Page =
   | "provider-pool"
   | "config-management"
@@ -17,8 +26,8 @@ type Page =
   | "agent"
   | "tools"
   | "browser-interceptor"
-  | "machine-id"
-  | "settings";
+  | "settings"
+  | `plugin:${string}`;
 
 interface SidebarProps {
   currentPage: Page;

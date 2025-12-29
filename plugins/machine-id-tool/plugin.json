@@ -1,0 +1,32 @@
+{
+  "name": "machine-id-tool",
+  "version": "0.2.0",
+  "description": "Machine ID 管理工具 - 查看、修改和管理系统机器码，支持跨平台操作",
+  "author": "ProxyCast Team",
+  "homepage": "https://github.com/aiclientproxy/MachineIdTool",
+  "license": "MIT",
+  "plugin_type": "binary",
+  "entry": "machine-id-tool-cli",
+  "hooks": [],
+  "min_proxycast_version": "1.0.0",
+  "binary": {
+    "binary_name": "machine-id-tool-cli",
+    "github_owner": "aiclientproxy",
+    "github_repo": "MachineIdTool",
+    "platform_binaries": {
+      "macos-arm64": "machine-id-tool-aarch64-apple-darwin",
+      "macos-x64": "machine-id-tool-x86_64-apple-darwin",
+      "linux-x64": "machine-id-tool-x86_64-unknown-linux-gnu",
+      "linux-arm64": "machine-id-tool-aarch64-unknown-linux-gnu",
+      "windows-x64": "machine-id-tool-x86_64-pc-windows-msvc.exe"
+    },
+    "checksum_file": "checksums.txt"
+  },
+  "ui": {
+    "surfaces": ["tools"],
+    "icon": "Cpu",
+    "title": "机器码管理工具",
+    "default_width": 800,
+    "default_height": 600
+  }
+}

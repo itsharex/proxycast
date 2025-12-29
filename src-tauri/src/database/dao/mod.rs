@@ -1,3 +1,4 @@
+pub mod installed_plugins;
 pub mod mcp;
 pub mod prompts;
 pub mod provider_pool;

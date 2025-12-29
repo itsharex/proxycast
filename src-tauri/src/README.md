@@ -18,7 +18,7 @@ Tauri 后端核心代码，处理系统级功能和 API 服务。
 - `injection/` - 请求注入（系统提示词等）
 - `middleware/` - HTTP 中间件
 - `models/` - 数据模型定义
-- `plugin/` - 插件系统
+- `plugin/` - 插件系统（含声明式 UI 系统）
 - `processor/` - 请求处理管道
 - `providers/` - 各 Provider 的认证和 API 实现
 - `proxy/` - HTTP 代理客户端

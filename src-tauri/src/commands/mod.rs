@@ -11,6 +11,7 @@ pub mod mcp_cmd;
 pub mod network_cmd;
 pub mod oauth_cmd;
 pub mod plugin_cmd;
+pub mod plugin_install_cmd;
 pub mod prompt_cmd;
 pub mod provider_pool_cmd;
 pub mod resilience_cmd;

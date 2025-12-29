@@ -435,6 +435,50 @@ impl PluginManager {
             .map(|r| (r.key().clone(), r.value().clone()))
             .collect()
     }
+
+    // ========================================================================
+    // 插件 UI 相关方法
+    // ========================================================================
+
+    /// 获取插件的 Surface 定义
+    pub async fn get_plugin_surfaces(
+        &self,
+        plugin_id: &str,
+    ) -> Result<Vec<super::SurfaceDefinition>, PluginError> {
+        // 目前返回空列表，后续可以扩展为从插件获取 UI 定义
+        // 插件需要实现 PluginUI trait
+        let _instance = self
+            .plugins
+            .get(plugin_id)
+            .ok_or_else(|| PluginError::NotFound(plugin_id.to_string()))?;
+
+        // TODO: 检查插件是否实现了 PluginUI trait
+        // 目前返回空列表
+        Ok(Vec::new())
+    }
+
+    /// 处理插件 UI 操作
+    pub async fn handle_plugin_action(
+        &mut self,
+        plugin_id: &str,
+        action: super::UserAction,
+    ) -> Result<Vec<super::UIMessage>, PluginError> {
+        let _instance = self
+            .plugins
+            .get(plugin_id)
+            .ok_or_else(|| PluginError::NotFound(plugin_id.to_string()))?;
+
+        // TODO: 将操作转发给插件的 handle_action 方法
+        // 目前返回空列表
+        tracing::debug!(
+            "收到插件 {} 的 UI 操作: {} (surface: {})",
+            plugin_id,
+            action.name,
+            action.surface_id
+        );
+
+        Ok(Vec::new())
+    }
 }
 
 impl Default for PluginManager {

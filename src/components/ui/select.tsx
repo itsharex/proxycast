@@ -7,6 +7,7 @@ interface SelectContextType {
   onValueChange: (value: string) => void;
   open: boolean;
   setOpen: (open: boolean) => void;
+  disabled: boolean;
 }
 
 const SelectContext = createContext<SelectContextType | undefined>(undefined);
@@ -15,6 +16,7 @@ interface SelectProps {
   value?: string;
   defaultValue?: string;
   onValueChange?: (value: string) => void;
+  disabled?: boolean;
   children: React.ReactNode;
 }
 
@@ -22,6 +24,7 @@ const Select: React.FC<SelectProps> = ({
   value,
   defaultValue,
   onValueChange,
+  disabled = false,
   children,
 }) => {
   const [internalValue, setInternalValue] = useState(defaultValue || "");
@@ -37,6 +40,7 @@ const Select: React.FC<SelectProps> = ({
         onValueChange: handleValueChange,
         open,
         setOpen,
+        disabled,
       }}
     >
       <div className="relative">{children}</div>
@@ -56,16 +60,17 @@ const SelectTrigger: React.FC<SelectTriggerProps> = ({
   const context = useContext(SelectContext);
   if (!context) throw new Error("SelectTrigger must be used within Select");
 
-  const { open, setOpen } = context;
+  const { open, setOpen, disabled } = context;
 
   return (
     <button
       type="button"
+      disabled={disabled}
       className={cn(
         "flex h-10 w-full items-center justify-between rounded-md border border-gray-300 bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}
-      onClick={() => setOpen(!open)}
+      onClick={() => !disabled && setOpen(!open)}
     >
       {children}
       <ChevronDown className="h-4 w-4 opacity-50" />

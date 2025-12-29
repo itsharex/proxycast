@@ -16,10 +16,11 @@ interface MachineIdToolProps {
       | "config-management"
       | "api-server"
       | "flow-monitor"
+      | "agent"
       | "tools"
       | "browser-interceptor"
-      | "machine-id"
-      | "settings",
+      | "settings"
+      | `plugin:${string}`,
   ) => void;
 }
 

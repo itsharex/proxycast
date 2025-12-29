@@ -15,6 +15,24 @@ permissions:
   contents: write
 
 jobs:
+  # 打包插件
+  package-plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package machine-id-tool plugin
+        run: |
+          cd plugins
+          zip -j machine-id-tool.zip machine-id-tool/plugin.json machine-id-tool/config.json
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugins
+          path: plugins/*.zip
+
   build:
     strategy:
       fail-fast: false
@@ -102,3 +120,22 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}
+
+  # 上传插件到 Release
+  upload-plugins:
+    needs: [build, package-plugins]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download plugin artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: plugins
+          path: plugins
+
+      - name: Upload plugins to release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          files: plugins/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
