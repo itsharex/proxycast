@@ -267,3 +267,100 @@ struct ApiKeyMigrationRow {
     api_host: String,
     provider_name: String,
 }
+
+/// 清理旧的 API Key 凭证（OpenAIKey 和 ClaudeKey 类型）
+///
+/// 这些凭证是通过旧的 UI 添加的，现在已经被新的 API Key Provider 系统取代。
+/// 此函数会删除 provider_pool_credentials 表中的 openai_key 和 claude_key 类型凭证。
+pub fn cleanup_legacy_api_key_credentials(conn: &Connection) -> Result<usize, String> {
+    // 检查是否已经清理过
+    let cleaned: bool = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'cleaned_legacy_api_key_credentials'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
+    if cleaned {
+        tracing::debug!("[清理] 旧 API Key 凭证已清理过，跳过");
+        return Ok(0);
+    }
+
+    tracing::info!("[清理] 开始清理旧的 API Key 凭证（openai_key, claude_key 类型）");
+
+    // 查询需要清理的凭证数量
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM provider_pool_credentials
+             WHERE credential_data LIKE '%\"type\":\"openai_key\"%'
+                OR credential_data LIKE '%\"type\":\"claude_key\"%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    if count == 0 {
+        tracing::info!("[清理] 没有需要清理的旧 API Key 凭证");
+        // 标记清理完成
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('cleaned_legacy_api_key_credentials', 'true')",
+            [],
+        )
+        .map_err(|e| format!("标记清理完成失败: {}", e))?;
+        return Ok(0);
+    }
+
+    // 记录将要删除的凭证信息
+    let mut stmt = conn
+        .prepare(
+            "SELECT uuid, name, provider_type, credential_data
+             FROM provider_pool_credentials
+             WHERE credential_data LIKE '%\"type\":\"openai_key\"%'
+                OR credential_data LIKE '%\"type\":\"claude_key\"%'",
+        )
+        .map_err(|e| format!("准备查询语句失败: {}", e))?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(|e| format!("查询旧凭证失败: {}", e))?;
+
+    for row_result in rows {
+        if let Ok((uuid, name, provider_type)) = row_result {
+            tracing::info!(
+                "[清理] 将删除旧凭证: {} (name: {}, type: {})",
+                uuid,
+                name.as_deref().unwrap_or("未命名"),
+                provider_type
+            );
+        }
+    }
+
+    // 删除旧的 API Key 凭证
+    let deleted = conn
+        .execute(
+            "DELETE FROM provider_pool_credentials
+             WHERE credential_data LIKE '%\"type\":\"openai_key\"%'
+                OR credential_data LIKE '%\"type\":\"claude_key\"%'",
+            [],
+        )
+        .map_err(|e| format!("删除旧凭证失败: {}", e))?;
+
+    // 标记清理完成
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('cleaned_legacy_api_key_credentials', 'true')",
+        [],
+    )
+    .map_err(|e| format!("标记清理完成失败: {}", e))?;
+
+    tracing::info!("[清理] 旧 API Key 凭证清理完成，共删除 {} 条记录", deleted);
+
+    Ok(deleted)
+}

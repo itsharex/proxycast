@@ -39,5 +39,17 @@ pub fn init_database() -> Result<DbConnection, String> {
         }
     }
 
+    // 清理旧的 API Key 凭证（openai_key, claude_key 类型）
+    match migration::cleanup_legacy_api_key_credentials(&conn) {
+        Ok(count) => {
+            if count > 0 {
+                tracing::info!("[数据库] 已清理 {} 条旧 API Key 凭证", count);
+            }
+        }
+        Err(e) => {
+            tracing::warn!("[数据库] 旧 API Key 凭证清理失败（非致命）: {}", e);
+        }
+    }
+
     Ok(Arc::new(Mutex::new(conn)))
 }

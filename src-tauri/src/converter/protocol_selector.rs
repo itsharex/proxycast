@@ -64,6 +64,11 @@ impl ProtocolSelector {
             PoolProviderType::Codex => Protocol::OpenAI,        // Codex uses OpenAI protocol
             PoolProviderType::ClaudeOAuth => Protocol::Anthropic, // Claude OAuth uses Anthropic protocol
             PoolProviderType::IFlow => Protocol::OpenAI,          // iFlow uses OpenAI protocol
+            // API Key Provider 类型
+            PoolProviderType::Anthropic => Protocol::Anthropic,
+            PoolProviderType::AzureOpenai => Protocol::OpenAI,
+            PoolProviderType::AwsBedrock => Protocol::Anthropic,
+            PoolProviderType::Ollama => Protocol::OpenAI,
         }
     }
 

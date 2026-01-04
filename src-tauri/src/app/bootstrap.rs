@@ -1,0 +1,439 @@
+//! 应用启动引导模块
+//!
+//! 包含配置验证、状态初始化等启动逻辑。
+
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+use crate::agent::NativeAgentState;
+use crate::commands::api_key_provider_cmd::ApiKeyProviderServiceState;
+use crate::commands::browser_interceptor_cmd::BrowserInterceptorState;
+use crate::commands::flow_monitor_cmd::{
+    BatchOperationsState, BookmarkManagerState, EnhancedStatsServiceState, FlowInterceptorState,
+    FlowMonitorState, FlowQueryServiceState, FlowReplayerState, QuickFilterManagerState,
+    SessionManagerState,
+};
+use crate::commands::machine_id_cmd::MachineIdState;
+use crate::commands::orchestrator_cmd::OrchestratorState;
+use crate::commands::plugin_cmd::PluginManagerState;
+use crate::commands::plugin_install_cmd::PluginInstallerState;
+use crate::commands::provider_pool_cmd::{CredentialSyncServiceState, ProviderPoolServiceState};
+use crate::commands::resilience_cmd::ResilienceConfigState;
+use crate::commands::router_cmd::RouterConfigState;
+use crate::commands::skill_cmd::SkillServiceState;
+use crate::config::{self, Config};
+use crate::database::{self, DbConnection};
+use crate::flow_monitor::{
+    BatchOperations, BookmarkManager, EnhancedStatsService, FlowFileStore, FlowInterceptor,
+    FlowMonitor, FlowMonitorConfig, FlowQueryService, FlowReplayer, InterceptConfig,
+    QuickFilterManager, RotationConfig, SessionManager,
+};
+use crate::logger;
+use crate::plugin;
+use crate::server;
+use crate::services::api_key_provider_service::ApiKeyProviderService;
+use crate::services::provider_pool_service::ProviderPoolService;
+use crate::services::skill_service::SkillService;
+use crate::services::token_cache_service::TokenCacheService;
+use crate::telemetry;
+
+use super::types::{AppState, LogState, TokenCacheServiceState};
+use super::utils::{generate_api_key, is_loopback_host};
+
+/// 配置验证错误
+#[derive(Debug)]
+pub enum ConfigError {
+    LoadFailed(String),
+    SaveFailed(String),
+    InvalidHost,
+    DefaultApiKey,
+    TlsNotSupported,
+    RemoteManagementNotSupported,
+}
+
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConfigError::LoadFailed(e) => write!(f, "配置加载失败: {}", e),
+            ConfigError::SaveFailed(e) => write!(f, "配置保存失败: {}", e),
+            ConfigError::InvalidHost => {
+                write!(f, "当前版本仅支持本地监听，请使用 127.0.0.1/localhost/::1")
+            }
+            ConfigError::DefaultApiKey => write!(f, "检测到使用默认 API key，请配置强密钥"),
+            ConfigError::TlsNotSupported => write!(f, "当前版本尚未支持 TLS"),
+            ConfigError::RemoteManagementNotSupported => {
+                write!(f, "远程管理需要 TLS 支持，当前版本未启用")
+            }
+        }
+    }
+}
+
+/// 加载并验证配置
+pub fn load_and_validate_config() -> Result<Config, ConfigError> {
+    let mut config = config::load_config().map_err(|e| ConfigError::LoadFailed(e.to_string()))?;
+
+    // 自动生成 API key（如果使用默认值）
+    if config.server.api_key == config::DEFAULT_API_KEY {
+        let new_key = generate_api_key();
+        config.server.api_key = new_key;
+        config::save_config(&config).map_err(|e| ConfigError::SaveFailed(e.to_string()))?;
+        tracing::info!("检测到默认 API key，已自动生成并保存新密钥");
+    }
+
+    // 验证主机地址
+    if !is_loopback_host(&config.server.host) {
+        return Err(ConfigError::InvalidHost);
+    }
+
+    // 再次检查 API key（防止保存失败后继续）
+    if config.server.api_key == config::DEFAULT_API_KEY {
+        return Err(ConfigError::DefaultApiKey);
+    }
+
+    // 检查 TLS 配置
+    if config.server.tls.enable {
+        return Err(ConfigError::TlsNotSupported);
+    }
+
+    // 检查远程管理配置
+    if config.remote_management.allow_remote {
+        return Err(ConfigError::RemoteManagementNotSupported);
+    }
+
+    Ok(config)
+}
+
+/// 应用状态集合
+pub struct AppStates {
+    pub state: AppState,
+    pub logs: LogState,
+    pub db: DbConnection,
+    pub skill_service: SkillServiceState,
+    pub provider_pool_service: ProviderPoolServiceState,
+    pub api_key_provider_service: ApiKeyProviderServiceState,
+    pub credential_sync_service: CredentialSyncServiceState,
+    pub token_cache_service: TokenCacheServiceState,
+    pub machine_id_service: MachineIdState,
+    pub router_config: RouterConfigState,
+    pub resilience_config: ResilienceConfigState,
+    pub plugin_manager: PluginManagerState,
+    pub plugin_installer: PluginInstallerState,
+    pub telemetry: crate::commands::telemetry_cmd::TelemetryState,
+    pub flow_monitor: FlowMonitorState,
+    pub flow_query_service: FlowQueryServiceState,
+    pub flow_interceptor: FlowInterceptorState,
+    pub flow_replayer: FlowReplayerState,
+    pub session_manager: SessionManagerState,
+    pub quick_filter_manager: QuickFilterManagerState,
+    pub bookmark_manager: BookmarkManagerState,
+    pub enhanced_stats_service: EnhancedStatsServiceState,
+    pub batch_operations: BatchOperationsState,
+    pub browser_interceptor: BrowserInterceptorState,
+    pub native_agent: NativeAgentState,
+    pub oauth_plugin_manager: crate::commands::oauth_plugin_cmd::OAuthPluginManagerState,
+    pub orchestrator: OrchestratorState,
+    // 用于 setup hook 的共享实例
+    pub shared_stats: Arc<parking_lot::RwLock<telemetry::StatsAggregator>>,
+    pub shared_tokens: Arc<parking_lot::RwLock<telemetry::TokenTracker>>,
+    pub shared_logger: Arc<telemetry::RequestLogger>,
+    pub flow_monitor_arc: Arc<FlowMonitor>,
+    pub flow_interceptor_arc: Arc<FlowInterceptor>,
+}
+
+/// 初始化所有应用状态
+pub fn init_states(config: &Config) -> Result<AppStates, String> {
+    // 核心状态
+    let state: AppState = Arc::new(RwLock::new(server::ServerState::new(config.clone())));
+    let logs: LogState = Arc::new(RwLock::new(logger::LogStore::with_config(&config.logging)));
+
+    // 数据库
+    let db = database::init_database().map_err(|e| format!("数据库初始化失败: {}", e))?;
+
+    // 服务状态
+    let skill_service =
+        SkillService::new().map_err(|e| format!("SkillService 初始化失败: {}", e))?;
+    let skill_service_state = SkillServiceState(Arc::new(skill_service));
+
+    let provider_pool_service = ProviderPoolService::new();
+    let provider_pool_service_state = ProviderPoolServiceState(Arc::new(provider_pool_service));
+
+    let api_key_provider_service = ApiKeyProviderService::new();
+    let api_key_provider_service_state =
+        ApiKeyProviderServiceState(Arc::new(api_key_provider_service));
+
+    let credential_sync_service_state = CredentialSyncServiceState(None);
+
+    let token_cache_service = TokenCacheService::new();
+    let token_cache_service_state = TokenCacheServiceState(Arc::new(token_cache_service));
+
+    let machine_id_service = crate::services::machine_id_service::MachineIdService::new()
+        .map_err(|e| format!("MachineIdService 初始化失败: {}", e))?;
+    let machine_id_service_state: MachineIdState = Arc::new(RwLock::new(machine_id_service));
+
+    let router_config_state = RouterConfigState::default();
+    let resilience_config_state = ResilienceConfigState::default();
+
+    // 插件管理器
+    let plugin_manager = plugin::PluginManager::with_defaults();
+    let plugin_manager_state = PluginManagerState(Arc::new(RwLock::new(plugin_manager)));
+
+    // 插件安装器
+    let plugin_installer_state = init_plugin_installer()?;
+
+    // 遥测系统
+    let (telemetry_state, shared_stats, shared_tokens, shared_logger) = init_telemetry(config)?;
+
+    // Flow Monitor 系统
+    let (
+        flow_monitor_state,
+        flow_query_service_state,
+        flow_interceptor_state,
+        flow_replayer_state,
+        session_manager_state,
+        quick_filter_manager_state,
+        bookmark_manager_state,
+        enhanced_stats_service_state,
+        batch_operations_state,
+        flow_monitor_arc,
+        flow_interceptor_arc,
+    ) = init_flow_monitor(&provider_pool_service_state, &db)?;
+
+    // 其他状态
+    let browser_interceptor_state = BrowserInterceptorState::default();
+    let native_agent_state = NativeAgentState::new();
+    let oauth_plugin_manager_state =
+        crate::commands::oauth_plugin_cmd::OAuthPluginManagerState::with_defaults();
+    let orchestrator_state = OrchestratorState::new();
+
+    // 初始化默认技能仓库
+    {
+        let conn = db.lock().expect("Failed to lock database");
+        database::dao::skills::SkillDao::init_default_skill_repos(&conn)
+            .map_err(|e| format!("初始化默认技能仓库失败: {}", e))?;
+    }
+
+    Ok(AppStates {
+        state,
+        logs,
+        db,
+        skill_service: skill_service_state,
+        provider_pool_service: provider_pool_service_state,
+        api_key_provider_service: api_key_provider_service_state,
+        credential_sync_service: credential_sync_service_state,
+        token_cache_service: token_cache_service_state,
+        machine_id_service: machine_id_service_state,
+        router_config: router_config_state,
+        resilience_config: resilience_config_state,
+        plugin_manager: plugin_manager_state,
+        plugin_installer: plugin_installer_state,
+        telemetry: telemetry_state,
+        flow_monitor: flow_monitor_state,
+        flow_query_service: flow_query_service_state,
+        flow_interceptor: flow_interceptor_state,
+        flow_replayer: flow_replayer_state,
+        session_manager: session_manager_state,
+        quick_filter_manager: quick_filter_manager_state,
+        bookmark_manager: bookmark_manager_state,
+        enhanced_stats_service: enhanced_stats_service_state,
+        batch_operations: batch_operations_state,
+        browser_interceptor: browser_interceptor_state,
+        native_agent: native_agent_state,
+        oauth_plugin_manager: oauth_plugin_manager_state,
+        orchestrator: orchestrator_state,
+        shared_stats,
+        shared_tokens,
+        shared_logger,
+        flow_monitor_arc,
+        flow_interceptor_arc,
+    })
+}
+
+/// 初始化插件安装器
+fn init_plugin_installer() -> Result<PluginInstallerState, String> {
+    let db_path = database::get_db_path().map_err(|e| format!("获取数据库路径失败: {}", e))?;
+    let plugins_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("proxycast")
+        .join("plugins");
+    let temp_dir = std::env::temp_dir().join("proxycast_plugin_install");
+
+    let _ = std::fs::create_dir_all(&plugins_dir);
+    let _ = std::fs::create_dir_all(&temp_dir);
+
+    match plugin::installer::PluginInstaller::from_paths(
+        plugins_dir.clone(),
+        temp_dir.clone(),
+        &db_path,
+    ) {
+        Ok(installer) => {
+            tracing::info!("[启动] 插件安装器初始化成功");
+            Ok(PluginInstallerState(Arc::new(RwLock::new(installer))))
+        }
+        Err(e) => {
+            tracing::error!("[启动] 插件安装器初始化失败: {}", e);
+            // 使用临时目录作为后备
+            let fallback_plugins_dir = std::env::temp_dir().join("proxycast_plugins_fallback");
+            let fallback_temp_dir = std::env::temp_dir().join("proxycast_plugin_install_fallback");
+            let _ = std::fs::create_dir_all(&fallback_plugins_dir);
+            let _ = std::fs::create_dir_all(&fallback_temp_dir);
+            let installer = plugin::installer::PluginInstaller::from_paths(
+                fallback_plugins_dir,
+                fallback_temp_dir,
+                &db_path,
+            )
+            .map_err(|e| format!("后备插件安装器初始化失败: {}", e))?;
+            Ok(PluginInstallerState(Arc::new(RwLock::new(installer))))
+        }
+    }
+}
+
+/// 初始化遥测系统
+fn init_telemetry(
+    config: &Config,
+) -> Result<
+    (
+        crate::commands::telemetry_cmd::TelemetryState,
+        Arc<parking_lot::RwLock<telemetry::StatsAggregator>>,
+        Arc<parking_lot::RwLock<telemetry::TokenTracker>>,
+        Arc<telemetry::RequestLogger>,
+    ),
+    String,
+> {
+    let shared_stats = Arc::new(parking_lot::RwLock::new(
+        telemetry::StatsAggregator::with_defaults(),
+    ));
+    let shared_tokens = Arc::new(parking_lot::RwLock::new(
+        telemetry::TokenTracker::with_defaults(),
+    ));
+    let log_rotation = telemetry::LogRotationConfig {
+        max_memory_logs: 10000,
+        retention_days: config.logging.retention_days,
+        max_file_size: 10 * 1024 * 1024,
+        enable_file_logging: config.logging.enabled,
+    };
+    let shared_logger = Arc::new(
+        telemetry::RequestLogger::new(log_rotation)
+            .map_err(|e| format!("RequestLogger 初始化失败: {}", e))?,
+    );
+
+    let telemetry_state = crate::commands::telemetry_cmd::TelemetryState::with_shared(
+        shared_stats.clone(),
+        shared_tokens.clone(),
+        Some(shared_logger.clone()),
+    )
+    .map_err(|e| format!("TelemetryState 初始化失败: {}", e))?;
+
+    Ok((telemetry_state, shared_stats, shared_tokens, shared_logger))
+}
+
+/// 初始化 Flow Monitor 系统
+#[allow(clippy::type_complexity)]
+fn init_flow_monitor(
+    provider_pool_service_state: &ProviderPoolServiceState,
+    db: &DbConnection,
+) -> Result<
+    (
+        FlowMonitorState,
+        FlowQueryServiceState,
+        FlowInterceptorState,
+        FlowReplayerState,
+        SessionManagerState,
+        QuickFilterManagerState,
+        BookmarkManagerState,
+        EnhancedStatsServiceState,
+        BatchOperationsState,
+        Arc<FlowMonitor>,
+        Arc<FlowInterceptor>,
+    ),
+    String,
+> {
+    let flow_monitor_config = FlowMonitorConfig::default();
+
+    // 初始化文件存储
+    let data_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("proxycast")
+        .join("flows");
+    let _ = std::fs::create_dir_all(&data_dir);
+
+    let rotation_config = RotationConfig::default();
+    let flow_file_store = match FlowFileStore::new(data_dir, rotation_config.clone()) {
+        Ok(store) => Some(Arc::new(store)),
+        Err(e) => {
+            tracing::warn!("无法初始化 Flow 文件存储: {}", e);
+            None
+        }
+    };
+
+    let flow_monitor = Arc::new(FlowMonitor::new(
+        flow_monitor_config,
+        flow_file_store.clone(),
+    ));
+    let flow_monitor_state = FlowMonitorState(flow_monitor.clone());
+
+    let flow_interceptor = Arc::new(FlowInterceptor::new(InterceptConfig::default()));
+    let flow_interceptor_state = FlowInterceptorState(flow_interceptor.clone());
+
+    let flow_replayer = Arc::new(FlowReplayer::new(
+        flow_monitor.clone(),
+        provider_pool_service_state.0.clone(),
+        db.clone(),
+    ));
+    let flow_replayer_state = FlowReplayerState(flow_replayer);
+
+    let db_path = database::get_db_path().map_err(|e| format!("获取数据库路径失败: {}", e))?;
+
+    let session_manager = Arc::new(
+        SessionManager::new(db_path.clone())
+            .map_err(|e| format!("SessionManager 初始化失败: {}", e))?,
+    );
+    let session_manager_state = SessionManagerState(session_manager.clone());
+
+    let quick_filter_manager = Arc::new(
+        QuickFilterManager::new(db_path.clone())
+            .map_err(|e| format!("QuickFilterManager 初始化失败: {}", e))?,
+    );
+    let quick_filter_manager_state = QuickFilterManagerState(quick_filter_manager);
+
+    let bookmark_manager = Arc::new(
+        BookmarkManager::new(db_path).map_err(|e| format!("BookmarkManager 初始化失败: {}", e))?,
+    );
+    let bookmark_manager_state = BookmarkManagerState(bookmark_manager);
+
+    let enhanced_stats_service = Arc::new(EnhancedStatsService::new(flow_monitor.memory_store()));
+    let enhanced_stats_service_state = EnhancedStatsServiceState(enhanced_stats_service);
+
+    let batch_operations = Arc::new(BatchOperations::new(
+        flow_monitor.clone(),
+        Some(session_manager_state.0.clone()),
+    ));
+    let batch_operations_state = BatchOperationsState(batch_operations);
+
+    // FlowQueryService
+    let flow_query_service_state = if let Some(file_store) = flow_file_store {
+        let query_service = FlowQueryService::new(flow_monitor.memory_store(), file_store);
+        FlowQueryServiceState(Arc::new(query_service))
+    } else {
+        let temp_dir = std::env::temp_dir().join("proxycast_flows");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let temp_store = FlowFileStore::new(temp_dir, rotation_config)
+            .map_err(|e| format!("临时 FlowFileStore 初始化失败: {}", e))?;
+        let query_service =
+            FlowQueryService::new(flow_monitor.memory_store(), Arc::new(temp_store));
+        FlowQueryServiceState(Arc::new(query_service))
+    };
+
+    Ok((
+        flow_monitor_state,
+        flow_query_service_state,
+        flow_interceptor_state,
+        flow_replayer_state,
+        session_manager_state,
+        quick_filter_manager_state,
+        bookmark_manager_state,
+        enhanced_stats_service_state,
+        batch_operations_state,
+        flow_monitor,
+        flow_interceptor,
+    ))
+}

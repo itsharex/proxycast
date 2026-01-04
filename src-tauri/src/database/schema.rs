@@ -246,6 +246,210 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
         [],
     )?;
 
+    // OAuth Provider 插件表
+    // 存储已安装的 OAuth Provider 插件信息
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS credential_provider_plugins (
+            id TEXT PRIMARY KEY,
+            display_name TEXT NOT NULL,
+            version TEXT NOT NULL,
+            description TEXT,
+            author TEXT,
+            homepage TEXT,
+            license TEXT,
+            target_protocol TEXT NOT NULL,
+            install_path TEXT NOT NULL,
+            binary_path TEXT,
+            ui_entry TEXT,
+            enabled INTEGER DEFAULT 1,
+            config TEXT DEFAULT '{}',
+            installed_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            last_used_at TEXT,
+            source_type TEXT NOT NULL DEFAULT 'local',
+            source_data TEXT
+        )",
+        [],
+    )?;
+
+    // 创建 credential_provider_plugins 索引
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_credential_provider_plugins_protocol
+         ON credential_provider_plugins(target_protocol)",
+        [],
+    )?;
+
+    // 插件凭证表
+    // 存储每个插件管理的凭证
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS plugin_credentials (
+            id TEXT PRIMARY KEY,
+            plugin_id TEXT NOT NULL,
+            auth_type TEXT NOT NULL,
+            display_name TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            config_encrypted TEXT NOT NULL,
+            usage_count INTEGER DEFAULT 0,
+            error_count INTEGER DEFAULT 0,
+            last_used_at TEXT,
+            last_error_at TEXT,
+            last_error_message TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (plugin_id) REFERENCES credential_provider_plugins(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // 创建 plugin_credentials 索引
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_plugin_credentials_plugin
+         ON plugin_credentials(plugin_id)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_plugin_credentials_status
+         ON plugin_credentials(status)",
+        [],
+    )?;
+
+    // 插件存储表
+    // 提供给插件的键值存储
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS plugin_storage (
+            plugin_id TEXT NOT NULL,
+            key TEXT NOT NULL,
+            value TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (plugin_id, key),
+            FOREIGN KEY (plugin_id) REFERENCES credential_provider_plugins(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // 插件事件日志表
+    // 记录插件的重要事件
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS plugin_event_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plugin_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            event_data TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (plugin_id) REFERENCES credential_provider_plugins(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // 创建 plugin_event_logs 索引
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_plugin_event_logs_plugin
+         ON plugin_event_logs(plugin_id)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_plugin_event_logs_type
+         ON plugin_event_logs(event_type)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_plugin_event_logs_created
+         ON plugin_event_logs(created_at)",
+        [],
+    )?;
+
+    // ============================================================================
+    // Orchestrator 相关表
+    // ============================================================================
+
+    // 模型元数据表
+    // 存储模型的静态信息，用于智能选择
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS model_metadata (
+            model_id TEXT PRIMARY KEY,
+            provider_type TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            family TEXT,
+            tier TEXT NOT NULL DEFAULT 'pro',
+            context_length INTEGER,
+            max_output_tokens INTEGER,
+            cost_input_per_million REAL,
+            cost_output_per_million REAL,
+            supports_vision INTEGER DEFAULT 0,
+            supports_tools INTEGER DEFAULT 0,
+            supports_streaming INTEGER DEFAULT 1,
+            is_deprecated INTEGER DEFAULT 0,
+            release_date TEXT,
+            description TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )",
+        [],
+    )?;
+
+    // 创建 model_metadata 索引
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_model_metadata_provider
+         ON model_metadata(provider_type)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_model_metadata_tier
+         ON model_metadata(tier)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_model_metadata_family
+         ON model_metadata(family)",
+        [],
+    )?;
+
+    // 用户等级偏好表
+    // 存储用户对每个服务等级的策略偏好
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS user_tier_preferences (
+            tier_id TEXT PRIMARY KEY,
+            strategy_id TEXT NOT NULL DEFAULT 'task_based',
+            preferred_provider TEXT,
+            fallback_enabled INTEGER DEFAULT 1,
+            max_retries INTEGER DEFAULT 3,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )",
+        [],
+    )?;
+
+    // 模型使用统计表
+    // 记录每个模型的使用情况，用于智能选择
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS model_usage_stats (
+            model_id TEXT NOT NULL,
+            credential_id TEXT NOT NULL,
+            date TEXT NOT NULL,
+            request_count INTEGER DEFAULT 0,
+            success_count INTEGER DEFAULT 0,
+            error_count INTEGER DEFAULT 0,
+            total_tokens INTEGER DEFAULT 0,
+            total_latency_ms INTEGER DEFAULT 0,
+            avg_latency_ms REAL,
+            PRIMARY KEY (model_id, credential_id, date)
+        )",
+        [],
+    )?;
+
+    // 创建 model_usage_stats 索引
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_model_usage_stats_date
+         ON model_usage_stats(date)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_model_usage_stats_model
+         ON model_usage_stats(model_id)",
+        [],
+    )?;
+
     Ok(())
 }
 

@@ -3674,7 +3674,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "arboard",
@@ -3691,6 +3691,7 @@ dependencies = [
  "flate2",
  "fs2",
  "futures",
+ "glob",
  "indexmap 2.12.1",
  "md5",
  "notify",

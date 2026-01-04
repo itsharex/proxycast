@@ -386,6 +386,93 @@ impl ApiKeyProviderDao {
         Ok(keys)
     }
 
+    /// 获取指定类型的所有启用的 API Keys（包括自定义 Provider）
+    /// 返回 (ApiKeyEntry, ApiKeyProvider) 元组列表
+    pub fn get_enabled_api_keys_by_type(
+        conn: &Connection,
+        provider_type: ApiProviderType,
+    ) -> Result<Vec<(ApiKeyEntry, ApiKeyProvider)>, rusqlite::Error> {
+        let type_str = provider_type.to_string();
+        let mut stmt = conn.prepare(
+            "SELECT k.id, k.provider_id, k.api_key_encrypted, k.alias, k.enabled,
+                    k.usage_count, k.error_count, k.last_used_at, k.created_at,
+                    p.id, p.name, p.type, p.api_host, p.is_system, p.group_name, p.enabled,
+                    p.sort_order, p.api_version, p.project, p.location, p.region,
+                    p.created_at, p.updated_at
+             FROM api_keys k
+             JOIN api_key_providers p ON k.provider_id = p.id
+             WHERE p.type = ?1 AND k.enabled = 1 AND p.enabled = 1
+             ORDER BY p.sort_order ASC, k.created_at ASC",
+        )?;
+
+        let rows = stmt.query_map([type_str], |row| {
+            // 解析 API Key
+            let last_used_at_str: Option<String> = row.get(7)?;
+            let created_at_str: String = row.get(8)?;
+            let last_used_at = last_used_at_str.and_then(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            });
+            let key_created_at = DateTime::parse_from_rfc3339(&created_at_str)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now());
+
+            let key = ApiKeyEntry {
+                id: row.get(0)?,
+                provider_id: row.get(1)?,
+                api_key_encrypted: row.get(2)?,
+                alias: row.get(3)?,
+                enabled: row.get(4)?,
+                usage_count: row.get(5)?,
+                error_count: row.get(6)?,
+                last_used_at,
+                created_at: key_created_at,
+            };
+
+            // 解析 Provider
+            let provider_created_at_str: String = row.get(21)?;
+            let provider_updated_at_str: String = row.get(22)?;
+            let provider_created_at = DateTime::parse_from_rfc3339(&provider_created_at_str)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now());
+            let provider_updated_at = DateTime::parse_from_rfc3339(&provider_updated_at_str)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now());
+
+            let provider = ApiKeyProvider {
+                id: row.get(9)?,
+                name: row.get(10)?,
+                provider_type: row
+                    .get::<_, String>(11)?
+                    .parse()
+                    .unwrap_or(ApiProviderType::Openai),
+                api_host: row.get(12)?,
+                is_system: row.get(13)?,
+                group: row
+                    .get::<_, String>(14)?
+                    .parse()
+                    .unwrap_or(ProviderGroup::Custom),
+                enabled: row.get(15)?,
+                sort_order: row.get(16)?,
+                api_version: row.get(17)?,
+                project: row.get(18)?,
+                location: row.get(19)?,
+                region: row.get(20)?,
+                created_at: provider_created_at,
+                updated_at: provider_updated_at,
+            };
+
+            Ok((key, provider))
+        })?;
+
+        let mut result = Vec::new();
+        for item in rows.flatten() {
+            result.push(item);
+        }
+        Ok(result)
+    }
+
     /// 根据 ID 获取 API Key
     pub fn get_api_key_by_id(
         conn: &Connection,

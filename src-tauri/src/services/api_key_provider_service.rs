@@ -472,6 +472,41 @@ impl ApiKeyProviderService {
             .map_err(|e| e.to_string())
     }
 
+    /// 按 Provider 类型获取下一个可用的 API Key（轮询负载均衡）
+    /// 这个方法会查找所有该类型的 Provider（包括自定义 Provider）
+    pub fn get_next_api_key_by_type(
+        &self,
+        db: &DbConnection,
+        provider_type: ApiProviderType,
+    ) -> Result<Option<(String, String, ApiKeyProvider)>, String> {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+
+        // 获取所有启用的 API Keys（按类型）
+        let keys = ApiKeyProviderDao::get_enabled_api_keys_by_type(&conn, provider_type)
+            .map_err(|e| e.to_string())?;
+
+        if keys.is_empty() {
+            return Ok(None);
+        }
+
+        // 使用类型名称作为轮询索引的 key
+        let type_key = format!("type:{}", provider_type);
+        let index = {
+            let mut indices = self.round_robin_index.write().map_err(|e| e.to_string())?;
+            indices
+                .entry(type_key)
+                .or_insert_with(|| AtomicUsize::new(0))
+                .fetch_add(1, Ordering::SeqCst)
+        };
+
+        // 选择 API Key
+        let (selected_key, provider) = &keys[index % keys.len()];
+
+        // 解密并返回
+        let decrypted = self.encryption.decrypt(&selected_key.api_key_encrypted)?;
+        Ok(Some((selected_key.id.clone(), decrypted, provider.clone())))
+    }
+
     /// 记录 API Key 错误
     pub fn record_error(&self, db: &DbConnection, key_id: &str) -> Result<(), String> {
         let conn = db.lock().map_err(|e| e.to_string())?;

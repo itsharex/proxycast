@@ -27,6 +27,10 @@ import {
   NetworkInfo,
 } from "@/hooks/useTauri";
 import { providerPoolApi, ProviderPoolOverview } from "@/lib/api/providerPool";
+import {
+  apiKeyProviderApi,
+  ProviderWithKeysDisplay,
+} from "@/lib/api/apiKeyProvider";
 
 interface TestState {
   endpoint: string;
@@ -37,6 +41,17 @@ interface TestState {
 }
 
 type TabId = "server" | "routes" | "logs";
+
+// 可用的 Provider 信息（合并 OAuth 凭证池和 API Key Provider）
+interface AvailableProvider {
+  id: string;
+  label: string;
+  iconType: string;
+  source: "oauth" | "api_key" | "both";
+  oauthCount: number;
+  apiKeyCount: number;
+  totalCount: number;
+}
 
 export function ApiServerPage() {
   const [status, setStatus] = useState<ServerStatus | null>(null);
@@ -172,15 +187,53 @@ export function ApiServerPage() {
   };
 
   const providerLabels: Record<string, string> = {
-    kiro: "Kiro (AWS)",
-    gemini: "Gemini (Google)",
-    qwen: "Qwen (阿里)",
-    antigravity: "Antigravity (Gemini 3 Pro)",
+    // OAuth 凭证池类型
+    kiro: "Kiro",
+    gemini: "Gemini",
+    qwen: "Qwen",
+    antigravity: "Antigravity",
+    claude: "Claude",
+    codex: "Codex",
+    iflow: "iFlow",
+    claude_oauth: "Claude OAuth",
+    vertex: "Vertex AI",
+    gemini_api_key: "Gemini API Key",
+    // API Key Provider 类型
     openai: "OpenAI",
-    claude: "Claude (Anthropic)",
+    anthropic: "Anthropic",
+    azure_openai: "Azure OpenAI",
+    aws_bedrock: "AWS Bedrock",
+    ollama: "Ollama",
+  };
+
+  // Provider ID 到图标类型的映射
+  const providerIconMap: Record<string, string> = {
+    // OAuth 凭证池类型
+    kiro: "kiro",
+    gemini: "gemini",
+    qwen: "qwen",
+    antigravity: "gemini",
+    claude: "claude",
+    codex: "openai",
+    iflow: "iflow",
+    claude_oauth: "claude",
+    vertex: "gemini",
+    gemini_api_key: "gemini",
+    // API Key Provider 类型
+    openai: "openai",
+    anthropic: "claude",
+    azure_openai: "openai",
+    aws_bedrock: "claude",
+    ollama: "ollama",
   };
 
   const [poolOverview, setPoolOverview] = useState<ProviderPoolOverview[]>([]);
+  const [apiKeyProviders, setApiKeyProviders] = useState<
+    ProviderWithKeysDisplay[]
+  >([]);
+  const [availableProviders, setAvailableProviders] = useState<
+    AvailableProvider[]
+  >([]);
   const [providerSwitchMsg, setProviderSwitchMsg] = useState<string | null>(
     null,
   );
@@ -195,10 +248,122 @@ export function ApiServerPage() {
     }
   };
 
+  // 加载 API Key Provider 数据
+  const loadApiKeyProviders = async () => {
+    try {
+      const providers = await apiKeyProviderApi.getProviders();
+      setApiKeyProviders(providers);
+    } catch (e) {
+      console.error("Failed to load API Key providers:", e);
+    }
+  };
+
+  // 合并 OAuth 凭证池和 API Key Provider，生成可用 Provider 列表
+  const buildAvailableProviders = () => {
+    const providerMap = new Map<string, AvailableProvider>();
+
+    // 添加 OAuth 凭证池中有凭证的 Provider
+    poolOverview.forEach((overview) => {
+      const enabledCredentials = overview.credentials.filter(
+        (c) => !c.is_disabled,
+      );
+      if (enabledCredentials.length > 0) {
+        const id = overview.provider_type;
+        const existing = providerMap.get(id);
+        if (existing) {
+          existing.oauthCount = enabledCredentials.length;
+          existing.totalCount = existing.oauthCount + existing.apiKeyCount;
+          existing.source =
+            existing.apiKeyCount > 0 && existing.oauthCount > 0
+              ? "both"
+              : "oauth";
+        } else {
+          providerMap.set(id, {
+            id,
+            label: providerLabels[id] || id,
+            iconType: providerIconMap[id] || "openai",
+            source: "oauth",
+            oauthCount: enabledCredentials.length,
+            apiKeyCount: 0,
+            totalCount: enabledCredentials.length,
+          });
+        }
+      }
+    });
+
+    // 添加 API Key Provider 中有 API Key 的 Provider
+    apiKeyProviders.forEach((provider) => {
+      const enabledKeys = provider.api_keys.filter((k) => k.enabled);
+      if (enabledKeys.length > 0 && provider.enabled) {
+        // 将 API Key Provider 类型映射到统一的 ID
+        const id = mapApiKeyProviderToId(provider.type);
+        const existing = providerMap.get(id);
+        if (existing) {
+          existing.apiKeyCount = enabledKeys.length;
+          existing.totalCount = existing.oauthCount + existing.apiKeyCount;
+          existing.source =
+            existing.oauthCount > 0 && existing.apiKeyCount > 0
+              ? "both"
+              : "api_key";
+        } else {
+          providerMap.set(id, {
+            id,
+            label: providerLabels[id] || provider.name,
+            iconType: providerIconMap[id] || "openai",
+            source: "api_key",
+            oauthCount: 0,
+            apiKeyCount: enabledKeys.length,
+            totalCount: enabledKeys.length,
+          });
+        }
+      }
+    });
+
+    // 转换为数组并按凭证数量排序
+    const providers = Array.from(providerMap.values()).sort(
+      (a, b) => b.totalCount - a.totalCount,
+    );
+    setAvailableProviders(providers);
+  };
+
+  // 将 API Key Provider 类型映射到 Provider ID
+  // API Key Provider 类型直接使用自己的 ID，不合并到 OAuth 凭证池类型
+  const mapApiKeyProviderToId = (providerType: string): string => {
+    switch (providerType.toLowerCase()) {
+      case "openai":
+      case "openai-response":
+        return "openai";
+      case "anthropic":
+        return "anthropic";
+      case "gemini":
+        return "gemini_api_key";
+      case "azure-openai":
+        return "azure_openai";
+      case "vertexai":
+        return "vertex";
+      case "aws-bedrock":
+        return "aws_bedrock";
+      case "ollama":
+        return "ollama";
+      default:
+        return providerType.toLowerCase();
+    }
+  };
+
+  // 当 poolOverview 或 apiKeyProviders 变化时，重新构建可用 Provider 列表
+  useEffect(() => {
+    buildAvailableProviders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poolOverview, apiKeyProviders]);
+
   useEffect(() => {
     loadPoolOverview();
+    loadApiKeyProviders();
     // 定时刷新凭证池数据，以便使用次数能够更新
-    const poolInterval = setInterval(loadPoolOverview, 5000);
+    const poolInterval = setInterval(() => {
+      loadPoolOverview();
+      loadApiKeyProviders();
+    }, 5000);
     return () => clearInterval(poolInterval);
   }, []);
 
@@ -219,18 +384,25 @@ export function ApiServerPage() {
       const freshOverview = await providerPoolApi.getOverview();
       setPoolOverview(freshOverview);
 
-      // 获取该类型下的凭证数量
-      const typeOverview = freshOverview.find(
-        (o) => o.provider_type === providerId,
-      );
-      const credCount = typeOverview?.stats.total || 0;
-      const healthyCount = typeOverview?.stats.healthy || 0;
+      // 获取该 Provider 的凭证信息
+      const provider = availableProviders.find((p) => p.id === providerId);
       const label = providerLabels[providerId] || providerId;
 
-      setProviderSwitchMsg(
-        `已切换到 ${label}` +
-          (credCount > 0 ? `（${healthyCount}/${credCount} 可用）` : ""),
-      );
+      if (provider) {
+        const parts = [];
+        if (provider.oauthCount > 0) {
+          parts.push(`${provider.oauthCount} OAuth`);
+        }
+        if (provider.apiKeyCount > 0) {
+          parts.push(`${provider.apiKeyCount} API Key`);
+        }
+        setProviderSwitchMsg(
+          `已切换到 ${label}` +
+            (parts.length > 0 ? `（${parts.join(", ")}）` : ""),
+        );
+      } else {
+        setProviderSwitchMsg(`已切换到 ${label}`);
+      }
     } catch (e: unknown) {
       const errMsg = e instanceof Error ? e.message : String(e);
       setProviderSwitchMsg(`切换失败: ${errMsg}`);
@@ -565,7 +737,7 @@ export function ApiServerPage() {
             </div>
           </div>
 
-          {/* Default Provider - 紧凑版 */}
+          {/* Default Provider - 动态显示有凭证的 Provider */}
           <div className="rounded-lg border bg-card p-4">
             <div className="flex items-center justify-between mb-3">
               <span className="font-medium text-sm">默认 Provider</span>
@@ -576,26 +748,14 @@ export function ApiServerPage() {
                 </span>
               )}
             </div>
-            <div className="flex flex-wrap gap-2">
-              {(
-                [
-                  { id: "kiro", label: "Kiro", iconType: "kiro" },
-                  { id: "gemini", label: "Gemini", iconType: "gemini" },
-                  { id: "qwen", label: "Qwen", iconType: "qwen" },
-                  {
-                    id: "antigravity",
-                    label: "Antigravity",
-                    iconType: "gemini",
-                  },
-                  { id: "openai", label: "OpenAI", iconType: "openai" },
-                  { id: "claude", label: "Claude", iconType: "claude" },
-                ] as const
-              ).map((p) => {
-                const overview = poolOverview.find(
-                  (o) => o.provider_type === p.id,
-                );
-                const count = overview?.stats.total || 0;
-                return (
+
+            {availableProviders.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+                暂无可用凭证，请先在凭证池或 API Key 设置中添加凭证
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {availableProviders.map((p) => (
                   <button
                     key={p.id}
                     onClick={() => handleSetDefaultProvider(p.id)}
@@ -606,58 +766,123 @@ export function ApiServerPage() {
                         : "border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground"
                     } disabled:opacity-50`}
                   >
-                    <ProviderIcon providerType={p.iconType} size={14} />
+                    <ProviderIcon
+                      providerType={
+                        p.iconType as Parameters<
+                          typeof ProviderIcon
+                        >[0]["providerType"]
+                      }
+                      size={14}
+                    />
                     {p.label}
-                    {count > 0 && (
-                      <span className="text-xs opacity-70">({count})</span>
-                    )}
+                    <span className="text-xs opacity-70">
+                      ({p.totalCount}
+                      {p.source === "both" && (
+                        <span className="ml-0.5">混合</span>
+                      )}
+                      {p.source === "api_key" && (
+                        <span className="ml-0.5">Key</span>
+                      )}
+                      )
+                    </span>
                   </button>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            )}
 
             {/* 当前选中类型的凭证列表 */}
             {(() => {
+              const _currentProvider = availableProviders.find(
+                (p) => p.id === defaultProvider,
+              );
               const currentOverview = poolOverview.find(
                 (o) => o.provider_type === defaultProvider,
               );
-              const allCredentials = currentOverview?.credentials || [];
-              // 过滤掉禁用的凭证，只显示启用的凭证
-              const credentials = allCredentials.filter(
-                (cred) => !cred.is_disabled,
+              const oauthCredentials = (
+                currentOverview?.credentials || []
+              ).filter((cred) => !cred.is_disabled);
+
+              // 获取 API Key 凭证 - 查找所有映射到当前 defaultProvider 的 API Key Provider
+              const matchingApiKeyProviders = apiKeyProviders.filter((p) => {
+                const mappedId = mapApiKeyProviderToId(p.type);
+                return mappedId === defaultProvider && p.enabled;
+              });
+              const apiKeys = matchingApiKeyProviders.flatMap((p) =>
+                p.api_keys.filter((k) => k.enabled),
               );
-              if (credentials.length === 0) {
+
+              if (oauthCredentials.length === 0 && apiKeys.length === 0) {
+                // 只有当没有任何凭证时才显示提示
                 return (
                   <div className="mt-4 rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
                     当前类型无可用凭证，请先在凭证池中添加
                   </div>
                 );
               }
+
               return (
-                <div className="mt-4 space-y-2">
-                  <p className="text-xs text-muted-foreground">
-                    当前可用凭证 ({credentials.length}):
-                  </p>
-                  <div className="space-y-1">
-                    {credentials.map((cred) => (
-                      <div
-                        key={cred.uuid}
-                        className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`h-2 w-2 rounded-full ${
-                              cred.is_healthy ? "bg-green-500" : "bg-yellow-500"
-                            }`}
-                          />
-                          <span>{cred.name || cred.uuid.slice(0, 8)}</span>
-                        </div>
-                        <span className="text-xs text-muted-foreground">
-                          使用 {cred.usage_count} 次
-                        </span>
+                <div className="mt-4 space-y-3">
+                  {/* OAuth 凭证 */}
+                  {oauthCredentials.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        OAuth 凭证 ({oauthCredentials.length}):
+                      </p>
+                      <div className="space-y-1">
+                        {oauthCredentials.map((cred) => (
+                          <div
+                            key={cred.uuid}
+                            className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`h-2 w-2 rounded-full ${
+                                  cred.is_healthy
+                                    ? "bg-green-500"
+                                    : "bg-yellow-500"
+                                }`}
+                              />
+                              <span>{cred.name || cred.uuid.slice(0, 8)}</span>
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                OAuth
+                              </span>
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              使用 {cred.usage_count} 次
+                            </span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  )}
+
+                  {/* API Key 凭证 */}
+                  {apiKeys.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        API Key ({apiKeys.length}):
+                      </p>
+                      <div className="space-y-1">
+                        {apiKeys.map((key) => (
+                          <div
+                            key={key.id}
+                            className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="h-2 w-2 rounded-full bg-green-500" />
+                              <span>{key.alias || key.api_key_masked}</span>
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                API Key
+                              </span>
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              使用 {key.usage_count} 次
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })()}

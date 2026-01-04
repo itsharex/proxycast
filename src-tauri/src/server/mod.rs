@@ -394,6 +394,8 @@ pub struct AppState {
     pub endpoint_providers: Arc<RwLock<EndpointProvidersConfig>>,
     /// Kiro 事件服务
     pub kiro_event_service: Arc<KiroEventService>,
+    /// API Key Provider 服务
+    pub api_key_service: Arc<crate::services::api_key_provider_service::ApiKeyProviderService>,
 }
 
 /// 启动配置文件监控
@@ -765,6 +767,10 @@ async fn run_server(
     // 创建 Kiro 事件服务
     let kiro_event_service = Arc::new(KiroEventService::new());
 
+    // 创建 API Key Provider 服务
+    let api_key_service =
+        Arc::new(crate::services::api_key_provider_service::ApiKeyProviderService::new());
+
     let state = AppState {
         api_key: api_key.to_string(),
         base_url,
@@ -789,6 +795,7 @@ async fn run_server(
         flow_interceptor,
         endpoint_providers,
         kiro_event_service,
+        api_key_service,
     };
 
     // 启动配置文件监控

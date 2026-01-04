@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import styled, { keyframes, css } from "styled-components";
 import {
-  Sparkles,
   ArrowRight,
   ImageIcon,
   Video,
@@ -36,10 +35,6 @@ import iconZhihu from "@/assets/platforms/zhihu.png";
 import iconToutiao from "@/assets/platforms/toutiao.png";
 import iconJuejin from "@/assets/platforms/juejin.png";
 import iconCsdn from "@/assets/platforms/csdn.png";
-
-import modelGemini from "@/assets/models/gemini.png";
-import modelClaude from "@/assets/models/claude.png";
-import modelDeepseek from "@/assets/models/deepseek.png";
 
 // --- Animations ---
 const fadeIn = keyframes`
@@ -317,7 +312,6 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
 
   // Local state for parameters (Mocking visual state)
   const [platform, setPlatform] = useState("xiaohongshu");
-  const [model, setModel] = useState("gemini");
   const [ratio, setRatio] = useState("3:4");
   const [style, setStyle] = useState("minimal");
   const [depth, setDepth] = useState("deep");
@@ -325,13 +319,12 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   const handleSend = () => {
     if (!input.trim()) return;
     let prefix = "";
-    if (activeTab === "social")
-      prefix = `[社媒创作: ${platform}, Model: ${model}] `;
+    if (activeTab === "social") prefix = `[社媒创作: ${platform}] `;
     if (activeTab === "image") prefix = `[图文生成: ${ratio}, ${style}] `;
     if (activeTab === "video") prefix = `[视频脚本] `;
     if (activeTab === "office") prefix = `[办公文档] `;
     if (activeTab === "knowledge")
-      prefix = `[知识探索: ${depth === "deep" ? "深度" : "快速"}, Model: ${model}] `;
+      prefix = `[知识探索: ${depth === "deep" ? "深度" : "快速"}] `;
     if (activeTab === "planning") prefix = `[计划规划] `;
 
     onSend(prefix + input);
@@ -383,22 +376,6 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
     if (val === "toutiao") return "头条";
     if (val === "juejin") return "掘金";
     if (val === "csdn") return "CSDN";
-    return val;
-  };
-
-  // Helper to get model icon
-  const getModelIcon = (val: string) => {
-    if (val === "gemini") return modelGemini;
-    if (val === "claude") return modelClaude;
-    if (val === "deepseek") return modelDeepseek;
-    return undefined;
-  };
-
-  // Helper to get model label
-  const getModelLabel = (val: string) => {
-    if (val === "gemini") return "Gemini 3.0 Pro";
-    if (val === "claude") return "Claude 3.5 Sonnet";
-    if (val === "deepseek") return "DeepSeek V3";
     return val;
   };
 
@@ -633,40 +610,6 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
                   </Popover>
                 </>
               )}
-
-              {/* Model Selector using Popover for better control or just a Select */}
-              <Select value={model} onValueChange={setModel} closeOnMouseLeave>
-                <SelectTrigger className="h-8 text-xs bg-background border shadow-sm min-w-[200px] px-2">
-                  <div className="flex items-center gap-1.5 text-muted-foreground">
-                    {getModelIcon(model) ? (
-                      <img src={getModelIcon(model)} className="w-3.5 h-3.5" />
-                    ) : (
-                      <Sparkles className="w-3.5 h-3.5" />
-                    )}
-                    <span>{getModelLabel(model)}</span>
-                  </div>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="gemini">
-                    <div className="flex items-center gap-2">
-                      <img src={modelGemini} className="w-4 h-4" /> Gemini 3.0
-                      Pro
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="claude">
-                    <div className="flex items-center gap-2">
-                      <img src={modelClaude} className="w-4 h-4" /> Claude 3.5
-                      Sonnet
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="deepseek">
-                    <div className="flex items-center gap-2">
-                      <img src={modelDeepseek} className="w-4 h-4" /> DeepSeek
-                      V3
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
 
               <Button
                 variant="outline"

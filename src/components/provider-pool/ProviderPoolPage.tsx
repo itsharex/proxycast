@@ -36,6 +36,7 @@ import { VertexAISection } from "./VertexAISection";
 import { AmpConfigSection } from "./AmpConfigSection";
 import { ProviderIcon } from "@/icons/providers";
 import { ApiKeyProviderSection, AddCustomProviderModal } from "./api-key";
+import { OAuthPluginTab } from "./OAuthPluginTab";
 import type { AddCustomProviderRequest } from "@/lib/api/apiKeyProvider";
 import {
   getLocalKiroCredentialUuid,
@@ -89,7 +90,7 @@ const isConfigTab = (tab: TabType): tab is ConfigTabType => {
 };
 
 // 分类类型
-type CategoryType = "oauth" | "apikey" | "config";
+type CategoryType = "oauth" | "apikey" | "plugins" | "config";
 
 export const ProviderPoolPage = forwardRef<ProviderPoolPageRef>(
   (_props, ref) => {
@@ -429,6 +430,19 @@ export const ProviderPoolPage = forwardRef<ProviderPoolPageRef>(
           </button>
           <button
             onClick={() => {
+              setActiveCategory("plugins");
+            }}
+            className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
+              activeCategory === "plugins"
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+            data-testid="plugins-category-tab"
+          >
+            OAuth 插件
+          </button>
+          <button
+            onClick={() => {
               setActiveCategory("config");
               setActiveTab("vertex");
             }}
@@ -515,6 +529,13 @@ export const ProviderPoolPage = forwardRef<ProviderPoolPageRef>(
             <ApiKeyProviderSection
               onAddCustomProvider={() => setAddCustomProviderModalOpen(true)}
             />
+          </div>
+        )}
+
+        {/* OAuth 插件分类 */}
+        {activeCategory === "plugins" && (
+          <div className="min-h-[400px]" data-testid="plugins-section">
+            <OAuthPluginTab />
           </div>
         )}
 

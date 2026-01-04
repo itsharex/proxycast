@@ -494,6 +494,17 @@ impl TokenCacheService {
             CredentialData::IFlowCookie { creds_file_path } => {
                 self.refresh_iflow_cookie(creds_file_path).await
             }
+            CredentialData::AnthropicKey { api_key, .. } => {
+                // API Key 不需要刷新，直接返回
+                Ok(CachedTokenInfo {
+                    access_token: Some(api_key.clone()),
+                    refresh_token: None,
+                    expiry_time: None, // 永不过期
+                    last_refresh: Some(Utc::now()),
+                    refresh_error_count: 0,
+                    last_refresh_error: None,
+                })
+            }
         }
     }
 
@@ -1057,6 +1068,14 @@ impl TokenCacheService {
                     last_refresh_error: None,
                 })
             }
+            CredentialData::AnthropicKey { api_key, .. } => Ok(CachedTokenInfo {
+                access_token: Some(api_key.clone()),
+                refresh_token: None,
+                expiry_time: None,
+                last_refresh: None,
+                refresh_error_count: 0,
+                last_refresh_error: None,
+            }),
         }
     }
 

@@ -224,19 +224,82 @@ impl ProviderPoolService {
     ) -> Result<Option<ProviderCredential>, String> {
         let pt: PoolProviderType = provider_type.parse().map_err(|e: String| e)?;
         let conn = db.lock().map_err(|e| e.to_string())?;
-        let credentials = ProviderPoolDao::get_by_type(&conn, &pt).map_err(|e| e.to_string())?;
+
+        // 获取凭证，对于 Anthropic 类型，也查找 Claude 类型的凭证
+        let mut credentials =
+            ProviderPoolDao::get_by_type(&conn, &pt).map_err(|e| e.to_string())?;
+        eprintln!(
+            "[SELECT_CREDENTIAL] provider_type={}, pt={:?}, initial_count={}",
+            provider_type,
+            pt,
+            credentials.len()
+        );
+
+        // Anthropic 和 Claude 共享凭证（都使用 Anthropic API）
+        if pt == PoolProviderType::Anthropic {
+            let claude_creds = ProviderPoolDao::get_by_type(&conn, &PoolProviderType::Claude)
+                .map_err(|e| e.to_string())?;
+            eprintln!(
+                "[SELECT_CREDENTIAL] Anthropic: adding {} Claude credentials",
+                claude_creds.len()
+            );
+            credentials.extend(claude_creds);
+        } else if pt == PoolProviderType::Claude {
+            let anthropic_creds = ProviderPoolDao::get_by_type(&conn, &PoolProviderType::Anthropic)
+                .map_err(|e| e.to_string())?;
+            eprintln!(
+                "[SELECT_CREDENTIAL] Claude: adding {} Anthropic credentials",
+                anthropic_creds.len()
+            );
+            credentials.extend(anthropic_creds);
+        }
+
         drop(conn);
+
+        eprintln!(
+            "[SELECT_CREDENTIAL] total_credentials={}, model={:?}",
+            credentials.len(),
+            model
+        );
 
         // 过滤可用的凭证
         let mut available: Vec<_> = credentials
             .into_iter()
-            .filter(|c| c.is_available())
+            .filter(|c| {
+                let is_avail = c.is_available();
+                eprintln!(
+                    "[SELECT_CREDENTIAL] credential {} (type={}) is_available={}",
+                    c.name.as_deref().unwrap_or("unnamed"),
+                    c.provider_type,
+                    is_avail
+                );
+                is_avail
+            })
             .collect();
+
+        eprintln!(
+            "[SELECT_CREDENTIAL] after is_available filter: {}",
+            available.len()
+        );
 
         // 如果指定了模型，进一步过滤支持该模型的凭证
         if let Some(m) = model {
-            available.retain(|c| c.supports_model(m));
+            available.retain(|c| {
+                let supports = c.supports_model(m);
+                eprintln!(
+                    "[SELECT_CREDENTIAL] credential {} supports_model({})={}",
+                    c.name.as_deref().unwrap_or("unnamed"),
+                    m,
+                    supports
+                );
+                supports
+            });
         }
+
+        eprintln!(
+            "[SELECT_CREDENTIAL] final available count: {}",
+            available.len()
+        );
 
         if available.is_empty() {
             return Ok(None);
@@ -820,6 +883,11 @@ impl ProviderPoolService {
             }
             CredentialData::IFlowCookie { creds_file_path } => {
                 self.check_iflow_cookie_health(creds_file_path, model).await
+            }
+            CredentialData::AnthropicKey { api_key, base_url } => {
+                // Anthropic API Key 使用与 Claude API Key 相同的健康检查逻辑
+                self.check_claude_health(api_key, base_url.as_deref(), model)
+                    .await
             }
         }
     }

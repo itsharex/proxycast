@@ -783,6 +783,109 @@ pub async fn chat_completions(
         }
     };
 
+    // 如果 Provider Pool 中没有找到凭证，尝试从 API Key Provider 获取
+    let credential = if credential.is_none() {
+        eprintln!("[CHAT_COMPLETIONS] Provider Pool 中未找到凭证，尝试 API Key Provider...");
+
+        // 根据 selected_provider 映射到 ApiProviderType
+        use crate::database::dao::api_key_provider::ApiProviderType;
+        let api_provider_type = match selected_provider.to_lowercase().as_str() {
+            "anthropic" | "claude" => Some(ApiProviderType::Anthropic),
+            "openai" => Some(ApiProviderType::Openai),
+            "gemini" => Some(ApiProviderType::Gemini),
+            // 以下都是 OpenAI 兼容的 Provider
+            "deepseek" | "moonshot" | "groq" | "grok" | "mistral" | "perplexity" | "cohere"
+            | "openrouter" | "silicon" => Some(ApiProviderType::Openai),
+            _ => None,
+        };
+
+        if let (Some(db), Some(api_type)) = (&state.db, api_provider_type) {
+            eprintln!(
+                "[CHAT_COMPLETIONS] 尝试从 API Key Provider 类型 '{:?}' 获取凭证",
+                api_type
+            );
+
+            // 使用按类型获取的方法（包括自定义 Provider）
+            match state.api_key_service.get_next_api_key_by_type(db, api_type) {
+                Ok(Some((_key_id, api_key, provider_info))) => {
+                    eprintln!(
+                        "[CHAT_COMPLETIONS] 从 API Key Provider 获取到凭证: provider={}, api_host={}",
+                        provider_info.name,
+                        provider_info.api_host
+                    );
+
+                    let base_url = if provider_info.api_host.is_empty() {
+                        None
+                    } else {
+                        Some(provider_info.api_host.clone())
+                    };
+
+                    let provider_type = match provider_info.provider_type {
+                        ApiProviderType::Anthropic => crate::ProviderType::Anthropic,
+                        ApiProviderType::Openai | ApiProviderType::OpenaiResponse => {
+                            crate::ProviderType::OpenAI
+                        }
+                        ApiProviderType::Gemini => crate::ProviderType::GeminiApiKey,
+                        _ => crate::ProviderType::OpenAI,
+                    };
+
+                    // 根据 provider_type 创建对应的 CredentialData
+                    let credential_data = match provider_type {
+                        crate::ProviderType::Anthropic => {
+                            crate::models::provider_pool_model::CredentialData::AnthropicKey {
+                                api_key: api_key.clone(),
+                                base_url,
+                            }
+                        }
+                        crate::ProviderType::GeminiApiKey => {
+                            crate::models::provider_pool_model::CredentialData::GeminiApiKey {
+                                api_key: api_key.clone(),
+                                base_url,
+                                excluded_models: vec![],
+                            }
+                        }
+                        _ => crate::models::provider_pool_model::CredentialData::OpenAIKey {
+                            api_key: api_key.clone(),
+                            base_url,
+                        },
+                    };
+
+                    // 构建 ProviderCredential
+                    let mut cred = crate::models::provider_pool_model::ProviderCredential::new(
+                        provider_type,
+                        credential_data,
+                    );
+                    cred.name = Some(provider_info.name.clone());
+
+                    state.logs.write().await.add(
+                        "info",
+                        &format!(
+                            "[ROUTE] Using API Key Provider credential: provider={}, type={:?}",
+                            provider_info.name, provider_info.provider_type
+                        ),
+                    );
+
+                    Some(cred)
+                }
+                Ok(None) => {
+                    eprintln!(
+                        "[CHAT_COMPLETIONS] API Key Provider 类型 '{:?}' 没有可用的 API Key",
+                        api_type
+                    );
+                    None
+                }
+                Err(e) => {
+                    eprintln!("[CHAT_COMPLETIONS] 从 API Key Provider 获取凭证失败: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        credential
+    };
+
     // 如果找到凭证池中的凭证，使用它
     if let Some(cred) = credential {
         eprintln!(
@@ -1622,6 +1725,84 @@ pub async fn anthropic_messages(
                 .flatten()
         }
         None => None,
+    };
+
+    // 如果 Provider Pool 中没有找到凭证，尝试从 API Key Provider 获取
+    let credential = if credential.is_none() {
+        // 根据 selected_provider 映射到 ApiProviderType
+        use crate::database::dao::api_key_provider::ApiProviderType;
+        let api_provider_type = match selected_provider.to_lowercase().as_str() {
+            "anthropic" | "claude" => Some(ApiProviderType::Anthropic),
+            "openai" => Some(ApiProviderType::Openai),
+            "gemini" => Some(ApiProviderType::Gemini),
+            _ => None,
+        };
+
+        if let (Some(db), Some(api_type)) = (&state.db, api_provider_type) {
+            // 使用按类型获取的方法（包括自定义 Provider）
+            match state.api_key_service.get_next_api_key_by_type(db, api_type) {
+                Ok(Some((_key_id, api_key, provider_info))) => {
+                    state.logs.write().await.add(
+                        "info",
+                        &format!(
+                            "[ROUTE] Using API Key Provider credential: provider={}, type={:?}, api_host={}",
+                            provider_info.name, provider_info.provider_type, provider_info.api_host
+                        ),
+                    );
+
+                    let base_url = if provider_info.api_host.is_empty() {
+                        None
+                    } else {
+                        Some(provider_info.api_host.clone())
+                    };
+
+                    let provider_type = match provider_info.provider_type {
+                        ApiProviderType::Anthropic => crate::ProviderType::Anthropic,
+                        ApiProviderType::Openai | ApiProviderType::OpenaiResponse => {
+                            crate::ProviderType::OpenAI
+                        }
+                        ApiProviderType::Gemini => crate::ProviderType::GeminiApiKey,
+                        _ => crate::ProviderType::OpenAI,
+                    };
+
+                    // 根据 provider_type 创建对应的 CredentialData
+                    let credential_data = match provider_type {
+                        crate::ProviderType::Anthropic => {
+                            crate::models::provider_pool_model::CredentialData::AnthropicKey {
+                                api_key: api_key.clone(),
+                                base_url,
+                            }
+                        }
+                        crate::ProviderType::GeminiApiKey => {
+                            crate::models::provider_pool_model::CredentialData::GeminiApiKey {
+                                api_key: api_key.clone(),
+                                base_url,
+                                excluded_models: vec![],
+                            }
+                        }
+                        _ => crate::models::provider_pool_model::CredentialData::OpenAIKey {
+                            api_key: api_key.clone(),
+                            base_url,
+                        },
+                    };
+
+                    // 构建 ProviderCredential
+                    let mut cred = crate::models::provider_pool_model::ProviderCredential::new(
+                        provider_type,
+                        credential_data,
+                    );
+                    cred.name = Some(provider_info.name.clone());
+
+                    Some(cred)
+                }
+                Ok(None) => None,
+                Err(_) => None,
+            }
+        } else {
+            None
+        }
+    } else {
+        credential
     };
 
     // 如果找到凭证池中的凭证，使用它
@@ -2547,4 +2728,177 @@ fn build_stream_error_response(
             )
                 .into_response()
         })
+}
+
+// ============================================================================
+// API Key Provider 辅助函数
+// ============================================================================
+
+/// 将 provider_type 映射到 API Key Provider ID
+fn map_to_api_key_provider_id(provider_type: &str) -> String {
+    match provider_type.to_lowercase().as_str() {
+        "openai" | "gpt" => "openai".to_string(),
+        "anthropic" | "claude" => "anthropic".to_string(),
+        "gemini" | "google" => "gemini".to_string(),
+        "azure" | "azure-openai" | "azure_openai" => "azure-openai".to_string(),
+        "vertexai" | "vertex" => "vertexai".to_string(),
+        "bedrock" | "aws-bedrock" | "aws_bedrock" => "aws-bedrock".to_string(),
+        "ollama" => "ollama".to_string(),
+        _ => provider_type.to_string(),
+    }
+}
+
+/// 根据 API Provider 类型构建额外的请求头
+fn build_api_key_headers(
+    provider_type: &crate::database::dao::api_key_provider::ApiProviderType,
+    api_key: &str,
+) -> HashMap<String, String> {
+    use crate::database::dao::api_key_provider::ApiProviderType;
+
+    let mut headers = HashMap::new();
+
+    match provider_type {
+        ApiProviderType::Anthropic => {
+            headers.insert("x-api-key".to_string(), api_key.to_string());
+            headers.insert("anthropic-version".to_string(), "2023-06-01".to_string());
+        }
+        ApiProviderType::Gemini => {
+            headers.insert("x-goog-api-key".to_string(), api_key.to_string());
+        }
+        ApiProviderType::AzureOpenai => {
+            headers.insert("api-key".to_string(), api_key.to_string());
+        }
+        _ => {
+            headers.insert("Authorization".to_string(), format!("Bearer {}", api_key));
+        }
+    }
+
+    headers
+}
+
+/// 获取默认的 API Host
+fn get_default_api_host(
+    provider_type: &crate::database::dao::api_key_provider::ApiProviderType,
+) -> String {
+    use crate::database::dao::api_key_provider::ApiProviderType;
+
+    match provider_type {
+        ApiProviderType::Openai | ApiProviderType::OpenaiResponse => {
+            "https://api.openai.com".to_string()
+        }
+        ApiProviderType::Anthropic => "https://api.anthropic.com".to_string(),
+        ApiProviderType::Gemini => "https://generativelanguage.googleapis.com".to_string(),
+        ApiProviderType::Ollama => "http://localhost:11434".to_string(),
+        _ => "https://api.openai.com".to_string(),
+    }
+}
+
+/// 将 OpenAI 格式请求转换为 Anthropic 格式
+fn convert_openai_to_anthropic(request: &ChatCompletionRequest) -> serde_json::Value {
+    let mut messages = Vec::new();
+    let mut system_prompt = None;
+
+    for msg in &request.messages {
+        if msg.role == "system" {
+            // 提取 system prompt
+            if let Some(content) = &msg.content {
+                system_prompt = Some(match content {
+                    crate::models::openai::MessageContent::Text(s) => s.clone(),
+                    crate::models::openai::MessageContent::Parts(parts) => parts
+                        .iter()
+                        .filter_map(|p| {
+                            if let crate::models::openai::ContentPart::Text { text } = p {
+                                Some(text.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                });
+            }
+        } else {
+            // 转换其他消息
+            let content = match &msg.content {
+                Some(c) => match c {
+                    crate::models::openai::MessageContent::Text(s) => s.clone(),
+                    crate::models::openai::MessageContent::Parts(parts) => parts
+                        .iter()
+                        .filter_map(|p| {
+                            if let crate::models::openai::ContentPart::Text { text } = p {
+                                Some(text.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                },
+                None => String::new(),
+            };
+
+            messages.push(serde_json::json!({
+                "role": msg.role,
+                "content": content
+            }));
+        }
+    }
+
+    let mut result = serde_json::json!({
+        "model": request.model,
+        "messages": messages,
+        "max_tokens": request.max_tokens.unwrap_or(4096),
+        "stream": request.stream
+    });
+
+    if let Some(system) = system_prompt {
+        result["system"] = serde_json::Value::String(system);
+    }
+
+    if let Some(temp) = request.temperature {
+        result["temperature"] = serde_json::Value::Number(
+            serde_json::Number::from_f64(temp as f64).unwrap_or(serde_json::Number::from(1)),
+        );
+    }
+
+    result
+}
+
+/// 将 Anthropic 响应转换为 OpenAI 格式
+fn convert_anthropic_response_to_openai(anthropic_resp: &serde_json::Value, model: &str) -> String {
+    let content = anthropic_resp["content"]
+        .as_array()
+        .and_then(|arr| arr.first())
+        .and_then(|c| c["text"].as_str())
+        .unwrap_or("");
+
+    let usage = serde_json::json!({
+        "prompt_tokens": anthropic_resp["usage"]["input_tokens"].as_u64().unwrap_or(0),
+        "completion_tokens": anthropic_resp["usage"]["output_tokens"].as_u64().unwrap_or(0),
+        "total_tokens": anthropic_resp["usage"]["input_tokens"].as_u64().unwrap_or(0)
+            + anthropic_resp["usage"]["output_tokens"].as_u64().unwrap_or(0)
+    });
+
+    let openai_resp = serde_json::json!({
+        "id": anthropic_resp["id"].as_str().unwrap_or("chatcmpl-unknown"),
+        "object": "chat.completion",
+        "created": chrono::Utc::now().timestamp(),
+        "model": model,
+        "choices": [{
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": content
+            },
+            "finish_reason": match anthropic_resp["stop_reason"].as_str() {
+                Some("end_turn") => "stop",
+                Some("max_tokens") => "length",
+                Some("tool_use") => "tool_calls",
+                _ => "stop"
+            }
+        }],
+        "usage": usage
+    });
+
+    serde_json::to_string(&openai_resp).unwrap_or_default()
 }

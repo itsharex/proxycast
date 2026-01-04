@@ -431,6 +431,37 @@ pub async fn management_add_credential(
                 );
             }
         }
+        // Anthropic API Key Provider
+        PoolProviderType::Anthropic => {
+            if let Some(api_key) = request.api_key {
+                CredentialData::AnthropicKey {
+                    api_key,
+                    base_url: request.base_url,
+                }
+            } else {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(AddCredentialResponse {
+                        success: false,
+                        message: "API key is required for Anthropic provider".to_string(),
+                        id: None,
+                    }),
+                );
+            }
+        }
+        // API Key Provider 类型 - 不支持通过此接口添加凭证
+        PoolProviderType::AzureOpenai | PoolProviderType::AwsBedrock | PoolProviderType::Ollama => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(AddCredentialResponse {
+                    success: false,
+                    message:
+                        "This provider type should be configured via API Key Provider settings"
+                            .to_string(),
+                    id: None,
+                }),
+            );
+        }
     };
 
     // 创建凭证

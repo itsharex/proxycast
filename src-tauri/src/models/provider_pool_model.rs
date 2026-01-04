@@ -84,6 +84,11 @@ pub enum CredentialData {
     IFlowOAuth { creds_file_path: String },
     /// iFlow Cookie 凭证
     IFlowCookie { creds_file_path: String },
+    /// Anthropic API Key 凭证（直接使用 Anthropic API）
+    AnthropicKey {
+        api_key: String,
+        base_url: Option<String>,
+    },
 }
 
 impl CredentialData {
@@ -132,6 +137,9 @@ impl CredentialData {
             CredentialData::IFlowCookie { creds_file_path } => {
                 format!("iFlow Cookie: {}", mask_path(creds_file_path))
             }
+            CredentialData::AnthropicKey { api_key, .. } => {
+                format!("Anthropic: {}", mask_key(api_key))
+            }
         }
     }
 
@@ -150,6 +158,7 @@ impl CredentialData {
             CredentialData::ClaudeOAuth { .. } => PoolProviderType::ClaudeOAuth,
             CredentialData::IFlowOAuth { .. } => PoolProviderType::IFlow,
             CredentialData::IFlowCookie { .. } => PoolProviderType::IFlow,
+            CredentialData::AnthropicKey { .. } => PoolProviderType::Anthropic,
         }
     }
 }
@@ -511,6 +520,11 @@ pub fn get_default_check_model(provider_type: PoolProviderType) -> &'static str 
         PoolProviderType::Codex => "gpt-4o-mini",
         PoolProviderType::ClaudeOAuth => "claude-sonnet-4-5-20250929",
         PoolProviderType::IFlow => "deepseek-chat",
+        // API Key Provider 类型
+        PoolProviderType::Anthropic => "claude-sonnet-4-5-20250929",
+        PoolProviderType::AzureOpenai => "gpt-4o-mini",
+        PoolProviderType::AwsBedrock => "claude-sonnet-4-5-20250929",
+        PoolProviderType::Ollama => "llama3.2",
     }
 }
 
@@ -563,6 +577,7 @@ fn get_credential_type(cred: &CredentialData) -> String {
         CredentialData::ClaudeOAuth { .. } => "claude_oauth".to_string(),
         CredentialData::IFlowOAuth { .. } => "iflow_oauth".to_string(),
         CredentialData::IFlowCookie { .. } => "iflow_cookie".to_string(),
+        CredentialData::AnthropicKey { .. } => "anthropic_key".to_string(),
     }
 }
 
@@ -592,6 +607,7 @@ fn get_base_url(cred: &CredentialData) -> Option<String> {
     match cred {
         CredentialData::OpenAIKey { base_url, .. } => base_url.clone(),
         CredentialData::ClaudeKey { base_url, .. } => base_url.clone(),
+        CredentialData::AnthropicKey { base_url, .. } => base_url.clone(),
         _ => None,
     }
 }
@@ -601,6 +617,7 @@ fn get_api_key(cred: &CredentialData) -> Option<String> {
     match cred {
         CredentialData::OpenAIKey { api_key, .. } => Some(api_key.clone()),
         CredentialData::ClaudeKey { api_key, .. } => Some(api_key.clone()),
+        CredentialData::AnthropicKey { api_key, .. } => Some(api_key.clone()),
         _ => None,
     }
 }

@@ -237,6 +237,19 @@ impl CredentialSyncService {
                     "iFlow Cookie 凭证暂不支持同步到配置".to_string(),
                 ));
             }
+            CredentialData::AnthropicKey { api_key, base_url } => {
+                // Anthropic API Key 保存到 claude 配置（使用相同的 API 格式）
+                let entry = ApiKeyEntry {
+                    id: credential.uuid.clone(),
+                    api_key: api_key.clone(),
+                    base_url: base_url.clone(),
+                    disabled: credential.is_disabled,
+                    proxy_url: None,
+                };
+                // 注意：Anthropic 凭证保存到单独的 anthropic 配置（如果有的话）
+                // 目前暂时保存到 claude 配置中
+                config.credential_pool.claude.push(entry);
+            }
         }
 
         self.update_config(config)
@@ -394,6 +407,15 @@ impl CredentialSyncService {
                 // iFlow 暂不支持同步到配置
                 return Err(SyncError::InvalidCredentialType(
                     "iFlow 凭证暂不支持同步到配置".to_string(),
+                ));
+            }
+            // API Key Provider 类型 - 不支持同步到配置
+            PoolProviderType::Anthropic
+            | PoolProviderType::AzureOpenai
+            | PoolProviderType::AwsBedrock
+            | PoolProviderType::Ollama => {
+                return Err(SyncError::InvalidCredentialType(
+                    "API Key Provider 凭证不支持同步到配置".to_string(),
                 ));
             }
         }
@@ -570,6 +592,20 @@ impl CredentialSyncService {
                 return Err(SyncError::InvalidCredentialType(
                     "iFlow Cookie 凭证暂不支持同步到配置".to_string(),
                 ));
+            }
+            CredentialData::AnthropicKey { api_key, base_url } => {
+                // Anthropic API Key 更新到 claude 配置
+                if let Some(entry) = config
+                    .credential_pool
+                    .claude
+                    .iter_mut()
+                    .find(|e| e.id == credential.uuid)
+                {
+                    entry.api_key = api_key.clone();
+                    entry.base_url = base_url.clone();
+                    entry.disabled = credential.is_disabled;
+                    found = true;
+                }
             }
         }
 
