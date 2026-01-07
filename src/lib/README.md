@@ -33,6 +33,7 @@
   - `syntaxHighlight.ts` - 语法高亮工具
 - `flowEventManager.ts` - 流量事件管理器
 - `notificationService.ts` - 通知服务
+- `terminal-api.ts` - 终端核心能力 API 封装（Terminal Core）
 - `utils.ts` - 通用工具函数
 
 ## 更新提醒

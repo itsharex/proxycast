@@ -23,6 +23,7 @@ pub mod services;
 pub mod stream;
 pub mod streaming;
 pub mod telemetry;
+pub mod terminal;
 pub mod translator;
 pub mod tray;
 pub mod websocket;

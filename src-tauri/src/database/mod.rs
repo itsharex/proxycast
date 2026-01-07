@@ -23,6 +23,10 @@ pub fn init_database() -> Result<DbConnection, String> {
     let db_path = get_db_path()?;
     let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
 
+    // 设置 busy_timeout 为 5 秒，避免 "database is locked" 错误
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| format!("设置 busy_timeout 失败: {}", e))?;
+
     // 创建表结构
     schema::create_tables(&conn).map_err(|e| e.to_string())?;
     migration::migrate_from_json(&conn)?;

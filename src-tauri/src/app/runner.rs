@@ -73,6 +73,7 @@ pub fn run() {
         connect_state: connect_state,
         model_registry: model_registry_state,
         global_config_manager: global_config_manager_state,
+        terminal_manager: terminal_manager_state,
         shared_stats,
         shared_tokens,
         shared_logger,
@@ -149,6 +150,7 @@ pub fn run() {
         .manage(connect_state)
         .manage(model_registry_state)
         .manage(global_config_manager_state)
+        .manage(terminal_manager_state)
         .on_window_event(move |window, event| {
             // 处理窗口关闭事件
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -260,6 +262,17 @@ pub fn run() {
                         }
                     }
                 });
+            }
+
+            // 初始化终端会话管理器
+            {
+                let app_handle = app.handle().clone();
+                let terminal_manager = crate::terminal::TerminalSessionManager::new(app_handle.clone());
+                if let Some(state) = app_handle.try_state::<crate::commands::terminal_cmd::TerminalManagerState>() {
+                    let mut guard = state.inner().0.blocking_write();
+                    *guard = Some(terminal_manager);
+                    tracing::info!("[启动] 终端会话管理器初始化成功");
+                }
             }
 
             // 注册 Deep Link 事件处理器（仅 macOS）
@@ -1029,6 +1042,13 @@ pub fn run() {
             commands::model_registry_cmd::get_models_by_tier,
             commands::model_registry_cmd::get_provider_alias_config,
             commands::model_registry_cmd::get_all_alias_configs,
+            // Terminal commands
+            commands::terminal_cmd::terminal_create_session,
+            commands::terminal_cmd::terminal_write,
+            commands::terminal_cmd::terminal_resize,
+            commands::terminal_cmd::terminal_close,
+            commands::terminal_cmd::terminal_list_sessions,
+            commands::terminal_cmd::terminal_get_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

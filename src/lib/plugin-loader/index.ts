@@ -127,6 +127,38 @@ function executeScript(code: string): Promise<void> {
 }
 
 /**
+ * 已加载的 CSS 缓存
+ */
+const loadedStyles = new Set<string>();
+
+/**
+ * 加载插件 CSS 样式
+ */
+async function loadPluginStyles(cssPath: string): Promise<void> {
+  // 检查是否已加载
+  if (loadedStyles.has(cssPath)) {
+    console.log(`[PluginLoader] CSS 已加载: ${cssPath}`);
+    return;
+  }
+
+  try {
+    const cssContent = await readPluginFile(cssPath);
+
+    // 创建 style 标签
+    const style = document.createElement("style");
+    style.setAttribute("data-plugin-css", cssPath);
+    style.textContent = cssContent;
+    document.head.appendChild(style);
+
+    loadedStyles.add(cssPath);
+    console.log(`[PluginLoader] CSS 加载成功: ${cssPath}`);
+  } catch (error) {
+    console.warn(`[PluginLoader] CSS 加载失败 (可能不存在): ${cssPath}`, error);
+    // CSS 加载失败不阻止插件加载
+  }
+}
+
+/**
  * 加载插件 UI 组件
  *
  * 插件使用 IIFE 格式构建，从全局变量获取依赖（React, ProxyCastPluginComponents）
@@ -144,6 +176,10 @@ export async function loadPluginUI(
   }
 
   try {
+    // 尝试加载 CSS 文件（与 JS 同目录的 styles.css）
+    const cssPath = pluginPath.replace(/\/[^/]+\.js$/, "/styles.css");
+    await loadPluginStyles(cssPath);
+
     // 读取插件文件内容
     const content = await readPluginFile(pluginPath);
 

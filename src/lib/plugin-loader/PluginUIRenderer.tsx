@@ -165,10 +165,10 @@ export function PluginUIRenderer({
   const PluginComponent = module.default;
 
   return (
-    <div className={className}>
+    <div className={`h-full w-full ${className || ""}`}>
       <Suspense
         fallback={
-          <div className="flex items-center justify-center p-8">
+          <div className="flex items-center justify-center p-8 h-full">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         }

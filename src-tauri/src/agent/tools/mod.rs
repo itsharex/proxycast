@@ -1,7 +1,6 @@
 //! Agent 工具系统模块
 //!
 //! 提供工具定义、注册、执行的核心框架
-//! 参考 Claude Code 和 goose 项目的工具系统设计
 //!
 //! ## 模块结构
 //! - `types`: 工具类型定义（ToolDefinition, ToolCall, ToolResult 等）

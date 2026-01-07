@@ -14,6 +14,7 @@ import { MachineIdTool } from "@/components/tools/machine-id/MachineIdTool";
 import { BrowserInterceptorTool } from "@/components/tools/browser-interceptor/BrowserInterceptorTool";
 import { FlowMonitorPage } from "@/pages";
 import { ConfigManagementPage } from "@/components/config/ConfigManagementPage";
+import { TerminalPage } from "@/components/terminal";
 import { PluginUIRenderer as DynamicPluginRenderer } from "@/lib/plugin-loader/PluginUIRenderer";
 import { usePluginSDK } from "@/lib/plugin-sdk";
 
@@ -115,6 +116,7 @@ const builtinPluginComponents: Record<
   "browser-interception": BrowserInterceptorTool,
   "flow-monitor": FlowMonitorPage,
   "config-switch": ConfigManagementPage,
+  "terminal-plugin": TerminalPage,
 };
 
 /**
@@ -149,6 +151,7 @@ function DynamicPluginUIRenderer({
       pluginId={pluginId}
       uiEntry={uiEntry || "dist/index.js"}
       sdk={sdk}
+      className="h-full w-full"
       fallback={<PluginNotFound pluginId={pluginId} />}
     />
   );

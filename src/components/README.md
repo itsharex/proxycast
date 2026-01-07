@@ -25,6 +25,7 @@ React 组件层，包含 UI 组件和业务组件。
 - `settings/` - 设置页面组件
 - `skills/` - 技能管理组件
 - `switch/` - 开关控制组件
+- `terminal/` - 内置终端组件（使用 Tauri Commands）
 - `tools/` - 工具页面组件
 - `ui/` - 通用 UI 组件（按钮、输入框等）
 - `websocket/` - WebSocket 管理组件

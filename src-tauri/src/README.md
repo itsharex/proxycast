@@ -29,6 +29,7 @@ Tauri 后端核心代码，处理系统级功能和 API 服务。
 - `services/` - 业务服务层
 - `streaming/` - 流式响应处理
 - `telemetry/` - 遥测和统计
+- `terminal/` - 终端核心模块（PTY 管理、会话管理）
 - `tray/` - 系统托盘
 - `websocket/` - WebSocket 支持
 - `lib.rs` - 库入口

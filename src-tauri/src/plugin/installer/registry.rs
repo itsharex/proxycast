@@ -25,6 +25,11 @@ impl PluginRegistry {
     pub fn from_path(db_path: &Path) -> Result<Self, InstallError> {
         let conn =
             Connection::open(db_path).map_err(|e| InstallError::DatabaseError(e.to_string()))?;
+
+        // 设置 busy_timeout 为 5 秒，避免 "database is locked" 错误
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e| InstallError::DatabaseError(format!("设置 busy_timeout 失败: {}", e)))?;
+
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })

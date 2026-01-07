@@ -26,6 +26,7 @@ pub mod route_cmd;
 pub mod skill_cmd;
 pub mod switch_cmd;
 pub mod telemetry_cmd;
+pub mod terminal_cmd;
 pub mod tray_cmd;
 pub mod usage_cmd;
 pub mod websocket_cmd;

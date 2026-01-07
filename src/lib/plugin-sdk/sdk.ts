@@ -5,6 +5,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   ProxyCastPluginSDK,
   PluginId,
@@ -537,6 +538,55 @@ function getRpcNotificationManager(pluginId: PluginId): RpcNotificationManager {
 
 // 连接状态跟踪
 const rpcConnectionStatus = new Map<PluginId, boolean>();
+
+// Tauri 事件监听器（全局单例）
+let _tauriEventUnlisten: UnlistenFn | null = null;
+let tauriEventInitialized = false;
+
+/**
+ * RPC 通知事件 payload 类型
+ */
+interface RpcNotificationPayload {
+  plugin_id: string;
+  method: string;
+  params: unknown;
+}
+
+/**
+ * 初始化 Tauri 事件监听器
+ * 监听来自后端的 RPC 通知并分发到对应的插件
+ */
+async function initTauriEventListener(): Promise<void> {
+  if (tauriEventInitialized) {
+    return;
+  }
+  tauriEventInitialized = true;
+
+  try {
+    _tauriEventUnlisten = await listen<RpcNotificationPayload>(
+      "plugin-rpc-notification",
+      (event) => {
+        const { plugin_id, method, params } = event.payload;
+        console.log(`[RPC] 收到通知: ${plugin_id} -> ${method}`, params);
+
+        // 分发到对应插件的通知管理器
+        const manager = rpcNotificationManagers.get(plugin_id);
+        if (manager) {
+          manager.emit(method, params);
+        } else {
+          console.warn(`[RPC] 未找到插件 ${plugin_id} 的通知管理器`);
+        }
+      },
+    );
+    console.log("[RPC] Tauri 事件监听器已初始化");
+  } catch (error) {
+    console.error("[RPC] 初始化 Tauri 事件监听器失败:", error);
+    tauriEventInitialized = false;
+  }
+}
+
+// 自动初始化事件监听器
+initTauriEventListener();
 
 /**
  * 创建 RPC API
