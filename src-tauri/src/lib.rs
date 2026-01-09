@@ -19,6 +19,7 @@ pub mod processor;
 pub mod proxy;
 pub mod resilience;
 pub mod router;
+pub mod screenshot;
 pub mod services;
 pub mod stream;
 pub mod streaming;

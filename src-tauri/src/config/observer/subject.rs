@@ -14,6 +14,8 @@ use tokio::sync::broadcast;
 
 /// Tauri 事件名称常量
 pub const CONFIG_CHANGED_EVENT: &str = "config-changed";
+/// 预留：配置重新加载事件
+#[allow(dead_code)]
 pub const CONFIG_RELOAD_EVENT: &str = "config-reload";
 
 /// 观察者条目

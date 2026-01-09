@@ -13,6 +13,7 @@
  * - 支持 Terminal/Files/Web/Sysinfo 面板类型
  * - Terminal 类型支持多实例
  * - 右侧小部件栏
+ * - AI 面板可控制活动终端
  */
 
 import { useState, useCallback, useRef } from "react";
@@ -50,6 +51,8 @@ export interface SidePanel {
   cwd?: string;
   /** 连接配置（仅 terminal 类型使用） */
   connection?: ConnectionListEntry;
+  /** 终端会话 ID（仅 terminal 类型使用，由 TerminalPanel 回调设置） */
+  sessionId?: string;
 }
 
 // ============================================================================
@@ -221,11 +224,33 @@ export function TerminalWorkspace({ onNavigate }: TerminalWorkspaceProps) {
   // AI 面板状态
   const [showAIPanel, setShowAIPanel] = useState(false);
 
+  // 活动终端面板 ID（用于 AI 控制）
+  const [activeTerminalPanelId, setActiveTerminalPanelId] =
+    useState<string>("main-terminal");
+
   // 终端输出引用（用于 AI 上下文）
   const terminalOutputRef = useRef<string | null>(null);
 
   // 连接编辑器模态窗口状态
   const [isConnectionsEditorOpen, setIsConnectionsEditorOpen] = useState(false);
+
+  // 获取活动终端的会话 ID
+  const getActiveTerminalSessionId = useCallback((): string | null => {
+    const activePanel = panels.find(
+      (p) => p.id === activeTerminalPanelId && p.type === "terminal",
+    );
+    return activePanel?.sessionId || null;
+  }, [panels, activeTerminalPanelId]);
+
+  // 更新终端面板的会话 ID
+  const updatePanelSessionId = useCallback(
+    (panelId: string, sessionId: string) => {
+      setPanels((prev) =>
+        prev.map((p) => (p.id === panelId ? { ...p, sessionId } : p)),
+      );
+    },
+    [],
+  );
 
   // 添加面板 - 所有类型都允许多开
   const addPanel = useCallback(
@@ -321,7 +346,15 @@ export function TerminalWorkspace({ onNavigate }: TerminalWorkspaceProps) {
   const renderPanelContent = (panel: SidePanel) => {
     switch (panel.type) {
       case "terminal":
-        return <TerminalPanel panelId={panel.id} cwd={panel.cwd} />;
+        return (
+          <TerminalPanel
+            panelId={panel.id}
+            cwd={panel.cwd}
+            onSessionCreated={(sessionId) =>
+              updatePanelSessionId(panel.id, sessionId)
+            }
+          />
+        );
       case "files":
         return <FileBrowserView onOpenTerminal={handleOpenTerminalFromFiles} />;
       case "web":
@@ -329,7 +362,12 @@ export function TerminalWorkspace({ onNavigate }: TerminalWorkspaceProps) {
       case "sysinfo":
         return <SysinfoView />;
       case "ai":
-        return <TerminalAIPanel getTerminalOutput={getTerminalOutput} />;
+        return (
+          <TerminalAIPanel
+            getTerminalOutput={getTerminalOutput}
+            terminalSessionId={getActiveTerminalSessionId()}
+          />
+        );
       default:
         return null;
     }
@@ -383,14 +421,28 @@ export function TerminalWorkspace({ onNavigate }: TerminalWorkspaceProps) {
           <div
             style={{ width: 320, minWidth: 280, maxWidth: 400, flexShrink: 0 }}
           >
-            <TerminalAIPanel getTerminalOutput={getTerminalOutput} />
+            <TerminalAIPanel
+              getTerminalOutput={getTerminalOutput}
+              terminalSessionId={getActiveTerminalSessionId()}
+            />
           </div>
         )}
 
         <WorkspaceContainer>
           {/* 所有面板统一渲染，都可以关闭和多开 */}
           {panels.map((panel) => (
-            <PanelBlock key={panel.id}>
+            <PanelBlock
+              key={panel.id}
+              $focused={
+                panel.type === "terminal" && panel.id === activeTerminalPanelId
+              }
+              onClick={() => {
+                // 点击终端面板时设置为活动终端
+                if (panel.type === "terminal") {
+                  setActiveTerminalPanelId(panel.id);
+                }
+              }}
+            >
               <PanelHeader>
                 {panel.type === "terminal" ? (
                   <ConnectionSelector

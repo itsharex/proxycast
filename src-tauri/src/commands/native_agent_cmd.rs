@@ -160,14 +160,17 @@ pub async fn native_agent_chat_stream(
     model: Option<String>,
     images: Option<Vec<ImageInputParam>>,
     provider: Option<String>,
+    terminal_mode: Option<bool>,
 ) -> Result<(), String> {
+    let terminal_mode = terminal_mode.unwrap_or(false);
     tracing::info!(
-        "[NativeAgent] 发送流式消息: message_len={}, model={:?}, provider={:?}, event={}, session={:?}",
+        "[NativeAgent] 发送流式消息: message_len={}, model={:?}, provider={:?}, event={}, session={:?}, terminal_mode={}",
         message.len(),
         model,
         provider,
         event_name,
-        session_id
+        session_id,
+        terminal_mode
     );
 
     // 获取配置信息
@@ -241,7 +244,8 @@ pub async fn native_agent_chat_stream(
     }
 
     // 获取工具注册表（用于创建 ToolLoopEngine）
-    let tool_registry = agent_state.get_tool_registry()?;
+    // 如果是 terminal_mode，使用 TerminalTool 替代 BashTool
+    let tool_registry = agent_state.get_tool_registry_with_mode(terminal_mode)?;
 
     let request = NativeChatRequest {
         session_id, // 使用前端传递的 session_id 以保持上下文

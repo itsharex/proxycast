@@ -27,6 +27,8 @@ const OSC_START: &[u8] = b"\x1b]";
 /// OSC 序列结束标记 - BEL
 const OSC_END_BEL: u8 = 0x07;
 /// OSC 序列结束标记 - ST (String Terminator)
+/// 预留：某些终端使用 ST 而不是 BEL 作为结束标记
+#[allow(dead_code)]
 const OSC_END_ST: &[u8] = b"\x1b\\";
 
 /// OSC 序列类型

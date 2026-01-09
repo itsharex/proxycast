@@ -137,8 +137,8 @@ function AppContent() {
     if (currentPage.startsWith("plugin:")) {
       const pluginId = currentPage.slice(7); // 移除 "plugin:" 前缀
 
-      // 需要全屏显示的插件列表
-      const fullscreenPlugins = ["terminal-plugin"];
+      // 需要全屏显示的插件列表（终端已内置，不再需要插件）
+      const fullscreenPlugins: string[] = [];
       const isFullscreen = fullscreenPlugins.includes(pluginId);
 
       if (isFullscreen) {

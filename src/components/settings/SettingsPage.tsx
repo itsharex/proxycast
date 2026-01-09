@@ -9,6 +9,7 @@ import { RemoteManagementSettings } from "./RemoteManagementSettings";
 import { ExtensionsSettings } from "./ExtensionsSettings";
 import { DeveloperSettings } from "./DeveloperSettings";
 import { ConnectionsSettings } from "./ConnectionsSettings";
+import { ExperimentalSettings } from "./ExperimentalSettings";
 
 type SettingsTab =
   | "general"
@@ -16,6 +17,7 @@ type SettingsTab =
   | "security"
   | "advanced"
   | "extensions"
+  | "experimental"
   | "developer"
   | "about";
 
@@ -25,6 +27,7 @@ const tabs: { id: SettingsTab; label: string; experimental?: boolean }[] = [
   { id: "security", label: "安全" },
   { id: "advanced", label: "高级" },
   { id: "extensions", label: "扩展", experimental: true },
+  { id: "experimental", label: "实验室", experimental: true },
   { id: "developer", label: "开发者" },
   { id: "about", label: "关于" },
 ];
@@ -80,6 +83,7 @@ export function SettingsPage() {
           </div>
         )}
         {activeTab === "extensions" && <ExtensionsSettings />}
+        {activeTab === "experimental" && <ExperimentalSettings />}
         {activeTab === "developer" && <DeveloperSettings />}
         {activeTab === "about" && <AboutSection />}
       </div>

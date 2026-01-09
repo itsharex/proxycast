@@ -95,6 +95,8 @@ impl<T: SyncConfigObserver + 'static> ConfigObserver for SyncObserverWrapper<T> 
 }
 
 /// 函数式观察者（用于简单的回调场景）
+/// 目前主要用于测试，将来可用于动态注册观察者
+#[allow(dead_code)]
 pub struct FnObserver<F>
 where
     F: Fn(&ConfigChangeEvent, &Config) -> Result<(), String> + Send + Sync,
@@ -108,6 +110,7 @@ impl<F> FnObserver<F>
 where
     F: Fn(&ConfigChangeEvent, &Config) -> Result<(), String> + Send + Sync,
 {
+    #[allow(dead_code)]
     pub fn new(name: impl Into<String>, handler: F) -> Self {
         Self {
             name: name.into(),
@@ -116,6 +119,7 @@ where
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_priority(mut self, priority: i32) -> Self {
         self.priority = priority;
         self

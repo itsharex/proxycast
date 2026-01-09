@@ -463,6 +463,9 @@ pub async fn call_provider_anthropic(
                     if resp.status().is_success() {
                         match resp.text().await {
                             Ok(body) => {
+                                // 记录原始响应以便调试
+                                eprintln!("[PROVIDER_CALL] OpenAI 响应: {}", &body[..body.len().min(500)]);
+
                                 if let Ok(openai_resp) =
                                     serde_json::from_str::<serde_json::Value>(&body)
                                 {
@@ -491,7 +494,8 @@ pub async fn call_provider_anthropic(
                                         build_anthropic_response(&request.model, &parsed)
                                     }
                                 } else {
-                                    // 记录解析失败
+                                    // 记录解析失败和原始响应
+                                    eprintln!("[PROVIDER_CALL] 解析 OpenAI 响应失败，原始响应: {}", &body);
                                     if let Some(db) = &state.db {
                                         let _ = state.pool_service.mark_unhealthy(
                                             db,
@@ -501,7 +505,7 @@ pub async fn call_provider_anthropic(
                                     }
                                     (
                                         StatusCode::INTERNAL_SERVER_ERROR,
-                                        Json(serde_json::json!({"error": {"message": "Failed to parse OpenAI response"}})),
+                                        Json(serde_json::json!({"error": {"message": format!("Failed to parse OpenAI response. Body: {}", &body[..body.len().min(200)])}})),
                                     )
                                         .into_response()
                                 }

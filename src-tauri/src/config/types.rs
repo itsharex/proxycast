@@ -320,6 +320,9 @@ pub struct Config {
     /// Native Agent 配置
     #[serde(default)]
     pub agent: NativeAgentConfig,
+    /// 实验室功能配置
+    #[serde(default)]
+    pub experimental: ExperimentalFeatures,
 }
 
 // ============ Native Agent 配置类型 ============
@@ -380,6 +383,44 @@ impl Default for NativeAgentConfig {
             max_tokens: default_max_tokens(),
         }
     }
+}
+
+// ============ 实验室功能配置类型 ============
+
+/// 截图对话功能配置
+///
+/// 配置截图对话功能的开关和快捷键
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ScreenshotChatConfig {
+    /// 是否启用截图对话功能
+    #[serde(default)]
+    pub enabled: bool,
+    /// 触发截图的全局快捷键
+    #[serde(default = "default_screenshot_shortcut")]
+    pub shortcut: String,
+}
+
+fn default_screenshot_shortcut() -> String {
+    "CommandOrControl+Alt+Q".to_string()
+}
+
+impl Default for ScreenshotChatConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            shortcut: default_screenshot_shortcut(),
+        }
+    }
+}
+
+/// 实验室功能配置
+///
+/// 管理所有实验性功能的开关和配置
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ExperimentalFeatures {
+    /// 截图对话功能配置
+    #[serde(default)]
+    pub screenshot_chat: ScreenshotChatConfig,
 }
 
 impl NativeAgentConfig {
@@ -1179,6 +1220,7 @@ impl Default for Config {
             language: default_language(),
             models: ModelsConfig::default(),
             agent: NativeAgentConfig::default(),
+            experimental: ExperimentalFeatures::default(),
         }
     }
 }
@@ -1457,5 +1499,46 @@ mod unit_tests {
         let json = serde_json::to_string(&config).unwrap();
         let parsed: EndpointProvidersConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, config);
+    }
+
+    #[test]
+    fn test_screenshot_chat_config_default() {
+        let config = ScreenshotChatConfig::default();
+        assert!(!config.enabled);
+        assert_eq!(config.shortcut, "CommandOrControl+Shift+S");
+    }
+
+    #[test]
+    fn test_experimental_features_default() {
+        let config = ExperimentalFeatures::default();
+        assert!(!config.screenshot_chat.enabled);
+        assert_eq!(config.screenshot_chat.shortcut, "CommandOrControl+Shift+S");
+    }
+
+    #[test]
+    fn test_experimental_features_serialization() {
+        let config = ExperimentalFeatures {
+            screenshot_chat: ScreenshotChatConfig {
+                enabled: true,
+                shortcut: "CommandOrControl+Alt+X".to_string(),
+            },
+        };
+
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        assert!(yaml.contains("enabled: true"));
+        assert!(yaml.contains("shortcut: CommandOrControl+Alt+X"));
+
+        let parsed: ExperimentalFeatures = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(parsed, config);
+    }
+
+    #[test]
+    fn test_config_with_experimental() {
+        let config = Config::default();
+        assert!(!config.experimental.screenshot_chat.enabled);
+        assert_eq!(
+            config.experimental.screenshot_chat.shortcut,
+            "CommandOrControl+Shift+S"
+        );
     }
 }

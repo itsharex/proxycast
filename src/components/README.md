@@ -22,6 +22,7 @@ React 组件层，包含 UI 组件和业务组件。
 - `provider-pool/` - Provider 凭证池管理组件
 - `resilience/` - 弹性策略配置组件
 - `routing/` - 路由规则配置组件
+- `screenshot-chat/` - 截图对话功能组件（实验室功能）
 - `settings/` - 设置页面组件
 - `skills/` - 技能管理组件
 - `switch/` - 开关控制组件

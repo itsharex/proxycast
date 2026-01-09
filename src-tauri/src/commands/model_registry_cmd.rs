@@ -169,3 +169,14 @@ pub async fn get_all_alias_configs(
 
     Ok(service.get_all_alias_configs().await)
 }
+
+/// 刷新模型注册表（强制从内嵌资源重新加载）
+#[tauri::command]
+pub async fn refresh_model_registry(state: State<'_, ModelRegistryState>) -> Result<u32, String> {
+    let guard = state.read().await;
+    let service = guard
+        .as_ref()
+        .ok_or_else(|| "模型注册服务未初始化".to_string())?;
+
+    service.force_reload().await
+}

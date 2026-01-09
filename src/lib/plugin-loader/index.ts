@@ -34,6 +34,7 @@ const loadedPlugins = new Map<string, PluginModule>();
 /**
  * 插件 ID 到全局变量名的映射
  * 格式: pluginId -> GlobalVariableName
+ * 注意: terminal-plugin 已移除，终端功能已内置到应用中
  */
 const PLUGIN_GLOBAL_NAMES: Record<string, string> = {
   "kiro-provider": "KiroProviderPlugin",
@@ -42,7 +43,6 @@ const PLUGIN_GLOBAL_NAMES: Record<string, string> = {
   "gemini-provider": "GeminiProviderPlugin",
   "antigravity-provider": "AntigravityProviderPlugin",
   "codex-provider": "CodexProviderPlugin",
-  "terminal-plugin": "TerminalPlugin",
 };
 
 /**

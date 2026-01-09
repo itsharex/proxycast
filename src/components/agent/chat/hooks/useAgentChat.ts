@@ -197,6 +197,43 @@ export function useAgentChat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 监听截图对话消息事件
+  useEffect(() => {
+    let unlisten: UnlistenFn | null = null;
+
+    const setupListener = async () => {
+      unlisten = await listen<{
+        message: string;
+        image_path: string | null;
+        image_base64: string | null;
+      }>("screenshot-chat-message", async (event) => {
+        console.log("[AgentChat] 收到截图对话消息:", event.payload);
+        const { message, image_base64 } = event.payload;
+
+        // 构建图片数组
+        const images: MessageImage[] = [];
+        if (image_base64) {
+          images.push({
+            data: image_base64,
+            mediaType: "image/png",
+          });
+        }
+
+        // 发送消息
+        await sendMessage(message, images, false, false);
+      });
+    };
+
+    setupListener();
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providerType, model, sessionId]);
+
   // 当 sessionId 变化时刷新话题列表
   useEffect(() => {
     if (sessionId) {

@@ -2,12 +2,12 @@
 //!
 //! 统一的模型编排接口，整合模型池构建、策略选择和降级处理。
 
-use super::fallback::{FallbackHandler, FallbackPolicy, FallbackResult};
-use super::pool_builder::{CredentialInfo, DynamicPoolBuilder, ProviderType};
+use super::fallback::{FallbackHandler, FallbackPolicy};
+use super::pool_builder::{CredentialInfo, DynamicPoolBuilder};
 use super::selector::{ModelSelector, SelectionResult};
 use super::strategies::create_default_registry;
-use super::strategy::{SelectionContext, StrategyError, StrategyInfo, StrategyResult, TaskHint};
-use super::tier::{AvailableModel, ServiceTier, TierConfig, TierPool};
+use super::strategy::{SelectionContext, StrategyInfo, StrategyResult, TaskHint};
+use super::tier::{AvailableModel, ServiceTier, TierPool};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -50,7 +50,8 @@ pub struct ModelOrchestrator {
     selector: ModelSelector,
     /// 模型池构建器
     pool_builder: DynamicPoolBuilder,
-    /// 降级处理器
+    /// 降级处理器（预留，将来实现自动降级功能）
+    #[allow(dead_code)]
     fallback_handler: FallbackHandler,
     /// 当前凭证列表
     credentials: RwLock<Vec<CredentialInfo>>,
@@ -313,6 +314,7 @@ pub fn get_global_orchestrator() -> Option<Arc<ModelOrchestrator>> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::pool_builder::ProviderType;
     use super::*;
 
     #[tokio::test]

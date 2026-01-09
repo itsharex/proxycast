@@ -2,6 +2,10 @@
 //!
 //! 提供原生 Agent 的 Tauri 命令（兼容旧 API）
 
+use crate::agent::tools::{
+    handle_term_scrollback_response, handle_terminal_command_response, GetScrollbackResponse,
+    TerminalCommandResponse,
+};
 use crate::agent::{ImageData, NativeAgentState, NativeChatRequest, ProviderType};
 use crate::AppState;
 use serde::{Deserialize, Serialize};
@@ -357,4 +361,73 @@ pub async fn agent_delete_session(
     } else {
         Err("会话不存在".to_string())
     }
+}
+
+/// 处理终端命令响应
+///
+/// 前端在用户批准/拒绝命令后调用此命令，将结果传递给 TerminalTool
+#[tauri::command]
+pub async fn agent_terminal_command_response(
+    request_id: String,
+    success: bool,
+    output: String,
+    error: Option<String>,
+    exit_code: Option<i32>,
+    rejected: bool,
+) -> Result<(), String> {
+    tracing::info!(
+        "[Agent] 收到终端命令响应: request_id={}, success={}, rejected={}",
+        request_id,
+        success,
+        rejected
+    );
+
+    let response = TerminalCommandResponse {
+        request_id,
+        success,
+        output,
+        error,
+        exit_code,
+        rejected,
+    };
+
+    handle_terminal_command_response(response);
+
+    Ok(())
+}
+
+/// 前端返回终端滚动缓冲区数据
+#[tauri::command]
+pub async fn agent_term_scrollback_response(
+    request_id: String,
+    success: bool,
+    total_lines: usize,
+    line_start: usize,
+    line_end: usize,
+    content: String,
+    has_more: bool,
+    error: Option<String>,
+) -> Result<(), String> {
+    tracing::info!(
+        "[Agent] 收到终端滚动缓冲区响应: request_id={}, success={}, lines={}-{}",
+        request_id,
+        success,
+        line_start,
+        line_end
+    );
+
+    let response = GetScrollbackResponse {
+        request_id,
+        success,
+        total_lines,
+        line_start,
+        line_end,
+        content,
+        has_more,
+        error,
+    };
+
+    handle_term_scrollback_response(response);
+
+    Ok(())
 }

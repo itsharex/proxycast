@@ -113,12 +113,11 @@ impl RequestProcessor {
     /// 注意：不再添加硬编码的路由规则，让用户设置的默认 Provider 生效
     /// 用户可以通过 UI 或配置文件自定义路由规则
     fn create_router_with_defaults() -> Router {
-        use crate::ProviderType;
-
         // 创建空的路由器，默认 Provider 会在启动时从配置中设置
-        let router = Router::new(ProviderType::Kiro);
+        // 不要硬编码任何 Provider，避免与用户配置冲突
+        let router = Router::new_empty();
 
-        tracing::info!("[ROUTER] 初始化路由器（无硬编码规则，使用用户配置的默认 Provider）");
+        tracing::info!("[ROUTER] 初始化空路由器，等待从配置加载默认 Provider");
 
         router
     }

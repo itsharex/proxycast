@@ -65,9 +65,11 @@ pub struct CreateWebviewRequest {
     pub url: String,
     /// 面板标题
     pub title: Option<String>,
-    /// X 坐标（相对于主窗口）
+    /// X 坐标（相对于主窗口）- 预留，当前使用居中显示
+    #[allow(dead_code)]
     pub x: f64,
-    /// Y 坐标（相对于主窗口）
+    /// Y 坐标（相对于主窗口）- 预留，当前使用居中显示
+    #[allow(dead_code)]
     pub y: f64,
     /// 宽度
     pub width: f64,

@@ -11,7 +11,7 @@
 //! data: [DONE]
 //! ```
 
-use crate::stream::events::{ContentBlockType, StopReason, StreamEvent};
+use crate::stream::events::{ContentBlockType, StreamEvent};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -346,6 +346,7 @@ struct OpenAiFunctionDelta<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stream::events::StopReason;
 
     #[test]
     fn test_generate_text_delta() {

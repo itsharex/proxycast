@@ -370,7 +370,6 @@ impl BrowserInterceptor {
     }
 
     /// 复制文本到剪贴板
-    #[cfg(feature = "tauri-app")]
     async fn copy_to_clipboard(&self, text: &str) -> Result<()> {
         match arboard::Clipboard::new() {
             Ok(mut clipboard) => {
@@ -388,12 +387,6 @@ impl BrowserInterceptor {
                 e
             ))),
         }
-    }
-
-    #[cfg(not(feature = "tauri-app"))]
-    async fn copy_to_clipboard(&self, _text: &str) -> Result<()> {
-        tracing::warn!("剪贴板功能需要 tauri-app feature");
-        Ok(())
     }
 
     /// 启动指纹浏览器

@@ -315,13 +315,31 @@ impl ServerState {
         // 从配置初始化 Router 的默认 Provider
         {
             let default_provider_str = &config.routing.default_provider;
-            if let Ok(provider_type) = default_provider_str.parse::<crate::ProviderType>() {
-                let mut router = processor.router.write().await;
-                router.set_default_provider(provider_type);
-                tracing::info!(
-                    "[SERVER] 从配置初始化 Router 默认 Provider: {}",
-                    default_provider_str
-                );
+
+            // 尝试解析为 ProviderType 枚举
+            match default_provider_str.parse::<crate::ProviderType>() {
+                Ok(provider_type) => {
+                    let mut router = processor.router.write().await;
+                    router.set_default_provider(provider_type);
+                    tracing::info!(
+                        "[SERVER] 从配置初始化 Router 默认 Provider: {} (ProviderType)",
+                        default_provider_str
+                    );
+                }
+                Err(_) => {
+                    // 如果解析失败，可能是自定义 provider ID
+                    // 这种情况下，路由器保持空状态，请求会直接使用 provider_id 进行凭证查找
+                    tracing::warn!(
+                        "[SERVER] 配置的默认 Provider '{}' 不是有效的 ProviderType 枚举值，可能是自定义 Provider ID。\
+                        路由器将保持空状态，请求将直接使用 provider_id 进行凭证查找。",
+                        default_provider_str
+                    );
+                    eprintln!(
+                        "[SERVER] 警告：默认 Provider '{}' 不是标准 Provider 类型（kiro/openai/claude等），\
+                        可能是自定义 Provider ID。如果这是预期行为，请忽略此警告。",
+                        default_provider_str
+                    );
+                }
             }
         }
 
@@ -592,16 +610,29 @@ async fn update_processor_config(processor: &RequestProcessor, config: &Config) 
     // 更新路由器默认 Provider
     {
         let mut router = processor.router.write().await;
-        if let Ok(provider_type) = config
+
+        // 尝试解析为 ProviderType 枚举
+        match config
             .routing
             .default_provider
             .parse::<crate::ProviderType>()
         {
-            router.set_default_provider(provider_type);
-            tracing::debug!(
-                "[HOT_RELOAD] 路由器默认 Provider 已更新: {}",
-                config.routing.default_provider
-            );
+            Ok(provider_type) => {
+                router.set_default_provider(provider_type);
+                tracing::debug!(
+                    "[HOT_RELOAD] 路由器默认 Provider 已更新: {} (ProviderType)",
+                    config.routing.default_provider
+                );
+            }
+            Err(_) => {
+                // 如果解析失败，可能是自定义 provider ID
+                // 清空路由器的默认 provider，让请求直接使用 provider_id
+                tracing::warn!(
+                    "[HOT_RELOAD] 配置的默认 Provider '{}' 不是有效的 ProviderType 枚举值，可能是自定义 Provider ID。\
+                    路由器默认 Provider 将被清空。",
+                    config.routing.default_provider
+                );
+            }
         }
     }
 
@@ -729,13 +760,29 @@ async fn run_server(
     // 从配置初始化 Router 的默认 Provider
     if let Some(cfg) = &config {
         let default_provider_str = &cfg.routing.default_provider;
-        if let Ok(provider_type) = default_provider_str.parse::<crate::ProviderType>() {
-            let mut router = processor.router.write().await;
-            router.set_default_provider(provider_type);
-            tracing::info!(
-                "[SERVER] 从配置初始化 Router 默认 Provider: {}",
-                default_provider_str
-            );
+
+        // 尝试解析为 ProviderType 枚举
+        match default_provider_str.parse::<crate::ProviderType>() {
+            Ok(provider_type) => {
+                let mut router = processor.router.write().await;
+                router.set_default_provider(provider_type);
+                tracing::info!(
+                    "[SERVER] 从配置初始化 Router 默认 Provider: {} (ProviderType)",
+                    default_provider_str
+                );
+            }
+            Err(_) => {
+                // 如果解析失败，可能是自定义 provider ID
+                tracing::warn!(
+                    "[SERVER] 配置的默认 Provider '{}' 不是有效的 ProviderType 枚举值，可能是自定义 Provider ID。\
+                    路由器将保持空状态，请求将直接使用 provider_id 进行凭证查找。",
+                    default_provider_str
+                );
+                eprintln!(
+                    "[SERVER] 警告：默认 Provider '{}' 不是标准 Provider 类型，可能是自定义 Provider ID",
+                    default_provider_str
+                );
+            }
         }
     }
 
@@ -1496,7 +1543,7 @@ async fn amp_chat_completions(
         ),
     );
 
-    // 尝试根据 provider 名称选择凭证（不降级，指定什么就用什么）
+    // 尝试根据 provider 名称选择凭证
     eprintln!(
         "[AMP] 开始查找凭证: provider={}, model={}, db={}",
         provider,
@@ -1506,11 +1553,11 @@ async fn amp_chat_completions(
     let credential = match &state.db {
         Some(db) => {
             eprintln!(
-                "[AMP] 使用 select_credential 查找凭证（不降级）: provider={}",
+                "[AMP] 使用 select_credential 查找凭证（Provider Pool）: provider={}",
                 provider
             );
-            // 使用 select_credential 而不是 select_credential_with_fallback，禁止降级
-            if let Ok(Some(cred)) =
+            // 先尝试从 Provider Pool 查找
+            let pool_cred = if let Ok(Some(cred)) =
                 state
                     .pool_service
                     .select_credential(db, &provider, Some(&request.model))
@@ -1528,11 +1575,39 @@ async fn amp_chat_completions(
                 eprintln!("[AMP] get_by_uuid 找到凭证: {:?}", cred.name);
                 Some(cred)
             } else {
+                None
+            };
+
+            // 如果 Provider Pool 中没有找到，尝试从 API Key Provider 查找
+            if pool_cred.is_none() {
                 eprintln!(
-                    "[AMP] 未找到任何凭证 for provider '{}'，不进行降级",
+                    "[AMP] Provider Pool 中未找到凭证，尝试 API Key Provider: provider={}",
                     provider
                 );
-                None
+
+                match state.api_key_service.get_fallback_credential(
+                    db,
+                    &crate::models::provider_pool_model::PoolProviderType::OpenAI,
+                    Some(&provider),
+                ) {
+                    Ok(Some(cred)) => {
+                        eprintln!(
+                            "[AMP] 通过 provider_id '{}' 找到 API Key Provider 凭证: name={:?}",
+                            provider, cred.name
+                        );
+                        Some(cred)
+                    }
+                    Ok(None) => {
+                        eprintln!("[AMP] 未找到任何凭证 for provider '{}'", provider);
+                        None
+                    }
+                    Err(e) => {
+                        eprintln!("[AMP] 查找 API Key Provider 凭证时出错: {}", e);
+                        None
+                    }
+                }
+            } else {
+                pool_cred
             }
         }
         None => {
@@ -1623,11 +1698,11 @@ async fn amp_messages(
         ),
     );
 
-    // 尝试根据 provider 名称选择凭证（不降级，指定什么就用什么）
+    // 尝试根据 provider 名称选择凭证
     let credential = match &state.db {
         Some(db) => {
-            // 使用 select_credential 而不是 select_credential_with_fallback，禁止降级
-            if let Ok(Some(cred)) =
+            // 先尝试从 Provider Pool 查找
+            let pool_cred = if let Ok(Some(cred)) =
                 state
                     .pool_service
                     .select_credential(db, &provider, Some(&request.model))
@@ -1643,6 +1718,38 @@ async fn amp_messages(
                 Some(cred)
             } else {
                 None
+            };
+
+            // 如果 Provider Pool 中没有找到，尝试从 API Key Provider 查找
+            if pool_cred.is_none() {
+                eprintln!(
+                    "[AMP_MESSAGES] Provider Pool 中未找到凭证，尝试 API Key Provider: provider={}",
+                    provider
+                );
+
+                match state.api_key_service.get_fallback_credential(
+                    db,
+                    &crate::models::provider_pool_model::PoolProviderType::Anthropic,
+                    Some(&provider),
+                ) {
+                    Ok(Some(cred)) => {
+                        eprintln!(
+                            "[AMP_MESSAGES] 通过 provider_id '{}' 找到 API Key Provider 凭证: name={:?}",
+                            provider, cred.name
+                        );
+                        Some(cred)
+                    }
+                    Ok(None) => {
+                        eprintln!("[AMP_MESSAGES] 未找到任何凭证 for provider '{}'", provider);
+                        None
+                    }
+                    Err(e) => {
+                        eprintln!("[AMP_MESSAGES] 查找 API Key Provider 凭证时出错: {}", e);
+                        None
+                    }
+                }
+            } else {
+                pool_cred
             }
         }
         None => None,
@@ -1887,6 +1994,8 @@ async fn amp_management_proxy_internal(
 }
 
 /// 内部 Anthropic messages 处理 (使用默认 Kiro)
+/// 预留：用于内部直接调用 Kiro API
+#[allow(dead_code)]
 async fn anthropic_messages_internal(
     state: &AppState,
     request: &AnthropicMessagesRequest,
@@ -1954,6 +2063,8 @@ async fn anthropic_messages_internal(
 }
 
 /// 内部 OpenAI chat completions 处理 (使用默认 Kiro)
+/// 预留：用于内部直接调用 Kiro API
+#[allow(dead_code)]
 async fn chat_completions_internal(state: &AppState, request: &ChatCompletionRequest) -> Response {
     {
         let _guard = state.kiro_refresh_lock.lock().await;

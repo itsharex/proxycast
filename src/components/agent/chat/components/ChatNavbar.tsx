@@ -213,46 +213,35 @@ export const ChatNavbar: React.FC<ChatNavbarProps> = ({
 
     // 从 model_registry 获取模型
     // 优先使用 registryId，如果没有模型则回退到 fallbackRegistryId
-    let models = registryModels
-      .filter((m) => m.provider_id === selectedProvider.registryId)
-      .map((m) => m.id);
+    let models = registryModels.filter(
+      (m) => m.provider_id === selectedProvider.registryId,
+    );
 
     // 如果没有找到模型，尝试使用 fallbackRegistryId
     if (models.length === 0 && selectedProvider.fallbackRegistryId) {
-      models = registryModels
-        .filter((m) => m.provider_id === selectedProvider.fallbackRegistryId)
-        .map((m) => m.id);
+      models = registryModels.filter(
+        (m) => m.provider_id === selectedProvider.fallbackRegistryId,
+      );
     }
 
-    // 按照模型名称排序，优先显示最新版本
-    // 排序规则：
-    // 1. 带日期后缀的模型（如 claude-opus-4-5-20251101）按日期降序
-    // 2. 带 "latest" 后缀的模型排在最前面
-    // 3. 其他模型按字母顺序
-    return models.sort((a, b) => {
-      const aIsLatest = a.includes("-latest");
-      const bIsLatest = b.includes("-latest");
+    // 按照 release_date 和 is_latest 排序
+    const sortedModels = [...models].sort((a, b) => {
+      // 1. is_latest 优先
+      if (a.is_latest && !b.is_latest) return -1;
+      if (!a.is_latest && b.is_latest) return 1;
 
-      // latest 版本排在最前面
-      if (aIsLatest && !bIsLatest) return -1;
-      if (!aIsLatest && bIsLatest) return 1;
-
-      // 提取日期后缀（如 20251101）
-      const dateRegex = /-(\d{8})$/;
-      const aMatch = a.match(dateRegex);
-      const bMatch = b.match(dateRegex);
-
-      if (aMatch && bMatch) {
-        // 两个都有日期，按日期降序（最新的在前）
-        return bMatch[1].localeCompare(aMatch[1]);
+      // 2. 按 release_date 降序（最新的在前）
+      if (a.release_date && b.release_date) {
+        return b.release_date.localeCompare(a.release_date);
       }
+      if (a.release_date && !b.release_date) return -1;
+      if (!a.release_date && b.release_date) return 1;
 
-      if (aMatch && !bMatch) return -1; // 有日期的排在前面
-      if (!aMatch && bMatch) return 1;
-
-      // 其他情况按字母降序（通常版本号大的在前）
-      return b.localeCompare(a);
+      // 3. 按 display_name 字母序
+      return a.display_name.localeCompare(b.display_name);
     });
+
+    return sortedModels.map((m) => m.id);
   }, [selectedProvider, registryModels, aliasConfig]);
 
   // 初始化：优先选择服务器默认 Provider，否则选择第一个已配置的

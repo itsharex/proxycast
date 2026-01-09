@@ -145,11 +145,13 @@ export const TerminalAIModeSelector: React.FC<TerminalAIModeSelectorProps> = ({
         }
 
         if (!providerMap.has(key)) {
+          // 使用 provider.type 映射到 registryId，而不是 provider.id
+          const registryId = getRegistryIdFromType(provider.type);
           providerMap.set(key, {
             key,
             label,
-            registryId: provider.id,
-            fallbackRegistryId: getRegistryIdFromType(provider.type),
+            registryId,
+            fallbackRegistryId: registryId,
             type: provider.type,
           });
         }
@@ -184,37 +186,34 @@ export const TerminalAIModeSelector: React.FC<TerminalAIModeSelectorProps> = ({
     }
 
     // 从 model_registry 获取
-    let models = registryModels
-      .filter((m) => m.provider_id === selectedProvider.registryId)
-      .map((m) => m.id);
+    let models = registryModels.filter(
+      (m) => m.provider_id === selectedProvider.registryId,
+    );
 
     if (models.length === 0 && selectedProvider.fallbackRegistryId) {
-      models = registryModels
-        .filter((m) => m.provider_id === selectedProvider.fallbackRegistryId)
-        .map((m) => m.id);
+      models = registryModels.filter(
+        (m) => m.provider_id === selectedProvider.fallbackRegistryId,
+      );
     }
 
-    // 排序
-    return models.sort((a, b) => {
-      const aIsLatest = a.includes("-latest");
-      const bIsLatest = b.includes("-latest");
+    // 排序：使用 release_date 和 is_latest 字段
+    const sortedModels = [...models].sort((a, b) => {
+      // 1. is_latest 优先
+      if (a.is_latest && !b.is_latest) return -1;
+      if (!a.is_latest && b.is_latest) return 1;
 
-      if (aIsLatest && !bIsLatest) return -1;
-      if (!aIsLatest && bIsLatest) return 1;
-
-      const dateRegex = /-(\d{8})$/;
-      const aMatch = a.match(dateRegex);
-      const bMatch = b.match(dateRegex);
-
-      if (aMatch && bMatch) {
-        return bMatch[1].localeCompare(aMatch[1]);
+      // 2. 按 release_date 降序（最新的在前）
+      if (a.release_date && b.release_date) {
+        return b.release_date.localeCompare(a.release_date);
       }
+      if (a.release_date && !b.release_date) return -1;
+      if (!a.release_date && b.release_date) return 1;
 
-      if (aMatch && !bMatch) return -1;
-      if (!aMatch && bMatch) return 1;
-
-      return b.localeCompare(a);
+      // 3. 按 display_name 字母序
+      return a.display_name.localeCompare(b.display_name);
     });
+
+    return sortedModels.map((m) => m.id);
   }, [selectedProvider, registryModels, aliasConfig]);
 
   // 自动选择第一个模型

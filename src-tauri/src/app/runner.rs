@@ -70,7 +70,7 @@ pub fn run() {
         native_agent: native_agent_state,
         oauth_plugin_manager: oauth_plugin_manager_state,
         orchestrator: orchestrator_state,
-        connect_state: connect_state,
+        connect_state,
         model_registry: model_registry_state,
         global_config_manager: global_config_manager_state,
         terminal_manager: terminal_manager_state,
@@ -97,6 +97,7 @@ pub fn run() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
@@ -179,6 +180,14 @@ pub fn run() {
             }
         })
         .setup(move |app| {
+            // 设置 TerminalTool 的 AppHandle（用于发送事件到前端）
+            crate::agent::tools::set_terminal_tool_app_handle(app.handle().clone());
+            tracing::info!("[启动] TerminalTool AppHandle 已设置");
+
+            // 设置 TermScrollbackTool 的 AppHandle（用于发送事件到前端）
+            crate::agent::tools::set_term_scrollback_tool_app_handle(app.handle().clone());
+            tracing::info!("[启动] TermScrollbackTool AppHandle 已设置");
+
             // 初始化托盘管理器
             // Requirements 1.4: 应用启动时显示停止状态图标
             match TrayManager::new(app.handle()) {
@@ -204,6 +213,21 @@ pub fn run() {
             {
                 config_manager.0.set_app_handle(app.handle().clone());
                 tracing::info!("[启动] GlobalConfigManager AppHandle 已设置");
+            }
+
+            // 初始化截图对话模块
+            // _Requirements: 7.3_
+            {
+                let app_handle = app.handle();
+                match crate::screenshot::init(app_handle) {
+                    Ok(()) => {
+                        tracing::info!("[启动] 截图对话模块初始化成功");
+                    }
+                    Err(e) => {
+                        tracing::error!("[启动] 截图对话模块初始化失败: {}", e);
+                        // 截图模块初始化失败不影响应用运行
+                    }
+                }
             }
 
             // 初始化 Connect 状态
@@ -240,7 +264,36 @@ pub fn run() {
                 let app_handle = app.handle().clone();
                 let db_clone = db_clone.clone();
                 // 获取资源目录路径
-                let resource_dir = app.path().resource_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                let mut resource_dir = app.path().resource_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+
+                // 检查 resources/models/index.json 是否存在
+                let models_index = resource_dir.join("resources/models/index.json");
+
+                if !models_index.exists() {
+                    // 开发模式：尝试多个可能的路径
+                    let possible_paths = [
+                        // 从 target/debug 回退到 src-tauri
+                        std::env::current_exe()
+                            .ok()
+                            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+                            .map(|p| p.join("resources")),
+                        // 直接使用 target/debug/resources
+                        std::env::current_exe()
+                            .ok()
+                            .and_then(|p| p.parent().map(|p| p.to_path_buf())),
+                        // 使用当前工作目录
+                        std::env::current_dir().ok().map(|p| p.join("src-tauri")),
+                    ];
+
+                    for path in possible_paths.into_iter().flatten() {
+                        let test_index = path.join("resources/models/index.json");
+                        if test_index.exists() {
+                            resource_dir = path;
+                            break;
+                        }
+                    }
+                }
+
                 tauri::async_runtime::spawn(async move {
                     // 创建 ModelRegistryService
                     let mut service = crate::services::model_registry_service::ModelRegistryService::new(db_clone);
@@ -947,6 +1000,8 @@ pub fn run() {
             commands::agent_cmd::agent_list_sessions,
             commands::agent_cmd::agent_get_session,
             commands::agent_cmd::agent_delete_session,
+            commands::agent_cmd::agent_terminal_command_response,
+            commands::agent_cmd::agent_term_scrollback_response,
             // Native Agent commands
             commands::native_agent_cmd::native_agent_init,
             commands::native_agent_cmd::native_agent_status,
@@ -1035,7 +1090,7 @@ pub fn run() {
             commands::connect_cmd::send_connect_callback,
             // Model Registry commands
             commands::model_registry_cmd::get_model_registry,
-            // commands::model_registry_cmd::refresh_model_registry, // TODO: 暂时禁用
+            commands::model_registry_cmd::refresh_model_registry,
             commands::model_registry_cmd::search_models,
             commands::model_registry_cmd::get_model_preferences,
             commands::model_registry_cmd::toggle_model_favorite,
@@ -1086,6 +1141,18 @@ pub fn run() {
             commands::webview_cmd::resize_webview_panel,
             commands::webview_cmd::get_webview_panels,
             commands::webview_cmd::focus_webview_panel,
+            // Screenshot Chat commands
+            // _Requirements: 1.1, 1.4, 1.5, 2.2, 2.4, 3.1, 5.1_
+            commands::screenshot_cmd::get_experimental_config,
+            commands::screenshot_cmd::save_experimental_config,
+            commands::screenshot_cmd::start_screenshot,
+            commands::screenshot_cmd::validate_shortcut,
+            commands::screenshot_cmd::update_screenshot_shortcut,
+            commands::screenshot_cmd::close_screenshot_chat_window,
+            commands::screenshot_cmd::read_image_as_base64,
+            commands::screenshot_cmd::send_screenshot_chat,
+            commands::screenshot_cmd::close_screenshot_chat_window,
+            commands::screenshot_cmd::read_image_as_base64,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

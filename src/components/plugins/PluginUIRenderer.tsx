@@ -13,7 +13,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { BrowserInterceptorTool } from "@/components/tools/browser-interceptor/BrowserInterceptorTool";
 import { FlowMonitorPage } from "@/pages";
 import { ConfigManagementPage } from "@/components/config/ConfigManagementPage";
-import { TerminalPage } from "@/components/terminal";
 import { PluginUIRenderer as DynamicPluginRenderer } from "@/lib/plugin-loader/PluginUIRenderer";
 import { usePluginSDK } from "@/lib/plugin-sdk";
 import { Button } from "@/components/ui/button";
@@ -169,6 +168,7 @@ function PluginLauncher({
 /**
  * 内置插件组件映射
  * 注意: machine-id-tool 已移除，改为从插件包动态加载
+ * 注意: terminal-plugin 已移除，终端功能已内置到应用中
  */
 const builtinPluginComponents: Record<
   string,
@@ -177,7 +177,6 @@ const builtinPluginComponents: Record<
   "browser-interception": BrowserInterceptorTool,
   "flow-monitor": FlowMonitorPage,
   "config-switch": ConfigManagementPage,
-  "terminal-plugin": TerminalPage,
 };
 
 /**

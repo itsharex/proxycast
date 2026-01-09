@@ -653,49 +653,23 @@ pub async fn chat_completions(
         ),
     );
 
-    // 使用 RequestProcessor 解析模型别名和路由
-    eprintln!("[CHAT_COMPLETIONS] 开始路由解析...");
-    let provider = state.processor.resolve_and_route(&mut ctx).await;
+    // 使用 RequestProcessor 解析模型别名
+    eprintln!("[CHAT_COMPLETIONS] 开始模型别名解析...");
+    let resolved_model = state.processor.resolve_model(&request.model).await;
+    ctx.set_resolved_model(resolved_model.clone());
     eprintln!(
-        "[CHAT_COMPLETIONS] 路由结果: provider={:?}, resolved_model={}",
-        provider, ctx.resolved_model
+        "[CHAT_COMPLETIONS] 模型别名解析结果: {} -> {}",
+        request.model, resolved_model
     );
 
-    // 如果没有设置默认 Provider，返回错误
-    let provider = match provider {
-        Some(p) => p,
-        None => {
-            eprintln!("[CHAT_COMPLETIONS] 未设置默认 Provider，返回错误");
-            state.logs.write().await.add(
-                "error",
-                &format!("[ROUTE] request_id={} 未设置默认 Provider", ctx.request_id),
-            );
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({
-                    "error": {
-                        "message": "未设置默认 Provider，请先在设置中选择一个默认 Provider",
-                        "type": "configuration_error",
-                        "code": "no_default_provider"
-                    }
-                })),
-            )
-                .into_response();
-        }
-    };
-
     // 更新请求中的模型名为解析后的模型
-    if ctx.resolved_model != ctx.original_model {
-        request.model = ctx.resolved_model.clone();
-        eprintln!(
-            "[CHAT_COMPLETIONS] 模型别名解析: {} -> {}",
-            ctx.original_model, ctx.resolved_model
-        );
+    if resolved_model != request.model {
+        request.model = resolved_model.clone();
         state.logs.write().await.add(
             "info",
             &format!(
                 "[MAPPER] request_id={} alias={} -> model={}",
-                ctx.request_id, ctx.original_model, ctx.resolved_model
+                ctx.request_id, ctx.original_model, resolved_model
             ),
         );
     }
@@ -738,12 +712,12 @@ pub async fn chat_completions(
         ),
     );
 
-    // 记录路由结果
+    // 记录路由结果（使用 selected_provider）
     state.logs.write().await.add(
         "info",
         &format!(
             "[ROUTE] request_id={} model={} provider={}",
-            ctx.request_id, ctx.resolved_model, provider
+            ctx.request_id, ctx.resolved_model, selected_provider
         ),
     );
 
@@ -755,7 +729,7 @@ pub async fn chat_completions(
 
     // 尝试从凭证池中选择凭证
     // 如果指定了 X-Provider-Id，优先使用它（不降级）
-    // 否则使用路由规则选择的 provider，如果找不到再回退到 selected_provider
+    // 否则使用 selected_provider
     eprintln!("[CHAT_COMPLETIONS] 开始选择凭证...");
     let credential = match &state.db {
         Some(db) => {
@@ -798,54 +772,30 @@ pub async fn chat_completions(
                 }
                 cred
             } else {
-                // 原有逻辑：使用路由规则选择的 provider
-                let provider_str = provider.to_string();
+                // 使用 selected_provider（从 API Server 配置中获取）
                 eprintln!(
                     "[CHAT_COMPLETIONS] 尝试从凭证池选择: provider={}, model={}",
-                    provider_str, request.model
+                    selected_provider, request.model
                 );
                 let cred = state
                     .pool_service
-                    .select_credential(db, &provider_str, Some(&request.model))
+                    .select_credential(db, &selected_provider, Some(&request.model))
                     .ok()
                     .flatten();
 
                 if cred.is_some() {
-                    eprintln!("[CHAT_COMPLETIONS] 找到凭证: provider={}", provider_str);
-                } else {
-                    eprintln!("[CHAT_COMPLETIONS] 未找到凭证: provider={}", provider_str);
-                }
-
-                // 如果路由规则的 provider 没有找到凭证，回退到 selected_provider
-                if cred.is_none() && provider_str != selected_provider {
                     eprintln!(
-                        "[CHAT_COMPLETIONS] 回退到 selected_provider: {}",
+                        "[CHAT_COMPLETIONS] 找到凭证: provider={}",
                         selected_provider
                     );
-                    state.logs.write().await.add(
-                        "debug",
-                        &format!(
-                            "[ROUTE] No credential found for routed provider '{}', trying selected_provider '{}'",
-                            provider_str, selected_provider
-                        ),
-                    );
-                    let fallback_cred = state
-                        .pool_service
-                        .select_credential(db, &selected_provider, Some(&request.model))
-                        .ok()
-                        .flatten();
-                    if fallback_cred.is_some() {
-                        eprintln!(
-                            "[CHAT_COMPLETIONS] 回退凭证找到: provider={}",
-                            selected_provider
-                        );
-                    } else {
-                        eprintln!("[CHAT_COMPLETIONS] 回退凭证也未找到!");
-                    }
-                    fallback_cred
                 } else {
-                    cred
+                    eprintln!(
+                        "[CHAT_COMPLETIONS] 未找到凭证: provider={}",
+                        selected_provider
+                    );
                 }
+
+                cred
             }
         }
         None => {
@@ -1020,8 +970,15 @@ pub async fn chat_completions(
 
         // 启动 Flow 捕获
         let llm_request = build_llm_request_from_openai(&request, "/v1/chat/completions", &headers);
+
+        // 尝试将 selected_provider 解析为 ProviderType
+        // 如果是自定义 provider ID，则使用 OpenAI 作为默认值（因为大多数自定义 provider 使用 OpenAI 协议）
+        let provider_type = selected_provider
+            .parse::<ProviderType>()
+            .unwrap_or(ProviderType::OpenAI);
+
         let flow_metadata = build_flow_metadata(
-            provider,
+            provider_type,
             Some(&cred.uuid),
             cred.name.as_deref(),
             &headers,
@@ -1213,7 +1170,14 @@ pub async fn chat_completions(
 
     // 启动 Flow 捕获（legacy mode）
     let llm_request = build_llm_request_from_openai(&request, "/v1/chat/completions", &headers);
-    let flow_metadata = build_flow_metadata(provider, None, None, &headers, &ctx.request_id);
+
+    // 尝试将 selected_provider 解析为 ProviderType
+    // 如果是自定义 provider ID，则使用 OpenAI 作为默认值
+    let provider_type = selected_provider
+        .parse::<ProviderType>()
+        .unwrap_or(ProviderType::OpenAI);
+
+    let flow_metadata = build_flow_metadata(provider_type, None, None, &headers, &ctx.request_id);
     let flow_id = state
         .flow_monitor
         .start_flow(llm_request.clone(), flow_metadata.clone())
@@ -1744,38 +1708,18 @@ pub async fn anthropic_messages(
         ),
     );
 
-    // 使用 RequestProcessor 解析模型别名和路由
-    let provider = state.processor.resolve_and_route(&mut ctx).await;
-
-    // 如果没有设置默认 Provider，返回错误
-    let provider = match provider {
-        Some(p) => p,
-        None => {
-            state.logs.write().await.add(
-                "error",
-                &format!("[ROUTE] request_id={} 未设置默认 Provider", ctx.request_id),
-            );
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({
-                    "error": {
-                        "type": "configuration_error",
-                        "message": "未设置默认 Provider，请先在设置中选择一个默认 Provider"
-                    }
-                })),
-            )
-                .into_response();
-        }
-    };
+    // 使用 RequestProcessor 解析模型别名
+    let resolved_model = state.processor.resolve_model(&request.model).await;
+    ctx.set_resolved_model(resolved_model.clone());
 
     // 更新请求中的模型名为解析后的模型
-    if ctx.resolved_model != ctx.original_model {
-        request.model = ctx.resolved_model.clone();
+    if resolved_model != request.model {
+        request.model = resolved_model.clone();
         state.logs.write().await.add(
             "info",
             &format!(
                 "[MAPPER] request_id={} alias={} -> model={}",
-                ctx.request_id, ctx.original_model, ctx.resolved_model
+                ctx.request_id, ctx.original_model, resolved_model
             ),
         );
     }
@@ -1840,12 +1784,12 @@ pub async fn anthropic_messages(
         ),
     );
 
-    // 记录路由结果
+    // 记录路由结果（使用 selected_provider）
     state.logs.write().await.add(
         "info",
         &format!(
             "[ROUTE] request_id={} model={} provider={}",
-            ctx.request_id, ctx.resolved_model, provider
+            ctx.request_id, ctx.resolved_model, selected_provider
         ),
     );
 
@@ -1857,14 +1801,13 @@ pub async fn anthropic_messages(
 
     // 尝试从凭证池中选择凭证
     // 如果指定了 X-Provider-Id，优先使用它（不降级）
-    // 否则使用路由结果 provider（带智能降级）
-    let credential_provider = provider.to_string().to_lowercase();
+    // 否则使用 selected_provider
     let credential = match &state.db {
         Some(db) => {
             // 如果指定了 X-Provider-Id，优先使用它（不降级）
             if let Some(ref explicit_provider_id) = provider_id_header {
                 eprintln!(
-                    "[AMP] 使用 X-Provider-Id 指定的 provider: {}",
+                    "[ANTHROPIC_MESSAGES] 使用 X-Provider-Id 指定的 provider: {}",
                     explicit_provider_id
                 );
                 let cred = state
@@ -1899,97 +1842,77 @@ pub async fn anthropic_messages(
                 }
                 cred
             } else {
-                // 原有逻辑：根据路由结果选择凭证（带智能降级）
-                state
+                // 使用 selected_provider（从 API Server 配置中获取）
+                eprintln!(
+                    "[ANTHROPIC_MESSAGES] 尝试从凭证池选择: provider={}, model={}",
+                    selected_provider, request.model
+                );
+                let cred = state
                     .pool_service
-                    .select_credential_with_fallback(
-                        db,
-                        &state.api_key_service,
-                        &credential_provider,
-                        Some(&request.model),
-                        None, // provider_id_hint 可从路由或请求头提取
-                    )
+                    .select_credential(db, &selected_provider, Some(&request.model))
                     .ok()
-                    .flatten()
+                    .flatten();
+
+                if cred.is_some() {
+                    eprintln!(
+                        "[ANTHROPIC_MESSAGES] 找到凭证: provider={}",
+                        selected_provider
+                    );
+                } else {
+                    eprintln!(
+                        "[ANTHROPIC_MESSAGES] 未找到凭证: provider={}",
+                        selected_provider
+                    );
+                }
+
+                cred
             }
         }
-        None => None,
-    };
-
-    // 如果 Provider Pool 中没有找到凭证，尝试从 API Key Provider 获取
-    let credential = if credential.is_none() {
-        // 根据路由结果映射到 ApiProviderType
-        use crate::database::dao::api_key_provider::ApiProviderType;
-        let api_provider_type = match credential_provider.as_str() {
-            "anthropic" | "claude" => Some(ApiProviderType::Anthropic),
-            "openai" => Some(ApiProviderType::Openai),
-            "gemini" => Some(ApiProviderType::Gemini),
-            _ => None,
-        };
-
-        if let (Some(db), Some(api_type)) = (&state.db, api_provider_type) {
-            // 使用按类型获取的方法（包括自定义 Provider）
-            match state.api_key_service.get_next_api_key_by_type(db, api_type) {
-                Ok(Some((_key_id, api_key, provider_info))) => {
-                    state.logs.write().await.add(
-                        "info",
-                        &format!(
-                            "[ROUTE] Using API Key Provider credential: provider={}, type={:?}, api_host={}",
-                            provider_info.name, provider_info.provider_type, provider_info.api_host
-                        ),
-                    );
-
-                    let base_url = if provider_info.api_host.is_empty() {
-                        None
-                    } else {
-                        Some(provider_info.api_host.clone())
-                    };
-
-                    let provider_type = match provider_info.provider_type {
-                        ApiProviderType::Anthropic => crate::ProviderType::Anthropic,
-                        ApiProviderType::Openai | ApiProviderType::OpenaiResponse => {
-                            crate::ProviderType::OpenAI
-                        }
-                        ApiProviderType::Gemini => crate::ProviderType::GeminiApiKey,
-                        _ => crate::ProviderType::OpenAI,
-                    };
-
-                    // 根据 provider_type 创建对应的 CredentialData
-                    let credential_data = match provider_type {
-                        crate::ProviderType::Anthropic => {
-                            crate::models::provider_pool_model::CredentialData::AnthropicKey {
-                                api_key: api_key.clone(),
-                                base_url,
-                            }
-                        }
-                        crate::ProviderType::GeminiApiKey => {
-                            crate::models::provider_pool_model::CredentialData::GeminiApiKey {
-                                api_key: api_key.clone(),
-                                base_url,
-                                excluded_models: vec![],
-                            }
-                        }
-                        _ => crate::models::provider_pool_model::CredentialData::OpenAIKey {
-                            api_key: api_key.clone(),
-                            base_url,
-                        },
-                    };
-
-                    // 构建 ProviderCredential
-                    let mut cred = crate::models::provider_pool_model::ProviderCredential::new(
-                        provider_type,
-                        credential_data,
-                    );
-                    cred.name = Some(provider_info.name.clone());
-
-                    Some(cred)
-                }
-                Ok(None) => None,
-                Err(_) => None,
-            }
-        } else {
+        None => {
+            eprintln!("[ANTHROPIC_MESSAGES] 数据库未初始化!");
             None
         }
+    };
+
+    // 如果 Provider Pool 中没有找到凭证，尝试从 API Key Provider 获取（智能降级）
+    let credential = if credential.is_none() {
+        eprintln!("[ANTHROPIC_MESSAGES] Provider Pool 中未找到凭证，尝试 API Key Provider...");
+
+        // 策略 1: 优先按 provider_id 直接查找（支持自定义 Provider）
+        let mut found_credential: Option<crate::models::provider_pool_model::ProviderCredential> =
+            None;
+
+        if let Some(db) = &state.db {
+            eprintln!(
+                "[ANTHROPIC_MESSAGES] 尝试按 provider_id '{}' 直接查找凭证",
+                selected_provider
+            );
+
+            match state.api_key_service.get_fallback_credential(
+                db,
+                &crate::models::provider_pool_model::PoolProviderType::Anthropic,
+                Some(&selected_provider),
+            ) {
+                Ok(Some(cred)) => {
+                    eprintln!(
+                        "[ANTHROPIC_MESSAGES] 通过 provider_id '{}' 找到凭证: name={:?}",
+                        selected_provider, cred.name
+                    );
+                    found_credential = Some(cred);
+                }
+                Ok(None) => {
+                    eprintln!(
+                        "[ANTHROPIC_MESSAGES] provider_id '{}' 未找到凭证",
+                        selected_provider
+                    );
+                }
+                Err(e) => {
+                    eprintln!("[ANTHROPIC_MESSAGES] 查找凭证时出错: {}", e);
+                }
+            }
+        }
+
+        found_credential
     } else {
         credential
     };
@@ -2008,8 +1931,15 @@ pub async fn anthropic_messages(
 
         // 启动 Flow 捕获
         let llm_request = build_llm_request_from_anthropic(&request, "/v1/messages", &headers);
+
+        // 尝试将 selected_provider 解析为 ProviderType
+        // 如果是自定义 provider ID，则使用 OpenAI 作为默认值
+        let provider_type = selected_provider
+            .parse::<ProviderType>()
+            .unwrap_or(ProviderType::OpenAI);
+
         let flow_metadata = build_flow_metadata(
-            provider,
+            provider_type,
             Some(&cred.uuid),
             cred.name.as_deref(),
             &headers,
@@ -2198,7 +2128,14 @@ pub async fn anthropic_messages(
 
     // 启动 Flow 捕获（legacy mode）
     let llm_request = build_llm_request_from_anthropic(&request, "/v1/messages", &headers);
-    let flow_metadata = build_flow_metadata(provider, None, None, &headers, &ctx.request_id);
+
+    // 尝试将 selected_provider 解析为 ProviderType
+    // 如果是自定义 provider ID，则使用 OpenAI 作为默认值
+    let provider_type = selected_provider
+        .parse::<ProviderType>()
+        .unwrap_or(ProviderType::OpenAI);
+
+    let flow_metadata = build_flow_metadata(provider_type, None, None, &headers, &ctx.request_id);
     let flow_id = state
         .flow_monitor
         .start_flow(llm_request.clone(), flow_metadata.clone())

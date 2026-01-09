@@ -47,6 +47,8 @@ export interface TerminalAIConfig {
   widgetContext: boolean;
   /** 上下文行数限制 */
   contextLines: number;
+  /** 是否自动执行命令（不需要手动批准） */
+  autoExecute: boolean;
 }
 
 /**
@@ -69,6 +71,29 @@ export interface ModelSelection {
 }
 
 /**
+ * 待执行命令（用于 AI 控制终端）
+ */
+export interface PendingTerminalCommand {
+  id: string;
+  command: string;
+  status:
+    | "pending"
+    | "approved"
+    | "rejected"
+    | "executing"
+    | "completed"
+    | "failed";
+  createdAt: Date;
+  executedAt?: Date;
+  completedAt?: Date;
+  error?: string;
+  /** 工作目录（可选，来自后端请求） */
+  workingDir?: string;
+  /** 超时时间（秒，来自后端请求） */
+  timeoutSecs?: number;
+}
+
+/**
  * Terminal AI Hook 返回值
  */
 export interface UseTerminalAIReturn {
@@ -87,8 +112,18 @@ export interface UseTerminalAIReturn {
   sendMessage: (content: string, images?: AIMessageImage[]) => Promise<void>;
   clearMessages: () => void;
   toggleWidgetContext: () => void;
+  toggleAutoExecute: () => void;
   setContextLines: (lines: number) => void;
 
   // 终端上下文
   getTerminalContext: () => string | null;
+
+  // 终端控制（新增）
+  isTerminalConnected: boolean;
+  pendingCommands: PendingTerminalCommand[];
+  connectTerminal: (sessionId: string) => void;
+  disconnectTerminal: () => void;
+  sendCommandToTerminal: (command: string) => Promise<string>;
+  approveCommand: (commandId: string) => Promise<void>;
+  rejectCommand: (commandId: string) => Promise<void>;
 }

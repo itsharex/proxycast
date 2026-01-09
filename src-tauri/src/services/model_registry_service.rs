@@ -122,59 +122,37 @@ impl ModelRegistryService {
     pub async fn initialize(&self) -> Result<(), String> {
         tracing::info!("[ModelRegistry] 初始化模型注册服务");
 
-        // 1. 首先尝试从内嵌资源加载
-        match self.load_from_embedded_resources().await {
-            Ok((models, aliases)) => {
-                tracing::info!(
-                    "[ModelRegistry] 从内嵌资源加载了 {} 个模型, {} 个别名配置",
-                    models.len(),
-                    aliases.len()
-                );
+        // 始终从内嵌资源加载，不再回退到数据库
+        let (models, aliases) = self.load_from_embedded_resources().await?;
 
-                // 更新缓存
-                {
-                    let mut cache = self.models_cache.write().await;
-                    *cache = models.clone();
-                }
-                {
-                    let mut cache = self.aliases_cache.write().await;
-                    *cache = aliases;
-                }
+        tracing::info!(
+            "[ModelRegistry] 从内嵌资源加载了 {} 个模型, {} 个别名配置",
+            models.len(),
+            aliases.len()
+        );
 
-                // 更新同步状态
-                {
-                    let mut state = self.sync_state.write().await;
-                    state.model_count = models.len() as u32;
-                    state.last_sync_at = Some(chrono::Utc::now().timestamp());
-                    state.is_syncing = false;
-                    state.last_error = None;
-                }
-
-                // 保存到数据库
-                if let Err(e) = self.save_models_to_db(&models).await {
-                    tracing::warn!("[ModelRegistry] 保存模型到数据库失败: {}", e);
-                }
-
-                return Ok(());
-            }
-            Err(e) => {
-                tracing::warn!("[ModelRegistry] 从内嵌资源加载失败: {}", e);
-            }
+        // 更新缓存
+        {
+            let mut cache = self.models_cache.write().await;
+            *cache = models.clone();
+        }
+        {
+            let mut cache = self.aliases_cache.write().await;
+            *cache = aliases;
         }
 
-        // 2. 回退到从数据库加载
-        match self.load_from_db().await {
-            Ok(models) if !models.is_empty() => {
-                tracing::info!("[ModelRegistry] 从数据库加载了 {} 个模型", models.len());
-                let mut cache = self.models_cache.write().await;
-                *cache = models;
-            }
-            Ok(_) => {
-                tracing::warn!("[ModelRegistry] 数据库中没有模型数据");
-            }
-            Err(e) => {
-                tracing::error!("[ModelRegistry] 从数据库加载失败: {}", e);
-            }
+        // 更新同步状态
+        {
+            let mut state = self.sync_state.write().await;
+            state.model_count = models.len() as u32;
+            state.last_sync_at = Some(chrono::Utc::now().timestamp());
+            state.is_syncing = false;
+            state.last_error = None;
+        }
+
+        // 保存到数据库（仅用于持久化，不影响运行时数据）
+        if let Err(e) = self.save_models_to_db(&models).await {
+            tracing::warn!("[ModelRegistry] 保存模型到数据库失败: {}", e);
         }
 
         Ok(())
@@ -195,8 +173,17 @@ impl ModelRegistryService {
             .as_ref()
             .ok_or_else(|| "资源目录未设置".to_string())?;
 
+        tracing::info!("[ModelRegistry] resource_dir: {:?}", resource_dir);
+
         let models_dir = resource_dir.join(MODELS_RESOURCE_DIR);
         let index_file = models_dir.join("index.json");
+
+        tracing::info!("[ModelRegistry] models_dir: {:?}", models_dir);
+        tracing::info!(
+            "[ModelRegistry] index_file: {:?}, exists: {}",
+            index_file,
+            index_file.exists()
+        );
 
         if !index_file.exists() {
             return Err(format!("索引文件不存在: {:?}", index_file));
@@ -218,8 +205,11 @@ impl ModelRegistryService {
         let now = chrono::Utc::now().timestamp();
         let providers_dir = models_dir.join("providers");
 
+        tracing::info!("[ModelRegistry] providers_dir: {:?}", providers_dir);
+
         for provider_id in &index.providers {
             let provider_file = providers_dir.join(format!("{}.json", provider_id));
+
             if !provider_file.exists() {
                 tracing::warn!("[ModelRegistry] Provider 文件不存在: {:?}", provider_file);
                 continue;
@@ -248,10 +238,36 @@ impl ModelRegistryService {
             }
         }
 
-        // 去重：使用 HashMap 按 id 去重，保留第一个出现的模型
-        let mut seen_ids = std::collections::HashSet::new();
+        // 去重：优先保留 provider_id 为 "anthropic" 的模型
+        // 对于相同 ID 的模型，anthropic 官方的优先级最高
+        let mut seen_ids: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
         let original_count = models.len();
-        models.retain(|m| seen_ids.insert(m.id.clone()));
+
+        let mut to_keep = vec![true; models.len()];
+        for (idx, model) in models.iter().enumerate() {
+            if let Some(&existing_idx) = seen_ids.get(&model.id) {
+                // 已经有相同 ID 的模型
+                let existing_model = &models[existing_idx];
+
+                // 如果当前模型是 anthropic 官方的，替换之前的
+                if model.provider_id == "anthropic" && existing_model.provider_id != "anthropic" {
+                    to_keep[existing_idx] = false;
+                    seen_ids.insert(model.id.clone(), idx);
+                } else {
+                    // 否则保留第一个
+                    to_keep[idx] = false;
+                }
+            } else {
+                seen_ids.insert(model.id.clone(), idx);
+            }
+        }
+
+        models = models
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, model)| if to_keep[idx] { Some(model) } else { None })
+            .collect();
 
         if models.len() < original_count {
             tracing::warn!(
@@ -357,7 +373,8 @@ impl ModelRegistryService {
         }
     }
 
-    /// 从数据库加载模型
+    /// 从数据库加载模型（预留，将来实现从数据库加载自定义模型）
+    #[allow(dead_code)]
     async fn load_from_db(&self) -> Result<Vec<EnhancedModelMetadata>, String> {
         let (models, sync_rows) = {
             let conn = self.db.lock().map_err(|e| e.to_string())?;
@@ -509,6 +526,47 @@ impl ModelRegistryService {
     /// 获取同步状态
     pub async fn get_sync_state(&self) -> ModelSyncState {
         self.sync_state.read().await.clone()
+    }
+
+    /// 强制从内嵌资源重新加载模型数据
+    ///
+    /// 清除数据库缓存并重新从资源文件加载最新的模型数据
+    pub async fn force_reload(&self) -> Result<u32, String> {
+        tracing::info!("[ModelRegistry] 强制重新加载模型数据");
+
+        // 从内嵌资源加载
+        let (models, aliases) = self.load_from_embedded_resources().await?;
+
+        let model_count = models.len() as u32;
+        tracing::info!(
+            "[ModelRegistry] 从内嵌资源加载了 {} 个模型, {} 个别名配置",
+            models.len(),
+            aliases.len()
+        );
+
+        // 更新缓存
+        {
+            let mut cache = self.models_cache.write().await;
+            *cache = models.clone();
+        }
+        {
+            let mut cache = self.aliases_cache.write().await;
+            *cache = aliases;
+        }
+
+        // 更新同步状态
+        {
+            let mut state = self.sync_state.write().await;
+            state.model_count = model_count;
+            state.last_sync_at = Some(chrono::Utc::now().timestamp());
+            state.is_syncing = false;
+            state.last_error = None;
+        }
+
+        // 保存到数据库
+        self.save_models_to_db(&models).await?;
+
+        Ok(model_count)
     }
 
     /// 按 Provider 获取模型

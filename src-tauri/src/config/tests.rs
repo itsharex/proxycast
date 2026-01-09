@@ -188,6 +188,7 @@ fn arb_config() -> impl Strategy<Value = Config> {
             models: crate::config::ModelsConfig::default(),
             agent: crate::config::NativeAgentConfig::default(),
             language: "zh".to_string(),
+            experimental: crate::config::ExperimentalFeatures::default(),
         })
 }
 
@@ -425,6 +426,7 @@ fn arb_valid_config() -> impl Strategy<Value = Config> {
             models: crate::config::ModelsConfig::default(),
             agent: crate::config::NativeAgentConfig::default(),
             language: "zh".to_string(),
+            experimental: crate::config::ExperimentalFeatures::default(),
         })
 }
 
@@ -473,6 +475,7 @@ fn arb_invalid_config() -> impl Strategy<Value = Config> {
                     models: crate::config::ModelsConfig::default(),
                     agent: crate::config::NativeAgentConfig::default(),
                     language: "zh".to_string(),
+                    experimental: crate::config::ExperimentalFeatures::default(),
                 };
                 // 根据类型使配置无效
                 match invalid_type {

@@ -313,6 +313,7 @@ export async function sendAgentMessageStream(
   model?: string,
   images?: ImageInput[],
   provider?: string,
+  terminalMode?: boolean,
 ): Promise<void> {
   return await invoke("native_agent_chat_stream", {
     message,
@@ -321,6 +322,7 @@ export async function sendAgentMessageStream(
     model,
     images,
     provider,
+    terminalMode,
   });
 }
 
@@ -449,4 +451,118 @@ export async function extendGooseSystemPrompt(
  */
 export async function listGooseProviders(): Promise<GooseProviderInfo[]> {
   return await invoke("goose_agent_list_providers");
+}
+
+// ============================================================
+// Terminal Tool API (终端命令执行)
+// ============================================================
+
+/**
+ * 终端命令请求（从后端发送到前端）
+ */
+export interface TerminalCommandRequest {
+  /** 请求 ID */
+  request_id: string;
+  /** 要执行的命令 */
+  command: string;
+  /** 工作目录（可选） */
+  working_dir?: string;
+  /** 超时时间（秒） */
+  timeout_secs: number;
+}
+
+/**
+ * 终端命令响应（从前端发送到后端）
+ */
+export interface TerminalCommandResponse {
+  /** 请求 ID */
+  request_id: string;
+  /** 是否成功 */
+  success: boolean;
+  /** 输出内容 */
+  output: string;
+  /** 错误信息 */
+  error?: string;
+  /** 退出码 */
+  exit_code?: number;
+  /** 是否被用户拒绝 */
+  rejected: boolean;
+}
+
+/**
+ * 发送终端命令响应到后端
+ *
+ * 当用户批准或拒绝命令后，调用此函数将结果发送给 TerminalTool
+ */
+export async function sendTerminalCommandResponse(
+  response: TerminalCommandResponse,
+): Promise<void> {
+  return await invoke("agent_terminal_command_response", {
+    requestId: response.request_id,
+    success: response.success,
+    output: response.output,
+    error: response.error,
+    exitCode: response.exit_code,
+    rejected: response.rejected,
+  });
+}
+
+// ============================================================
+// Terminal Scrollback Tool API (终端输出历史读取)
+// ============================================================
+
+/**
+ * 终端滚动缓冲区请求（从后端发送到前端）
+ */
+export interface TermScrollbackRequest {
+  /** 请求 ID */
+  request_id: string;
+  /** 终端会话 ID */
+  session_id: string;
+  /** 起始行号（可选，从 0 开始） */
+  line_start?: number;
+  /** 读取行数（可选） */
+  count?: number;
+}
+
+/**
+ * 终端滚动缓冲区响应（从前端发送到后端）
+ */
+export interface TermScrollbackResponse {
+  /** 请求 ID */
+  request_id: string;
+  /** 是否成功 */
+  success: boolean;
+  /** 总行数 */
+  total_lines: number;
+  /** 实际返回的起始行号 */
+  line_start: number;
+  /** 实际返回的结束行号 */
+  line_end: number;
+  /** 输出内容 */
+  content: string;
+  /** 是否还有更多内容 */
+  has_more: boolean;
+  /** 错误信息 */
+  error?: string;
+}
+
+/**
+ * 发送终端滚动缓冲区响应到后端
+ *
+ * 当前端读取终端输出历史后，调用此函数将结果发送给 TermScrollbackTool
+ */
+export async function sendTermScrollbackResponse(
+  response: TermScrollbackResponse,
+): Promise<void> {
+  return await invoke("agent_term_scrollback_response", {
+    requestId: response.request_id,
+    success: response.success,
+    totalLines: response.total_lines,
+    lineStart: response.line_start,
+    lineEnd: response.line_end,
+    content: response.content,
+    hasMore: response.has_more,
+    error: response.error,
+  });
 }

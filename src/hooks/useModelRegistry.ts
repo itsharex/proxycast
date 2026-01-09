@@ -164,35 +164,55 @@ export function useModelRegistry(
   const [error, setError] = useState<string | null>(null);
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
 
-  // 加载模型数据
+  // 加载模型数据（带重试机制）
   const loadModels = useCallback(async () => {
     setLoading(true);
     setError(null);
 
-    try {
-      const [models, prefs, syncState] = await Promise.all([
-        modelRegistryApi.getModelRegistry(),
-        modelRegistryApi.getModelPreferences(),
-        modelRegistryApi.getModelSyncState(),
-      ]);
+    const maxRetries = 5;
+    const retryDelay = 500; // 500ms
 
-      setAllModels(models);
-      setPreferences(new Map(prefs.map((p) => [p.model_id, p])));
-      setLastSyncAt(syncState.last_sync_at);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const [models, prefs, syncState] = await Promise.all([
+          modelRegistryApi.getModelRegistry(),
+          modelRegistryApi.getModelPreferences(),
+          modelRegistryApi.getModelSyncState(),
+        ]);
+
+        setAllModels(models);
+        setPreferences(new Map(prefs.map((p) => [p.model_id, p])));
+        setLastSyncAt(syncState.last_sync_at);
+        setLoading(false);
+        return; // 成功，退出
+      } catch (e) {
+        const errorMsg = e instanceof Error ? e.message : String(e);
+
+        // 如果是"服务未初始化"错误，且还有重试次数，则等待后重试
+        if (errorMsg.includes("未初始化") && attempt < maxRetries - 1) {
+          console.log(
+            `[ModelRegistry] 服务未初始化，${retryDelay}ms 后重试 (${attempt + 1}/${maxRetries})`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, retryDelay));
+          continue;
+        }
+
+        // 其他错误或已达到最大重试次数
+        setError(errorMsg);
+        setLoading(false);
+        return;
+      }
     }
   }, []);
 
-  // 刷新（强制从 models.dev 获取）
+  // 刷新（强制从内嵌资源重新加载）
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      await modelRegistryApi.refreshModelRegistry();
+      const count = await modelRegistryApi.refreshModelRegistry();
+      console.log(`[ModelRegistry] 刷新完成，加载了 ${count} 个模型`);
       await loadModels();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

@@ -516,6 +516,8 @@ pub struct ModelsDevModalities {
 
 impl ModelsDevModel {
     /// 转换为 EnhancedModelMetadata
+    /// 预留：用于从 models.dev API 导入模型数据
+    #[allow(dead_code)]
     pub fn to_enhanced_metadata(
         &self,
         provider_id: &str,
@@ -584,6 +586,8 @@ impl ModelsDevModel {
 }
 
 /// 根据模型 ID 和名称推断服务等级
+/// 用于 to_enhanced_metadata 和测试
+#[allow(dead_code)]
 fn infer_model_tier(model_id: &str, model_name: &str) -> ModelTier {
     let id_lower = model_id.to_lowercase();
     let name_lower = model_name.to_lowercase();

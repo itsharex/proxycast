@@ -21,9 +21,10 @@ export async function getModelRegistry(): Promise<EnhancedModelMetadata[]> {
 }
 
 /**
- * 刷新模型注册表（从 models.dev 获取最新数据）
+ * 刷新模型注册表（强制从内嵌资源重新加载）
+ * @returns 加载的模型数量
  */
-export async function refreshModelRegistry(): Promise<void> {
+export async function refreshModelRegistry(): Promise<number> {
   return invoke("refresh_model_registry");
 }
 

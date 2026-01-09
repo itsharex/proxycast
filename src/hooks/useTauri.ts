@@ -132,6 +132,26 @@ export interface ApiKeyEntry {
   proxy_url: string | null;
 }
 
+// ============ 实验室功能配置 ============
+
+/**
+ * 截图对话功能配置
+ */
+export interface ScreenshotChatConfig {
+  /** 是否启用截图对话功能 */
+  enabled: boolean;
+  /** 触发截图的全局快捷键 */
+  shortcut: string;
+}
+
+/**
+ * 实验室功能配置
+ */
+export interface ExperimentalFeatures {
+  /** 截图对话功能配置 */
+  screenshot_chat: ScreenshotChatConfig;
+}
+
 export interface Config {
   server: {
     host: string;
@@ -174,6 +194,8 @@ export interface Config {
   minimize_to_tray: boolean;
   /** 用户界面语言 ("zh" 或 "en") */
   language: string;
+  /** 实验室功能配置 */
+  experimental?: ExperimentalFeatures;
 }
 
 export interface LogEntry {
@@ -510,4 +532,45 @@ export interface NetworkInfo {
  */
 export async function getNetworkInfo(): Promise<NetworkInfo> {
   return safeInvoke("get_network_info");
+}
+
+// ============ 实验室功能 API ============
+
+/**
+ * 获取实验室功能配置
+ * @returns 实验室功能配置对象
+ */
+export async function getExperimentalConfig(): Promise<ExperimentalFeatures> {
+  return safeInvoke("get_experimental_config");
+}
+
+/**
+ * 保存实验室功能配置
+ * @param config 实验室功能配置对象
+ */
+export async function saveExperimentalConfig(
+  config: ExperimentalFeatures,
+): Promise<void> {
+  return safeInvoke("save_experimental_config", {
+    experimentalConfig: config,
+  });
+}
+
+/**
+ * 验证快捷键格式
+ * @param shortcut 快捷键字符串
+ * @returns 是否有效
+ */
+export async function validateShortcut(shortcut: string): Promise<boolean> {
+  return safeInvoke("validate_shortcut", { shortcutStr: shortcut });
+}
+
+/**
+ * 更新截图快捷键
+ * @param shortcut 新的快捷键字符串
+ */
+export async function updateScreenshotShortcut(
+  shortcut: string,
+): Promise<void> {
+  return safeInvoke("update_screenshot_shortcut", { newShortcut: shortcut });
 }

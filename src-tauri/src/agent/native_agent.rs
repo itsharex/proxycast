@@ -19,7 +19,7 @@
 
 use crate::agent::protocols::{create_protocol, Protocol};
 use crate::agent::tool_loop::{ToolCallResult, ToolLoopEngine, ToolLoopState};
-use crate::agent::tools::{create_default_registry, ToolRegistry};
+use crate::agent::tools::{create_default_registry, create_terminal_registry, ToolRegistry};
 use crate::agent::types::*;
 use crate::models::openai::{
     ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ContentPart as OpenAIContentPart,
@@ -813,8 +813,23 @@ impl NativeAgentState {
 
     /// 获取工具注册表
     pub fn get_tool_registry(&self) -> Result<Arc<ToolRegistry>, String> {
+        self.get_tool_registry_with_mode(false)
+    }
+
+    /// 获取工具注册表（支持 Terminal 模式）
+    ///
+    /// # Arguments
+    /// * `terminal_mode` - 是否使用 Terminal 模式（使用 TerminalTool 替代 BashTool）
+    pub fn get_tool_registry_with_mode(
+        &self,
+        terminal_mode: bool,
+    ) -> Result<Arc<ToolRegistry>, String> {
         let base_dir = dirs::home_dir().ok_or_else(|| "无法获取用户 home 目录".to_string())?;
-        let registry = create_default_registry(base_dir);
+        let registry = if terminal_mode {
+            create_terminal_registry(base_dir)
+        } else {
+            create_default_registry(base_dir)
+        };
         Ok(Arc::new(registry))
     }
 

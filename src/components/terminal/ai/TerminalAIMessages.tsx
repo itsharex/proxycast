@@ -9,6 +9,7 @@
 import React, { useRef, useEffect, useState, useCallback, memo } from "react";
 import { cn } from "@/lib/utils";
 import type { AIMessage } from "./types";
+import type { ToolCallState } from "@/lib/api/agent";
 
 // ============================================================================
 // 子组件
@@ -100,43 +101,82 @@ MessageContent.displayName = "MessageContent";
 /**
  * 工具调用显示
  */
-const ToolCallDisplay = memo(
-  ({
-    toolCall,
-  }: {
-    toolCall: {
-      id: string;
-      name: string;
-      status: string;
-      result?: { success: boolean; output?: string; error?: string };
-    };
-  }) => {
-    const statusIcon =
-      toolCall.status === "completed"
-        ? "✓"
-        : toolCall.status === "failed"
-          ? "✗"
-          : "•";
-    const statusColor =
-      toolCall.status === "completed"
-        ? "text-green-500"
-        : toolCall.status === "failed"
-          ? "text-red-500"
-          : "text-zinc-400";
+const ToolCallDisplay = memo(({ toolCall }: { toolCall: ToolCallState }) => {
+  const isCompleted = toolCall.status === "completed";
+  const isFailed = toolCall.status === "failed";
+  const isRunning = toolCall.status === "running";
 
-    return (
-      <div className="flex flex-col gap-1 p-2 rounded bg-zinc-800/60 border border-zinc-700 text-sm">
-        <div className="flex items-center gap-2">
-          <span className={cn("font-bold", statusColor)}>{statusIcon}</span>
-          <span className="font-medium">{toolCall.name}</span>
-        </div>
-        {toolCall.result?.error && (
-          <div className="text-red-300 pl-5">{toolCall.result.error}</div>
+  // 状态图标
+  const statusIcon = isCompleted ? "✓" : isFailed ? "✗" : "•";
+
+  // 背景色：成功用绿色调，失败用红色调，运行中用灰色
+  const bgColor = isCompleted
+    ? "bg-green-900/30 border-green-700/50"
+    : isFailed
+      ? "bg-red-900/30 border-red-700/50"
+      : "bg-zinc-800/60 border-zinc-700";
+
+  // 图标颜色
+  const iconColor = isCompleted
+    ? "text-green-400"
+    : isFailed
+      ? "text-red-400"
+      : "text-zinc-400";
+
+  // 工具名称颜色
+  const nameColor = isCompleted
+    ? "text-green-300"
+    : isFailed
+      ? "text-red-300"
+      : "text-zinc-300";
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-1.5 p-2.5 rounded-md border text-sm",
+        bgColor,
+      )}
+    >
+      {/* 工具名称和状态 */}
+      <div className="flex items-center gap-2">
+        <span className={cn("font-bold text-base", iconColor)}>
+          {statusIcon}
+        </span>
+        <span className={cn("font-medium", nameColor)}>{toolCall.name}</span>
+        {isRunning && (
+          <span className="text-xs text-zinc-500 animate-pulse">执行中...</span>
         )}
       </div>
-    );
-  },
-);
+
+      {/* 显示结果 */}
+      {toolCall.result && (
+        <div className="pl-6 space-y-1">
+          {/* 成功输出 */}
+          {toolCall.result.success && toolCall.result.output && (
+            <div className="text-zinc-300 text-xs font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto bg-zinc-900/50 rounded p-2">
+              {toolCall.result.output.length > 500
+                ? toolCall.result.output.slice(0, 500) + "..."
+                : toolCall.result.output}
+            </div>
+          )}
+
+          {/* 错误信息 */}
+          {toolCall.result.error && (
+            <div className="text-red-300 text-xs">
+              <span className="font-medium">错误: </span>
+              {toolCall.result.error}
+            </div>
+          )}
+
+          {/* 退出码（如果有） */}
+          {!toolCall.result.success && !toolCall.result.error && (
+            <div className="text-red-300 text-xs">命令执行失败</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
 
 ToolCallDisplay.displayName = "ToolCallDisplay";
 
