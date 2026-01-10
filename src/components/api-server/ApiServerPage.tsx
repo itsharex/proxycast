@@ -398,6 +398,14 @@ export function ApiServerPage() {
     }
   }, [providerSwitchMsg]);
 
+  // 当切换功能 Tab 时，重置所有测试状态
+  useEffect(() => {
+    if (activeTab !== "server") {
+      setTestResults({});
+      setExpandedTest(null);
+    }
+  }, [activeTab]);
+
   const handleSetDefaultProvider = async (providerId: string) => {
     try {
       await setDefaultProvider(providerId);
@@ -432,9 +440,23 @@ export function ApiServerPage() {
     }
   };
 
-  const serverUrl = status
-    ? `http://${status.host}:${status.port}`
-    : `http://localhost:${config?.server.port ?? 8999}`;
+  // 根据监听地址智能选择测试 URL
+  // - 127.0.0.1: 使用 127.0.0.1（仅本机）
+  // - 0.0.0.0: 使用 127.0.0.1（本机访问所有接口）
+  // - 局域网 IP: 使用该 IP（允许局域网测试）
+  const getTestUrl = (host: string, port: number) => {
+    if (host === "0.0.0.0") {
+      return `http://127.0.0.1:${port}`;
+    }
+    return `http://${host}:${port}`;
+  };
+
+  // 使用 editHost 而不是 status.host，这样可以实时反映用户的选择
+  const currentHost = status?.running ? status.host : editHost;
+  const currentPort = status?.running
+    ? status.port
+    : parseInt(editPort) || 8999;
+  const serverUrl = getTestUrl(currentHost, currentPort);
   const apiKey = config?.server.api_key ?? "";
 
   // 根据 Provider 类型获取测试模型
