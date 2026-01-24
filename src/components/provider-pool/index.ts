@@ -7,5 +7,4 @@ export { VertexAISection } from "./VertexAISection";
 export { CodexSection } from "./CodexSection";
 export { AmpConfigSection } from "./AmpConfigSection";
 export { UsageDisplay } from "./UsageDisplay";
-export { OAuthPluginTab } from "./OAuthPluginTab";
 export { ModelRegistryTab } from "./ModelRegistryTab";
