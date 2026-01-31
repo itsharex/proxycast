@@ -186,6 +186,7 @@ impl SessionService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::general_chat::MessageRole;
 
     #[test]
     fn test_create_session_with_name() {

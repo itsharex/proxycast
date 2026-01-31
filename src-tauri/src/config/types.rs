@@ -1749,6 +1749,7 @@ mod unit_tests {
             gemini_api_keys: vec![],
             vertex_api_keys: vec![],
             codex: vec![],
+            asr: vec![],
         };
 
         let yaml = serde_yaml::to_string(&pool).unwrap();

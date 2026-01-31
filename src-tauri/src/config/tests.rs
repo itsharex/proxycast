@@ -1228,6 +1228,7 @@ fn arb_credential_pool_config() -> impl Strategy<Value = CredentialPoolConfig> {
                 gemini_api_keys: vec![],
                 vertex_api_keys: vec![],
                 codex: vec![],
+                asr: vec![],
             },
         )
 }
@@ -2245,6 +2246,7 @@ fn arb_extended_credential_pool_config() -> impl Strategy<Value = CredentialPool
                     gemini_api_keys,
                     vertex_api_keys,
                     codex,
+                    asr: vec![],
                 }
             },
         )

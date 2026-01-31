@@ -2,6 +2,7 @@
 
 #![allow(dead_code)]
 
+use super::types::{WsConnectionStatus, WsErrorCode};
 use super::*;
 
 #[test]
