@@ -29,10 +29,10 @@ pub enum LoggerError {
 impl std::fmt::Display for LoggerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LoggerError::Io(e) => write!(f, "IO 错误: {}", e),
-            LoggerError::Serialization(e) => write!(f, "序列化错误: {}", e),
-            LoggerError::NotFound(id) => write!(f, "日志未找到: {}", id),
-            LoggerError::DirectoryCreation(msg) => write!(f, "日志目录创建失败: {}", msg),
+            LoggerError::Io(e) => write!(f, "IO 错误: {e}"),
+            LoggerError::Serialization(e) => write!(f, "序列化错误: {e}"),
+            LoggerError::NotFound(id) => write!(f, "日志未找到: {id}"),
+            LoggerError::DirectoryCreation(msg) => write!(f, "日志目录创建失败: {msg}"),
         }
     }
 }
@@ -107,7 +107,7 @@ impl RequestLogger {
 
         // 创建日志目录
         fs::create_dir_all(&log_dir).map_err(|e| {
-            LoggerError::DirectoryCreation(format!("无法创建日志目录 {:?}: {}", log_dir, e))
+            LoggerError::DirectoryCreation(format!("无法创建日志目录 {log_dir:?}: {e}"))
         })?;
 
         let logger = Self {
@@ -316,7 +316,7 @@ impl RequestLogger {
             let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
 
             let json = serde_json::to_string(log)?;
-            writeln!(file, "{}", json)?;
+            writeln!(file, "{json}")?;
         }
 
         Ok(())
@@ -325,7 +325,7 @@ impl RequestLogger {
     /// 如果需要则轮转日志文件
     fn rotate_log_file_if_needed(&self) -> Result<(), LoggerError> {
         let today = Utc::now().format("%Y-%m-%d").to_string();
-        let expected_file = self.log_dir.join(format!("requests_{}.jsonl", today));
+        let expected_file = self.log_dir.join(format!("requests_{today}.jsonl"));
 
         let needs_rotation = {
             let current = self.current_log_file.read();
@@ -370,9 +370,7 @@ impl RequestLogger {
     fn find_next_log_file(&self, date: &str) -> Result<PathBuf, LoggerError> {
         let mut index = 1;
         loop {
-            let file = self
-                .log_dir
-                .join(format!("requests_{}_{}.jsonl", date, index));
+            let file = self.log_dir.join(format!("requests_{date}_{index}.jsonl"));
             if !file.exists()
                 || file
                     .metadata()

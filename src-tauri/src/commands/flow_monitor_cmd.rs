@@ -206,7 +206,7 @@ pub async fn query_flows(
             request.page_size,
         )
         .await
-        .map_err(|e| format!("查询 Flow 失败: {}", e))
+        .map_err(|e| format!("查询 Flow 失败: {e}"))
 }
 
 /// 获取单个 Flow 详情
@@ -230,7 +230,7 @@ pub async fn get_flow_detail(
         .0
         .get_flow(&flow_id)
         .await
-        .map_err(|e| format!("获取 Flow 详情失败: {}", e))
+        .map_err(|e| format!("获取 Flow 详情失败: {e}"))
 }
 
 /// 全文搜索 Flow
@@ -253,7 +253,7 @@ pub async fn search_flows(
         .0
         .search(&request.query, request.limit)
         .await
-        .map_err(|e| format!("搜索 Flow 失败: {}", e))
+        .map_err(|e| format!("搜索 Flow 失败: {e}"))
 }
 
 /// 获取 Flow 统计信息
@@ -309,7 +309,7 @@ pub async fn export_flows(
             .0
             .query(filter, FlowSortBy::CreatedAt, true, 1, 10000)
             .await
-            .map_err(|e| format!("查询 Flow 失败: {}", e))?;
+            .map_err(|e| format!("查询 Flow 失败: {e}"))?;
         result.flows
     };
 
@@ -331,11 +331,11 @@ pub async fn export_flows(
     let data = match request.format {
         ExportFormat::HAR => {
             let har = exporter.export_har(&flows);
-            serde_json::to_string_pretty(&har).map_err(|e| format!("序列化 HAR 失败: {}", e))?
+            serde_json::to_string_pretty(&har).map_err(|e| format!("序列化 HAR 失败: {e}"))?
         }
         ExportFormat::JSON => {
             let json = exporter.export_json(&flows);
-            serde_json::to_string_pretty(&json).map_err(|e| format!("序列化 JSON 失败: {}", e))?
+            serde_json::to_string_pretty(&json).map_err(|e| format!("序列化 JSON 失败: {e}"))?
         }
         ExportFormat::JSONL => exporter.export_jsonl(&flows),
         ExportFormat::Markdown => exporter.export_markdown_multiple(&flows),
@@ -516,7 +516,7 @@ pub async fn cleanup_flows(
                     }
                     Err(e) => {
                         tracing::error!("清理所有数据失败: {}", e);
-                        return Err(format!("清理所有数据失败: {}", e));
+                        return Err(format!("清理所有数据失败: {e}"));
                     }
                 }
             }
@@ -550,7 +550,7 @@ pub async fn cleanup_flows(
                     }
                     Err(e) => {
                         tracing::error!("按时间清理失败: {}", e);
-                        return Err(format!("按时间清理失败: {}", e));
+                        return Err(format!("按时间清理失败: {e}"));
                     }
                 }
             }
@@ -576,7 +576,7 @@ pub async fn cleanup_flows(
                     }
                     Err(e) => {
                         tracing::error!("按数量清理失败: {}", e);
-                        return Err(format!("按数量清理失败: {}", e));
+                        return Err(format!("按数量清理失败: {e}"));
                     }
                 }
             }
@@ -767,14 +767,14 @@ pub async fn create_test_flows(
             }),
             messages: vec![Message {
                 role: MessageRole::User,
-                content: crate::flow_monitor::MessageContent::Text(format!("测试消息 {}", i)),
+                content: crate::flow_monitor::MessageContent::Text(format!("测试消息 {i}")),
                 tool_calls: None,
                 tool_result: None,
                 name: None,
             }],
             system_prompt: None,
             tools: None,
-            model: format!("gpt-4-test-{}", i),
+            model: format!("gpt-4-test-{i}"),
             original_model: None,
             parameters: RequestParameters {
                 temperature: Some(0.7),
@@ -792,13 +792,13 @@ pub async fn create_test_flows(
         let metadata = FlowMetadata {
             provider: ProviderType::OpenAI,
             provider_id: Some("openai".to_string()),
-            credential_id: Some(format!("test-cred-{}", i)),
-            credential_name: Some(format!("测试凭证 {}", i)),
+            credential_id: Some(format!("test-cred-{i}")),
+            credential_name: Some(format!("测试凭证 {i}")),
             retry_count: 0,
             client_info: ClientInfo {
                 ip: Some("127.0.0.1".to_string()),
                 user_agent: Some("test-agent".to_string()),
-                request_id: Some(format!("test-req-{}", i)),
+                request_id: Some(format!("test-req-{i}")),
             },
             routing_info: RoutingInfo {
                 target_url: Some("https://api.openai.com".to_string()),
@@ -819,7 +819,7 @@ pub async fn create_test_flows(
                 body: serde_json::json!({
                     "choices": [{"message": {"role": "assistant", "content": format!("测试响应 {}", i)}}]
                 }),
-                content: format!("测试响应 {}", i),
+                content: format!("测试响应 {i}"),
                 thinking: None,
                 tool_calls: Vec::new(),
                 usage: crate::flow_monitor::TokenUsage {
@@ -1120,7 +1120,7 @@ pub async fn query_flows_with_expression(
             request.page_size,
         )
         .await
-        .map_err(|e| format!("查询 Flow 失败: {}", e))
+        .map_err(|e| format!("查询 Flow 失败: {e}"))
 }
 
 // ============================================================================
@@ -1174,7 +1174,7 @@ pub async fn intercept_config_set(
         .0
         .update_config(config)
         .await
-        .map_err(|e| format!("设置拦截器配置失败: {}", e))
+        .map_err(|e| format!("设置拦截器配置失败: {e}"))
 }
 
 /// 继续处理被拦截的 Flow
@@ -1200,17 +1200,15 @@ pub async fn intercept_continue(
     // 确定修改数据
     let modified = if let Some(req) = modified_request {
         Some(ModifiedData::Request(req))
-    } else if let Some(resp) = modified_response {
-        Some(ModifiedData::Response(resp))
     } else {
-        None
+        modified_response.map(ModifiedData::Response)
     };
 
     interceptor
         .0
         .continue_flow(&flow_id, modified)
         .await
-        .map_err(|e| format!("继续处理 Flow 失败: {}", e))
+        .map_err(|e| format!("继续处理 Flow 失败: {e}"))
 }
 
 /// 取消被拦截的 Flow
@@ -1233,7 +1231,7 @@ pub async fn intercept_cancel(
         .0
         .cancel_flow(&flow_id)
         .await
-        .map_err(|e| format!("取消 Flow 失败: {}", e))
+        .map_err(|e| format!("取消 Flow 失败: {e}"))
 }
 
 /// 获取被拦截的 Flow 详情
@@ -1354,7 +1352,7 @@ pub async fn intercept_set_editing(
         .0
         .set_editing(&flow_id)
         .await
-        .map_err(|e| format!("设置编辑状态失败: {}", e))
+        .map_err(|e| format!("设置编辑状态失败: {e}"))
 }
 
 /// 订阅拦截事件
@@ -1446,7 +1444,7 @@ pub async fn replay_flow(
         .0
         .replay(&request.flow_id, request.config)
         .await
-        .map_err(|e| format!("重放 Flow 失败: {}", e))
+        .map_err(|e| format!("重放 Flow 失败: {e}"))
 }
 
 /// 批量重放多个 Flow
@@ -1508,7 +1506,7 @@ pub async fn diff_flows(
         .0
         .get_flow(&request.left_flow_id)
         .await
-        .map_err(|e| format!("获取左侧 Flow 失败: {}", e))?
+        .map_err(|e| format!("获取左侧 Flow 失败: {e}"))?
         .ok_or_else(|| format!("左侧 Flow 不存在: {}", request.left_flow_id))?;
 
     // 获取右侧 Flow
@@ -1516,7 +1514,7 @@ pub async fn diff_flows(
         .0
         .get_flow(&request.right_flow_id)
         .await
-        .map_err(|e| format!("获取右侧 Flow 失败: {}", e))?
+        .map_err(|e| format!("获取右侧 Flow 失败: {e}"))?
         .ok_or_else(|| format!("右侧 Flow 不存在: {}", request.right_flow_id))?;
 
     // 执行差异对比
@@ -1685,7 +1683,7 @@ pub async fn create_session(
     session_manager
         .0
         .create_session(&request.name, request.description.as_deref())
-        .map_err(|e| format!("创建会话失败: {}", e))
+        .map_err(|e| format!("创建会话失败: {e}"))
 }
 
 /// 获取会话详情
@@ -1707,7 +1705,7 @@ pub async fn get_session(
     session_manager
         .0
         .get_session(&session_id)
-        .map_err(|e| format!("获取会话失败: {}", e))
+        .map_err(|e| format!("获取会话失败: {e}"))
 }
 
 /// 列出所有会话
@@ -1729,7 +1727,7 @@ pub async fn list_sessions(
     session_manager
         .0
         .list_sessions(include_archived.unwrap_or(false))
-        .map_err(|e| format!("列出会话失败: {}", e))
+        .map_err(|e| format!("列出会话失败: {e}"))
 }
 
 /// 添加 Flow 到会话
@@ -1753,7 +1751,7 @@ pub async fn add_flow_to_session(
     session_manager
         .0
         .add_flow(&session_id, &flow_id)
-        .map_err(|e| format!("添加 Flow 到会话失败: {}", e))
+        .map_err(|e| format!("添加 Flow 到会话失败: {e}"))
 }
 
 /// 从会话移除 Flow
@@ -1777,7 +1775,7 @@ pub async fn remove_flow_from_session(
     session_manager
         .0
         .remove_flow(&session_id, &flow_id)
-        .map_err(|e| format!("从会话移除 Flow 失败: {}", e))
+        .map_err(|e| format!("从会话移除 Flow 失败: {e}"))
 }
 
 /// 更新会话信息
@@ -1803,7 +1801,7 @@ pub async fn update_session(
             request.name.as_deref(),
             request.description.as_ref().map(|d| d.as_deref()),
         )
-        .map_err(|e| format!("更新会话失败: {}", e))
+        .map_err(|e| format!("更新会话失败: {e}"))
 }
 
 /// 归档会话
@@ -1825,7 +1823,7 @@ pub async fn archive_session(
     session_manager
         .0
         .archive_session(&session_id)
-        .map_err(|e| format!("归档会话失败: {}", e))
+        .map_err(|e| format!("归档会话失败: {e}"))
 }
 
 /// 取消归档会话
@@ -1845,7 +1843,7 @@ pub async fn unarchive_session(
     session_manager
         .0
         .unarchive_session(&session_id)
-        .map_err(|e| format!("取消归档会话失败: {}", e))
+        .map_err(|e| format!("取消归档会话失败: {e}"))
 }
 
 /// 删除会话
@@ -1867,7 +1865,7 @@ pub async fn delete_session(
     session_manager
         .0
         .delete_session(&session_id)
-        .map_err(|e| format!("删除会话失败: {}", e))
+        .map_err(|e| format!("删除会话失败: {e}"))
 }
 
 /// 导出会话
@@ -1892,7 +1890,7 @@ pub async fn export_session(
     let flow_ids = session_manager
         .0
         .get_session_flow_ids(&request.session_id)
-        .map_err(|e| format!("获取会话 Flow 列表失败: {}", e))?;
+        .map_err(|e| format!("获取会话 Flow 列表失败: {e}"))?;
 
     // 获取所有 Flow
     let mut flows = Vec::new();
@@ -1906,7 +1904,7 @@ pub async fn export_session(
     session_manager
         .0
         .export_session(&request.session_id, &flows, request.format)
-        .map_err(|e| format!("导出会话失败: {}", e))
+        .map_err(|e| format!("导出会话失败: {e}"))
 }
 
 /// 获取会话中的 Flow 数量
@@ -1926,7 +1924,7 @@ pub async fn get_session_flow_count(
     session_manager
         .0
         .get_session_flow_count(&session_id)
-        .map_err(|e| format!("获取会话 Flow 数量失败: {}", e))
+        .map_err(|e| format!("获取会话 Flow 数量失败: {e}"))
 }
 
 /// 检查 Flow 是否在会话中
@@ -1948,7 +1946,7 @@ pub async fn is_flow_in_session(
     session_manager
         .0
         .is_flow_in_session(&session_id, &flow_id)
-        .map_err(|e| format!("检查 Flow 是否在会话中失败: {}", e))
+        .map_err(|e| format!("检查 Flow 是否在会话中失败: {e}"))
 }
 
 /// 获取 Flow 所属的会话列表
@@ -1968,7 +1966,7 @@ pub async fn get_sessions_for_flow(
     session_manager
         .0
         .get_sessions_for_flow(&flow_id)
-        .map_err(|e| format!("获取 Flow 所属会话失败: {}", e))
+        .map_err(|e| format!("获取 Flow 所属会话失败: {e}"))
 }
 
 /// 获取自动会话检测配置
@@ -2107,7 +2105,7 @@ pub async fn save_quick_filter(
             request.description.as_deref(),
             request.group.as_deref(),
         )
-        .map_err(|e| format!("保存快速过滤器失败: {}", e))
+        .map_err(|e| format!("保存快速过滤器失败: {e}"))
 }
 
 /// 获取快速过滤器
@@ -2127,7 +2125,7 @@ pub async fn get_quick_filter(
     quick_filter_manager
         .0
         .get(&id)
-        .map_err(|e| format!("获取快速过滤器失败: {}", e))
+        .map_err(|e| format!("获取快速过滤器失败: {e}"))
 }
 
 /// 更新快速过滤器
@@ -2157,7 +2155,7 @@ pub async fn update_quick_filter(
     quick_filter_manager
         .0
         .update(&request.id, updates)
-        .map_err(|e| format!("更新快速过滤器失败: {}", e))
+        .map_err(|e| format!("更新快速过滤器失败: {e}"))
 }
 
 /// 删除快速过滤器
@@ -2179,7 +2177,7 @@ pub async fn delete_quick_filter(
     quick_filter_manager
         .0
         .delete(&id)
-        .map_err(|e| format!("删除快速过滤器失败: {}", e))
+        .map_err(|e| format!("删除快速过滤器失败: {e}"))
 }
 
 /// 列出所有快速过滤器
@@ -2199,7 +2197,7 @@ pub async fn list_quick_filters(
     quick_filter_manager
         .0
         .list()
-        .map_err(|e| format!("列出快速过滤器失败: {}", e))
+        .map_err(|e| format!("列出快速过滤器失败: {e}"))
 }
 
 /// 按分组列出快速过滤器
@@ -2221,7 +2219,7 @@ pub async fn list_quick_filters_by_group(
     quick_filter_manager
         .0
         .list_by_group(group.as_deref())
-        .map_err(|e| format!("按分组列出快速过滤器失败: {}", e))
+        .map_err(|e| format!("按分组列出快速过滤器失败: {e}"))
 }
 
 /// 列出所有分组
@@ -2241,7 +2239,7 @@ pub async fn list_quick_filter_groups(
     quick_filter_manager
         .0
         .list_groups()
-        .map_err(|e| format!("列出快速过滤器分组失败: {}", e))
+        .map_err(|e| format!("列出快速过滤器分组失败: {e}"))
 }
 
 /// 导出快速过滤器
@@ -2263,7 +2261,7 @@ pub async fn export_quick_filters(
     quick_filter_manager
         .0
         .export(include_presets.unwrap_or(false))
-        .map_err(|e| format!("导出快速过滤器失败: {}", e))
+        .map_err(|e| format!("导出快速过滤器失败: {e}"))
 }
 
 /// 导入快速过滤器
@@ -2285,7 +2283,7 @@ pub async fn import_quick_filters(
     quick_filter_manager
         .0
         .import(&request.data, request.overwrite)
-        .map_err(|e| format!("导入快速过滤器失败: {}", e))
+        .map_err(|e| format!("导入快速过滤器失败: {e}"))
 }
 
 /// 按名称查找快速过滤器
@@ -2305,7 +2303,7 @@ pub async fn find_quick_filter_by_name(
     quick_filter_manager
         .0
         .find_by_name(&name)
-        .map_err(|e| format!("查找快速过滤器失败: {}", e))
+        .map_err(|e| format!("查找快速过滤器失败: {e}"))
 }
 
 // ============================================================================
@@ -2355,7 +2353,7 @@ pub async fn export_flow_as_code(
         .0
         .get_flow(&request.flow_id)
         .await
-        .map_err(|e| format!("获取 Flow 失败: {}", e))?
+        .map_err(|e| format!("获取 Flow 失败: {e}"))?
         .ok_or_else(|| format!("Flow 不存在: {}", request.flow_id))?;
 
     // 导出为代码
@@ -2511,7 +2509,7 @@ pub async fn add_bookmark(
             request.name.as_deref(),
             request.group.as_deref(),
         )
-        .map_err(|e| format!("添加书签失败: {}", e))
+        .map_err(|e| format!("添加书签失败: {e}"))
 }
 
 /// 获取书签
@@ -2531,7 +2529,7 @@ pub async fn get_bookmark(
     bookmark_manager
         .0
         .get(&bookmark_id)
-        .map_err(|e| format!("获取书签失败: {}", e))
+        .map_err(|e| format!("获取书签失败: {e}"))
 }
 
 /// 根据 Flow ID 获取书签
@@ -2551,7 +2549,7 @@ pub async fn get_bookmark_by_flow_id(
     bookmark_manager
         .0
         .get_by_flow_id(&flow_id)
-        .map_err(|e| format!("获取书签失败: {}", e))
+        .map_err(|e| format!("获取书签失败: {e}"))
 }
 
 /// 移除书签
@@ -2573,7 +2571,7 @@ pub async fn remove_bookmark(
     bookmark_manager
         .0
         .remove(&bookmark_id)
-        .map_err(|e| format!("移除书签失败: {}", e))
+        .map_err(|e| format!("移除书签失败: {e}"))
 }
 
 /// 根据 Flow ID 移除书签
@@ -2593,7 +2591,7 @@ pub async fn remove_bookmark_by_flow_id(
     bookmark_manager
         .0
         .remove_by_flow_id(&flow_id)
-        .map_err(|e| format!("移除书签失败: {}", e))
+        .map_err(|e| format!("移除书签失败: {e}"))
 }
 
 /// 更新书签
@@ -2617,7 +2615,7 @@ pub async fn update_bookmark(
             request.name.as_ref().map(|n| n.as_deref()),
             request.group.as_ref().map(|g| g.as_deref()),
         )
-        .map_err(|e| format!("更新书签失败: {}", e))
+        .map_err(|e| format!("更新书签失败: {e}"))
 }
 
 /// 列出所有书签
@@ -2639,7 +2637,7 @@ pub async fn list_bookmarks(
     bookmark_manager
         .0
         .list(group.as_deref())
-        .map_err(|e| format!("列出书签失败: {}", e))
+        .map_err(|e| format!("列出书签失败: {e}"))
 }
 
 /// 列出所有书签分组
@@ -2659,7 +2657,7 @@ pub async fn list_bookmark_groups(
     bookmark_manager
         .0
         .list_groups()
-        .map_err(|e| format!("列出书签分组失败: {}", e))
+        .map_err(|e| format!("列出书签分组失败: {e}"))
 }
 
 /// 检查 Flow 是否已添加书签
@@ -2679,7 +2677,7 @@ pub async fn is_flow_bookmarked(
     bookmark_manager
         .0
         .is_bookmarked(&flow_id)
-        .map_err(|e| format!("检查书签状态失败: {}", e))
+        .map_err(|e| format!("检查书签状态失败: {e}"))
 }
 
 /// 获取书签数量
@@ -2697,7 +2695,7 @@ pub async fn get_bookmark_count(
     bookmark_manager
         .0
         .count()
-        .map_err(|e| format!("获取书签数量失败: {}", e))
+        .map_err(|e| format!("获取书签数量失败: {e}"))
 }
 
 /// 导出书签
@@ -2717,7 +2715,7 @@ pub async fn export_bookmarks(
     bookmark_manager
         .0
         .export()
-        .map_err(|e| format!("导出书签失败: {}", e))
+        .map_err(|e| format!("导出书签失败: {e}"))
 }
 
 /// 导入书签
@@ -2739,7 +2737,7 @@ pub async fn import_bookmarks(
     bookmark_manager
         .0
         .import(&request.data, request.overwrite)
-        .map_err(|e| format!("导入书签失败: {}", e))
+        .map_err(|e| format!("导入书签失败: {e}"))
 }
 
 /// 切换书签状态
@@ -2767,19 +2765,19 @@ pub async fn toggle_bookmark(
     let is_bookmarked = bookmark_manager
         .0
         .is_bookmarked(&flow_id)
-        .map_err(|e| format!("检查书签状态失败: {}", e))?;
+        .map_err(|e| format!("检查书签状态失败: {e}"))?;
 
     if is_bookmarked {
         bookmark_manager
             .0
             .remove_by_flow_id(&flow_id)
-            .map_err(|e| format!("移除书签失败: {}", e))?;
+            .map_err(|e| format!("移除书签失败: {e}"))?;
         Ok(None)
     } else {
         let bookmark = bookmark_manager
             .0
             .add(&flow_id, name.as_deref(), group.as_deref())
-            .map_err(|e| format!("添加书签失败: {}", e))?;
+            .map_err(|e| format!("添加书签失败: {e}"))?;
         Ok(Some(bookmark))
     }
 }

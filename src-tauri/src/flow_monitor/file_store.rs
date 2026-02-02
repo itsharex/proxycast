@@ -157,11 +157,8 @@ impl FlowIndexRecord {
             has_tool_calls: flow
                 .response
                 .as_ref()
-                .map_or(false, |r| !r.tool_calls.is_empty()),
-            has_thinking: flow
-                .response
-                .as_ref()
-                .map_or(false, |r| r.thinking.is_some()),
+                .is_some_and(|r| !r.tool_calls.is_empty()),
+            has_thinking: flow.response.as_ref().is_some_and(|r| r.thinking.is_some()),
             file_path: file_path.to_string(),
             file_offset,
             content_preview,
@@ -202,7 +199,7 @@ impl FlowWriter {
     fn write(&mut self, flow: &LLMFlow) -> Result<u64> {
         let offset = self.current_offset;
         let json = serde_json::to_string(flow)?;
-        let line = format!("{}\n", json);
+        let line = format!("{json}\n");
         let bytes = line.as_bytes();
 
         self.file.write_all(bytes)?;
@@ -391,7 +388,7 @@ impl FlowFileStore {
         fs::create_dir_all(&date_dir)?;
 
         // 创建文件路径
-        let file_name = format!("flows_{:03}.jsonl", index);
+        let file_name = format!("flows_{index:03}.jsonl");
         let file_path = date_dir.join(file_name);
 
         FlowWriter::new(file_path)
@@ -632,7 +629,7 @@ impl FlowFileStore {
                 let placeholders: Vec<String> = providers.iter().map(|_| "?".to_string()).collect();
                 conditions.push(format!("provider IN ({})", placeholders.join(", ")));
                 for p in providers {
-                    params_vec.push(Box::new(format!("{:?}", p)));
+                    params_vec.push(Box::new(format!("{p:?}")));
                 }
             }
         }
@@ -643,7 +640,7 @@ impl FlowFileStore {
                 let placeholders: Vec<String> = states.iter().map(|_| "?".to_string()).collect();
                 conditions.push(format!("status IN ({})", placeholders.join(", ")));
                 for s in states {
-                    params_vec.push(Box::new(format!("{:?}", s)));
+                    params_vec.push(Box::new(format!("{s:?}")));
                 }
             }
         }
@@ -674,8 +671,7 @@ impl FlowFileStore {
         };
 
         let sql = format!(
-            "SELECT file_path, file_offset FROM flow_index {} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            where_clause
+            "SELECT file_path, file_offset FROM flow_index {where_clause} ORDER BY created_at DESC LIMIT ? OFFSET ?"
         );
 
         params_vec.push(Box::new(limit as i64));
@@ -879,7 +875,7 @@ impl FlowFileStore {
                     if let Ok(mut dir_entries) = fs::read_dir(&path) {
                         let has_jsonl = dir_entries.any(|e| {
                             e.ok()
-                                .map(|e| e.path().extension().map_or(false, |ext| ext == "jsonl"))
+                                .map(|e| e.path().extension().is_some_and(|ext| ext == "jsonl"))
                                 .unwrap_or(false)
                         });
 
@@ -976,7 +972,7 @@ mod tests {
 
         // 写入多个 Flow
         for i in 0..10 {
-            let flow = create_test_flow(&format!("flow-{}", i), "gpt-4", ProviderType::OpenAI);
+            let flow = create_test_flow(&format!("flow-{i}"), "gpt-4", ProviderType::OpenAI);
             store.write(&flow).unwrap();
         }
 
@@ -985,7 +981,7 @@ mod tests {
 
         // 验证可以读取每个
         for i in 0..10 {
-            let retrieved = store.get(&format!("flow-{}", i)).unwrap();
+            let retrieved = store.get(&format!("flow-{i}")).unwrap();
             assert!(retrieved.is_some());
         }
     }
@@ -1040,13 +1036,13 @@ mod tests {
 
         // 写入多个 Flow，应该触发轮转
         for i in 0..5 {
-            let flow = create_test_flow(&format!("flow-{}", i), "gpt-4", ProviderType::OpenAI);
+            let flow = create_test_flow(&format!("flow-{i}"), "gpt-4", ProviderType::OpenAI);
             store.write(&flow).unwrap();
         }
 
         // 验证所有 Flow 都可以读取
         for i in 0..5 {
-            let retrieved = store.get(&format!("flow-{}", i)).unwrap();
+            let retrieved = store.get(&format!("flow-{i}")).unwrap();
             assert!(retrieved.is_some());
         }
     }
@@ -1059,7 +1055,7 @@ mod tests {
 
         // 写入一些 Flow
         for i in 0..5 {
-            let flow = create_test_flow(&format!("flow-{}", i), "gpt-4", ProviderType::OpenAI);
+            let flow = create_test_flow(&format!("flow-{i}"), "gpt-4", ProviderType::OpenAI);
             store.write(&flow).unwrap();
         }
 
@@ -1280,7 +1276,7 @@ mod property_tests {
 
             let original_id = flow.id.clone();
             let original_model = flow.request.model.clone();
-            let original_provider = flow.metadata.provider.clone();
+            let original_provider = flow.metadata.provider;
             let original_state = flow.state.clone();
             let original_content = flow.response.as_ref().map(|r| r.content.clone());
             let original_starred = flow.annotations.starred;
@@ -1328,7 +1324,7 @@ mod property_tests {
             // 创建并写入多个 Flow
             let mut original_flows = Vec::new();
             for i in 0..flow_count {
-                let id = format!("flow-{:04}", i);
+                let id = format!("flow-{i:04}");
                 let request = LLMRequest {
                     method: "POST".to_string(),
                     path: "/v1/chat/completions".to_string(),
@@ -1385,7 +1381,7 @@ mod property_tests {
             // 创建并写入多个 Flow
             let mut original_ids = Vec::new();
             for i in 0..flow_count {
-                let id = format!("rotation-flow-{:04}", i);
+                let id = format!("rotation-flow-{i:04}");
                 let request = LLMRequest {
                     method: "POST".to_string(),
                     path: "/v1/chat/completions".to_string(),

@@ -86,7 +86,7 @@ impl std::str::FromStr for ModelStatus {
             "beta" => Ok(Self::Beta),
             "deprecated" => Ok(Self::Deprecated),
             "legacy" => Ok(Self::Legacy),
-            _ => Err(format!("Unknown model status: {}", s)),
+            _ => Err(format!("Unknown model status: {s}")),
         }
     }
 }
@@ -124,7 +124,7 @@ impl std::str::FromStr for ModelTier {
             "mini" => Ok(Self::Mini),
             "pro" => Ok(Self::Pro),
             "max" => Ok(Self::Max),
-            _ => Err(format!("Unknown model tier: {}", s)),
+            _ => Err(format!("Unknown model tier: {s}")),
         }
     }
 }
@@ -165,7 +165,7 @@ impl std::str::FromStr for ModelSource {
             "models.dev" | "modelsdev" => Ok(Self::ModelsDev),
             "local" => Ok(Self::Local),
             "custom" => Ok(Self::Custom),
-            _ => Err(format!("Unknown model source: {}", s)),
+            _ => Err(format!("Unknown model source: {s}")),
         }
     }
 }
@@ -300,23 +300,12 @@ impl UserModelPreference {
 }
 
 /// 模型同步状态
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ModelSyncState {
     pub last_sync_at: Option<i64>,
     pub model_count: u32,
     pub is_syncing: bool,
     pub last_error: Option<String>,
-}
-
-impl Default for ModelSyncState {
-    fn default() -> Self {
-        Self {
-            last_sync_at: None,
-            model_count: 0,
-            is_syncing: false,
-            last_error: None,
-        }
-    }
 }
 
 // Provider Alias 相关类型

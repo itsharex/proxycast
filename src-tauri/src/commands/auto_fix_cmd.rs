@@ -36,14 +36,12 @@ pub async fn auto_fix_configuration(
 
     // 检查默认Provider配置
     if let Err(e) = fix_default_provider_issue(&state, &logs, &db, &mut result).await {
-        result
-            .warnings
-            .push(format!("修复默认Provider时出错: {}", e));
+        result.warnings.push(format!("修复默认Provider时出错: {e}"));
     }
 
     // 检查凭证池状态
     if let Err(e) = check_credential_pool_issues(&db, &mut result).await {
-        result.warnings.push(format!("检查凭证池时出错: {}", e));
+        result.warnings.push(format!("检查凭证池时出错: {e}"));
     }
 
     logs.write().await.add(
@@ -84,7 +82,7 @@ async fn fix_default_provider_issue(
         if let Err(e) = set_default_provider_internal(state, logs, "kiro".to_string()).await {
             result
                 .warnings
-                .push(format!("无法自动修复默认Provider: {}", e));
+                .push(format!("无法自动修复默认Provider: {e}"));
         } else {
             result
                 .fixes_applied
@@ -98,7 +96,7 @@ async fn fix_default_provider_issue(
     else if !is_provider_available(&current_default, &credential_stats) {
         result
             .issues_found
-            .push(format!("默认Provider '{}' 没有可用凭证", current_default));
+            .push(format!("默认Provider '{current_default}' 没有可用凭证"));
 
         // 寻找最佳替代Provider
         if let Some(best_provider) = find_best_available_provider(&credential_stats) {
@@ -106,14 +104,14 @@ async fn fix_default_provider_issue(
             {
                 result
                     .warnings
-                    .push(format!("无法自动修复默认Provider: {}", e));
+                    .push(format!("无法自动修复默认Provider: {e}"));
             } else {
                 result
                     .fixes_applied
-                    .push(format!("默认Provider已自动设置为 '{}'", best_provider));
+                    .push(format!("默认Provider已自动设置为 '{best_provider}'"));
                 logs.write().await.add(
                     "info",
-                    &format!("[自动修复] 默认Provider已设置为{}", best_provider),
+                    &format!("[自动修复] 默认Provider已设置为{best_provider}"),
                 );
             }
         } else {
@@ -249,7 +247,7 @@ async fn check_credential_pool_issues(
     if expired_tokens > 0 {
         result
             .issues_found
-            .push(format!("发现 {} 个过期的token缓存", expired_tokens));
+            .push(format!("发现 {expired_tokens} 个过期的token缓存"));
         // 过期token会在使用时自动刷新，这里只是报告
     }
 
@@ -258,7 +256,7 @@ async fn check_credential_pool_issues(
     if disabled_count > 0 {
         result
             .issues_found
-            .push(format!("有 {} 个凭证被禁用", disabled_count));
+            .push(format!("有 {disabled_count} 个凭证被禁用"));
     }
 
     Ok(())

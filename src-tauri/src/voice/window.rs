@@ -15,7 +15,7 @@ pub fn open_voice_window(app: &AppHandle) -> Result<(), String> {
         // 发送重置事件，让前端重新开始录音
         window
             .emit("voice-reset", ())
-            .map_err(|e| format!("发送重置事件失败: {}", e))?;
+            .map_err(|e| format!("发送重置事件失败: {e}"))?;
 
         // 移动到鼠标所在屏幕
         position_window_on_cursor_screen(&window)?;
@@ -40,7 +40,7 @@ pub fn open_voice_window(app: &AppHandle) -> Result<(), String> {
     .transparent(false) // 关闭透明，避免 macOS 上的渲染问题
     .skip_taskbar(true)
     .build()
-    .map_err(|e| format!("创建窗口失败: {}", e))?;
+    .map_err(|e| format!("创建窗口失败: {e}"))?;
 
     // 移动到鼠标所在屏幕
     position_window_on_cursor_screen(&window)?;
@@ -137,7 +137,7 @@ pub fn send_stop_recording_event(app: &AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(VOICE_WINDOW_LABEL) {
         window
             .emit("voice-stop-recording", ())
-            .map_err(|e| format!("发送停止录音事件失败: {}", e))?;
+            .map_err(|e| format!("发送停止录音事件失败: {e}"))?;
         tracing::info!("[语音输入] 已发送停止录音事件");
     }
     Ok(())

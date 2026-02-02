@@ -89,9 +89,17 @@ impl AsterAgentState {
         if agent_guard.is_none() {
             // 创建 SessionStore
             let session_store = Arc::new(ProxyCastSessionStore::new(db.clone()));
+            tracing::info!("[AsterAgent] 创建 ProxyCastSessionStore 成功");
 
             // 创建 Agent 并注入 SessionStore
             let agent = Agent::new().with_session_store(session_store);
+
+            // 验证 session_store 是否被正确设置
+            let has_store = agent.session_store().is_some();
+            tracing::info!(
+                "[AsterAgent] Agent 创建完成，session_store 已设置: {}",
+                has_store
+            );
 
             // 使用异步方法设置 ProxyCast 专属身份
             let identity = Self::create_proxycast_identity();
@@ -101,6 +109,8 @@ impl AsterAgentState {
             tracing::info!(
                 "[AsterAgent] Agent 初始化成功，已注入 ProxyCastSessionStore 和 ProxyCast 身份"
             );
+        } else {
+            tracing::debug!("[AsterAgent] Agent 已初始化，跳过");
         }
         Ok(())
     }
@@ -159,12 +169,12 @@ impl AsterAgentState {
 
         // 创建 ModelConfig
         let model_config = ModelConfig::new(&config.model_name)
-            .map_err(|e| format!("创建 ModelConfig 失败: {}", e))?;
+            .map_err(|e| format!("创建 ModelConfig 失败: {e}"))?;
 
         // 创建 Provider
         let provider = aster::providers::create(&config.provider_name, model_config)
             .await
-            .map_err(|e| format!("创建 Provider 失败: {}", e))?;
+            .map_err(|e| format!("创建 Provider 失败: {e}"))?;
 
         // 更新 Agent 的 Provider
         let agent_guard = self.agent.read().await;
@@ -172,7 +182,7 @@ impl AsterAgentState {
             agent
                 .update_provider(provider, session_id)
                 .await
-                .map_err(|e| format!("更新 Provider 失败: {}", e))?;
+                .map_err(|e| format!("更新 Provider 失败: {e}"))?;
         }
 
         // 保存当前配置
@@ -212,12 +222,12 @@ impl AsterAgentState {
             .credential_bridge
             .select_and_configure(db, provider_type, model)
             .await
-            .map_err(|e| format!("从凭证池选择凭证失败: {}", e))?;
+            .map_err(|e| format!("从凭证池选择凭证失败: {e}"))?;
 
         // 创建 Provider
         let provider = create_aster_provider(&aster_config)
             .await
-            .map_err(|e| format!("创建 Provider 失败: {}", e))?;
+            .map_err(|e| format!("创建 Provider 失败: {e}"))?;
 
         // 更新 Agent 的 Provider
         let agent_guard = self.agent.read().await;
@@ -225,7 +235,7 @@ impl AsterAgentState {
             agent
                 .update_provider(provider, session_id)
                 .await
-                .map_err(|e| format!("更新 Provider 失败: {}", e))?;
+                .map_err(|e| format!("更新 Provider 失败: {e}"))?;
         }
 
         // 保存当前配置
@@ -446,36 +456,6 @@ pub mod message_helpers {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_aster_state_init() {
-        let state = AsterAgentState::new();
-        assert!(!state.is_initialized().await);
-
-        #[allow(deprecated)]
-        state.init_agent().await.unwrap();
-        assert!(state.is_initialized().await);
-    }
-
-    #[tokio::test]
-    async fn test_cancel_token() {
-        let state = AsterAgentState::new();
-        let session_id = "test-session";
-
-        let token = state.create_cancel_token(session_id).await;
-        assert!(!token.is_cancelled());
-
-        assert!(state.cancel_session(session_id).await);
-        assert!(token.is_cancelled());
-
-        state.remove_cancel_token(session_id).await;
-        assert!(!state.cancel_session(session_id).await);
-    }
-}
-
 // =============================================================================
 // ProxyCast Agent 身份提示词
 // =============================================================================
@@ -505,3 +485,33 @@ ProxyCast 是一个 AI 代理服务应用，帮助用户：
 - 友好但不啰嗦，像经验丰富的技术伙伴
 - 遇到问题时，先分析原因再提供方案
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_aster_state_init() {
+        let state = AsterAgentState::new();
+        assert!(!state.is_initialized().await);
+
+        #[allow(deprecated)]
+        state.init_agent().await.unwrap();
+        assert!(state.is_initialized().await);
+    }
+
+    #[tokio::test]
+    async fn test_cancel_token() {
+        let state = AsterAgentState::new();
+        let session_id = "test-session";
+
+        let token = state.create_cancel_token(session_id).await;
+        assert!(!token.is_cancelled());
+
+        assert!(state.cancel_session(session_id).await);
+        assert!(token.is_cancelled());
+
+        state.remove_cancel_token(session_id).await;
+        assert!(!state.cancel_session(session_id).await);
+    }
+}

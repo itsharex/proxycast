@@ -302,22 +302,20 @@ impl ToolHooksService {
     /// 评估单个条件
     fn evaluate_single_condition(&self, condition: &HookCondition, context: &HookContext) -> bool {
         match condition {
-            HookCondition::ToolNameEquals(name) => {
-                context.tool_name.as_ref().map_or(false, |tn| tn == name)
-            }
+            HookCondition::ToolNameEquals(name) => context.tool_name.as_ref() == Some(name),
             HookCondition::ToolNameContains(substring) => context
                 .tool_name
                 .as_ref()
-                .map_or(false, |tn| tn.contains(substring)),
+                .is_some_and(|tn| tn.contains(substring)),
             HookCondition::MessageContains(substring) => {
                 context
                     .message_content
                     .as_ref()
-                    .map_or(false, |mc| mc.contains(substring))
+                    .is_some_and(|mc| mc.contains(substring))
                     || context
                         .tool_result
                         .as_ref()
-                        .map_or(false, |tr| tr.contains(substring))
+                        .is_some_and(|tr| tr.contains(substring))
             }
             HookCondition::MessageCountGreaterThan(count) => context.message_count > *count,
             HookCondition::ErrorCountGreaterThan(_count) => {
@@ -471,7 +469,7 @@ impl ToolHooksService {
 
         // 替换元数据变量
         for (key, value) in &context.metadata {
-            result = result.replace(&format!("{{{}}}", key), value);
+            result = result.replace(&format!("{{{key}}}"), value);
         }
 
         result
@@ -480,9 +478,7 @@ impl ToolHooksService {
     /// 更新执行统计
     fn update_execution_stats(&self, rule_id: &str, success: bool, execution_time_ms: f64) {
         let mut stats = self.execution_stats.lock().unwrap();
-        let entry = stats
-            .entry(rule_id.to_string())
-            .or_insert_with(Default::default);
+        let entry = stats.entry(rule_id.to_string()).or_default();
 
         entry.execution_count += 1;
         if success {
@@ -522,7 +518,7 @@ impl ToolHooksService {
         rules.retain(|r| r.id != rule_id);
 
         if rules.len() == initial_len {
-            return Err(format!("未找到钩子规则: {}", rule_id));
+            return Err(format!("未找到钩子规则: {rule_id}"));
         }
 
         info!("已移除钩子规则: {}", rule_id);
@@ -542,7 +538,7 @@ impl ToolHooksService {
             );
             Ok(())
         } else {
-            Err(format!("未找到钩子规则: {}", rule_id))
+            Err(format!("未找到钩子规则: {rule_id}"))
         }
     }
 

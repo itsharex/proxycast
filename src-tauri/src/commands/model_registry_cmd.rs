@@ -136,7 +136,7 @@ pub async fn get_models_by_tier(
 
     let tier: ModelTier = tier
         .parse()
-        .map_err(|_| format!("无效的服务等级: {}", tier))?;
+        .map_err(|_| format!("无效的服务等级: {tier}"))?;
 
     Ok(service.get_models_by_tier(tier).await)
 }
@@ -227,13 +227,13 @@ pub async fn fetch_provider_models_auto(
     let provider = api_key_service
         .0
         .get_provider(&db, &provider_id)?
-        .ok_or_else(|| format!("Provider 不存在: {}", provider_id))?;
+        .ok_or_else(|| format!("Provider 不存在: {provider_id}"))?;
 
     // 获取 API Key
     let api_key = api_key_service
         .0
         .get_next_api_key(&db, &provider_id)?
-        .ok_or_else(|| format!("Provider {} 没有可用的 API Key", provider_id))?;
+        .ok_or_else(|| format!("Provider {provider_id} 没有可用的 API Key"))?;
 
     // 获取 API Host
     let api_host = provider.provider.api_host.clone();

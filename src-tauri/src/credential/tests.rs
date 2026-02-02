@@ -235,7 +235,7 @@ fn arb_unique_credentials_same_provider(
         data_list
             .into_iter()
             .enumerate()
-            .map(|(i, data)| Credential::new(format!("cred-{}", i), provider, data))
+            .map(|(i, data)| Credential::new(format!("cred-{i}"), provider, data))
             .collect()
     })
 }
@@ -256,10 +256,10 @@ proptest! {
         // 添加 N 个凭证
         for i in 0..cred_count {
             let cred = Credential::new(
-                format!("cred-{}", i),
+                format!("cred-{i}"),
                 provider,
                 CredentialData::ApiKey {
-                    key: format!("key-{}", i),
+                    key: format!("key-{i}"),
                     base_url: None,
                 },
             );
@@ -303,10 +303,10 @@ proptest! {
         // 添加 N 个凭证
         for i in 0..cred_count {
             let cred = Credential::new(
-                format!("cred-{}", i),
+                format!("cred-{i}"),
                 provider,
                 CredentialData::ApiKey {
-                    key: format!("key-{}", i),
+                    key: format!("key-{i}"),
                     base_url: None,
                 },
             );
@@ -550,10 +550,10 @@ proptest! {
         let cred_count = 5usize;
         for i in 0..cred_count {
             let cred = Credential::new(
-                format!("cred-{}", i),
+                format!("cred-{i}"),
                 provider,
                 CredentialData::ApiKey {
-                    key: format!("key-{}", i),
+                    key: format!("key-{i}"),
                     base_url: None,
                 },
             );
@@ -562,7 +562,7 @@ proptest! {
 
         lb.register_pool(pool.clone());
 
-        let cooldown_id = format!("cred-{}", cooldown_index);
+        let cooldown_id = format!("cred-{cooldown_index}");
 
         // 标记一个凭证为冷却状态（1小时后恢复）
         lb.mark_cooldown(provider, &cooldown_id, Duration::hours(1)).unwrap();
@@ -631,10 +631,10 @@ proptest! {
         // 添加凭证
         for i in 0..cred_count {
             let cred = Credential::new(
-                format!("cred-{}", i),
+                format!("cred-{i}"),
                 provider,
                 CredentialData::ApiKey {
-                    key: format!("key-{}", i),
+                    key: format!("key-{i}"),
                     base_url: None,
                 },
             );
@@ -645,7 +645,7 @@ proptest! {
 
         // 将所有凭证标记为冷却
         for i in 0..cred_count {
-            lb.mark_cooldown(provider, &format!("cred-{}", i), Duration::hours(1))
+            lb.mark_cooldown(provider, &format!("cred-{i}"), Duration::hours(1))
                 .unwrap();
         }
 
@@ -818,12 +818,12 @@ proptest! {
         for i in 0..cred_count {
             let cred_data = if i % 2 == 0 {
                 PoolCredentialData::OpenAIKey {
-                    api_key: format!("sk-test-key-{}", i),
+                    api_key: format!("sk-test-key-{i}"),
                     base_url: Some("https://api.openai.com/v1".to_string()),
                 }
             } else {
                 PoolCredentialData::ClaudeKey {
-                    api_key: format!("sk-ant-test-key-{}", i),
+                    api_key: format!("sk-ant-test-key-{i}"),
                     base_url: None,
                 }
             };
@@ -879,7 +879,7 @@ proptest! {
         std::fs::create_dir_all(&source_token_dir).expect("创建源目录失败");
 
         let source_token_path = source_token_dir.join("token.json");
-        let token_json = format!(r#"{{"access_token": "{}", "refresh_token": "refresh-{}", "expires_at": "2025-12-31T23:59:59Z"}}"#, token_content, token_content);
+        let token_json = format!(r#"{{"access_token": "{token_content}", "refresh_token": "refresh-{token_content}", "expires_at": "2025-12-31T23:59:59Z"}}"#);
         std::fs::write(&source_token_path, &token_json).expect("写入源 token 文件失败");
 
         // 根据索引选择 provider 类型
@@ -920,7 +920,7 @@ proptest! {
             PoolProviderType::Gemini => "gemini",
             _ => "unknown",
         };
-        let expected_token_path = auth_dir.join(provider_name).join(format!("{}.json", original_uuid));
+        let expected_token_path = auth_dir.join(provider_name).join(format!("{original_uuid}.json"));
 
         prop_assert!(
             expected_token_path.exists(),
@@ -983,7 +983,7 @@ proptest! {
         std::fs::create_dir_all(&source_token_dir).expect("创建源目录失败");
 
         let source_token_path = source_token_dir.join("token.json");
-        let initial_json = format!(r#"{{"access_token": "{}"}}"#, initial_content);
+        let initial_json = format!(r#"{{"access_token": "{initial_content}"}}"#);
         std::fs::write(&source_token_path, &initial_json).expect("写入初始 token 文件失败");
 
         // 创建凭证
@@ -999,7 +999,7 @@ proptest! {
         sync_service.add_credential(&credential).expect("添加凭证失败");
 
         // 更新源 token 文件内容
-        let updated_json = format!(r#"{{"access_token": "{}"}}"#, updated_content);
+        let updated_json = format!(r#"{{"access_token": "{updated_content}"}}"#);
         std::fs::write(&source_token_path, &updated_json).expect("更新源 token 文件失败");
 
         // 更新凭证
@@ -1013,7 +1013,7 @@ proptest! {
 
         // 验证 auth_dir 中的 token 文件已更新
         let auth_dir = sync_service.get_auth_dir().expect("获取 auth_dir 失败");
-        let token_path = auth_dir.join("kiro").join(format!("{}.json", original_uuid));
+        let token_path = auth_dir.join("kiro").join(format!("{original_uuid}.json"));
 
         let stored_content = std::fs::read_to_string(&token_path)
             .expect("读取存储的 token 文件失败");
@@ -1040,8 +1040,8 @@ proptest! {
         per_key_proxy in "[a-z0-9]{1,10}",
         global_proxy in "[a-z0-9]{1,10}"
     ) {
-        let per_key_url = format!("http://{}:8080", per_key_proxy);
-        let global_url = format!("http://{}:8080", global_proxy);
+        let per_key_url = format!("http://{per_key_proxy}:8080");
+        let global_url = format!("http://{global_proxy}:8080");
 
         let lb = LoadBalancer::new(BalanceStrategy::RoundRobin)
             .with_global_proxy(Some(global_url.clone()));
@@ -1155,7 +1155,7 @@ proptest! {
         // Hostname must start with a letter to be valid
         proxy_host in "[a-z][a-z0-9]{0,9}"
     ) {
-        let proxy_url = format!("http://{}:8080", proxy_host);
+        let proxy_url = format!("http://{proxy_host}:8080");
 
         let lb = LoadBalancer::new(BalanceStrategy::RoundRobin);
         let pool = Arc::new(CredentialPool::new(provider));
@@ -1210,14 +1210,14 @@ proptest! {
                 Some("ftp://invalid-proxy:21".to_string())
             } else {
                 // 其他凭证使用有效代理
-                Some(format!("http://valid-proxy-{}:8080", i))
+                Some(format!("http://valid-proxy-{i}:8080"))
             };
 
             let cred = Credential::new(
-                format!("cred-{}", i),
+                format!("cred-{i}"),
                 provider,
                 CredentialData::ApiKey {
-                    key: format!("key-{}", i),
+                    key: format!("key-{i}"),
                     base_url: None,
                 },
             ).with_proxy(proxy_url);
@@ -1255,13 +1255,13 @@ proptest! {
         // 创建多个凭证，都有有效代理
         for i in 0..cred_count {
             let cred = Credential::new(
-                format!("cred-{}", i),
+                format!("cred-{i}"),
                 provider,
                 CredentialData::ApiKey {
-                    key: format!("key-{}", i),
+                    key: format!("key-{i}"),
                     base_url: None,
                 },
-            ).with_proxy(Some(format!("http://proxy-{}:8080", i)));
+            ).with_proxy(Some(format!("http://proxy-{i}:8080")));
 
             pool.add(cred).unwrap();
         }
@@ -1288,13 +1288,13 @@ proptest! {
         // 创建多个凭证，都有无效代理
         for i in 0..cred_count {
             let cred = Credential::new(
-                format!("cred-{}", i),
+                format!("cred-{i}"),
                 provider,
                 CredentialData::ApiKey {
-                    key: format!("key-{}", i),
+                    key: format!("key-{i}"),
                     base_url: None,
                 },
-            ).with_proxy(Some(format!("ftp://invalid-proxy-{}:21", i)));
+            ).with_proxy(Some(format!("ftp://invalid-proxy-{i}:21")));
 
             pool.add(cred).unwrap();
         }
@@ -1545,7 +1545,7 @@ proptest! {
         // 标记多个凭证为配额超限
         let mut marked_ids = Vec::new();
         for i in 0..cred_count {
-            let cred_id = format!("cred-{}", i);
+            let cred_id = format!("cred-{i}");
             manager.mark_quota_exceeded(&cred_id, "Rate limit exceeded");
             marked_ids.push(cred_id);
         }
@@ -1596,7 +1596,7 @@ proptest! {
 
         // 创建凭证 ID 列表
         let available: Vec<String> = (0..cred_count)
-            .map(|i| format!("cred-{}", i))
+            .map(|i| format!("cred-{i}"))
             .collect();
 
         let failed_index = failed_index % cred_count;
@@ -1656,7 +1656,7 @@ proptest! {
 
         // 创建凭证 ID 列表
         let available: Vec<String> = (0..cred_count)
-            .map(|i| format!("cred-{}", i))
+            .map(|i| format!("cred-{i}"))
             .collect();
 
         let failed_index = failed_index % cred_count;
@@ -1701,7 +1701,7 @@ proptest! {
 
         // 创建凭证 ID 列表
         let available: Vec<String> = (0..cred_count)
-            .map(|i| format!("cred-{}", i))
+            .map(|i| format!("cred-{i}"))
             .collect();
 
         // 标记所有凭证为配额超限
@@ -1753,7 +1753,7 @@ proptest! {
 
         // 标记多个凭证为配额超限
         let cred_ids: Vec<String> = (0..cred_count)
-            .map(|i| format!("cred-{}", i))
+            .map(|i| format!("cred-{i}"))
             .collect();
 
         for cred_id in &cred_ids {
@@ -1815,7 +1815,7 @@ proptest! {
 
         // 标记多个凭证为配额超限
         let cred_ids: Vec<String> = (0..cred_count)
-            .map(|i| format!("cred-{}", i))
+            .map(|i| format!("cred-{i}"))
             .collect();
 
         for cred_id in &cred_ids {
@@ -1875,12 +1875,12 @@ proptest! {
 
         // 标记一些凭证为立即过期
         let expired_ids: Vec<String> = (0..expired_count)
-            .map(|i| format!("expired-{}", i))
+            .map(|i| format!("expired-{i}"))
             .collect();
 
         // 标记一些凭证为长时间冷却
         let active_ids: Vec<String> = (0..active_count)
-            .map(|i| format!("active-{}", i))
+            .map(|i| format!("active-{i}"))
             .collect();
 
         // 先标记所有凭证

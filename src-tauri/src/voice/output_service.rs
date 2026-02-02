@@ -24,11 +24,9 @@ fn type_text(text: &str) -> Result<(), String> {
     use enigo::{Enigo, Keyboard, Settings};
 
     let mut enigo =
-        Enigo::new(&Settings::default()).map_err(|e| format!("初始化键盘模拟器失败: {}", e))?;
+        Enigo::new(&Settings::default()).map_err(|e| format!("初始化键盘模拟器失败: {e}"))?;
 
-    enigo
-        .text(text)
-        .map_err(|e| format!("键盘输入失败: {}", e))?;
+    enigo.text(text).map_err(|e| format!("键盘输入失败: {e}"))?;
 
     tracing::info!("[语音输出] 键盘输入完成: {} 字符", text.chars().count());
     Ok(())
@@ -36,11 +34,11 @@ fn type_text(text: &str) -> Result<(), String> {
 
 /// 复制到剪贴板
 fn copy_to_clipboard(text: &str) -> Result<(), String> {
-    let mut clipboard = Clipboard::new().map_err(|e| format!("初始化剪贴板失败: {}", e))?;
+    let mut clipboard = Clipboard::new().map_err(|e| format!("初始化剪贴板失败: {e}"))?;
 
     clipboard
         .set_text(text)
-        .map_err(|e| format!("复制到剪贴板失败: {}", e))?;
+        .map_err(|e| format!("复制到剪贴板失败: {e}"))?;
 
     tracing::info!("[语音输出] 已复制到剪贴板: {} 字符", text.chars().count());
     Ok(())

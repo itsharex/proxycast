@@ -517,7 +517,7 @@ impl OrchestratorDao {
             )
             .map_err(|e| e.to_string())?;
 
-        let days_param = format!("-{} days", days);
+        let days_param = format!("-{days} days");
         let rows = stmt
             .query_map(params![model_id, days_param], |row| {
                 Ok(ModelUsageStats {
@@ -540,7 +540,7 @@ impl OrchestratorDao {
 
     /// 清理旧的使用统计
     pub fn cleanup_old_usage_stats(conn: &Connection, days: i32) -> Result<usize, String> {
-        let days_param = format!("-{} days", days);
+        let days_param = format!("-{days} days");
         conn.execute(
             "DELETE FROM model_usage_stats WHERE date < date('now', ?1)",
             [days_param],

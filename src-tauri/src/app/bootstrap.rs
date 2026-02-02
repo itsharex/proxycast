@@ -64,8 +64,8 @@ pub enum ConfigError {
 impl std::fmt::Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConfigError::LoadFailed(e) => write!(f, "配置加载失败: {}", e),
-            ConfigError::SaveFailed(e) => write!(f, "配置保存失败: {}", e),
+            ConfigError::LoadFailed(e) => write!(f, "配置加载失败: {e}"),
+            ConfigError::SaveFailed(e) => write!(f, "配置保存失败: {e}"),
             ConfigError::InvalidHost => {
                 write!(
                     f,
@@ -166,11 +166,10 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
     let logs: LogState = Arc::new(RwLock::new(logger::LogStore::with_config(&config.logging)));
 
     // 数据库
-    let db = database::init_database().map_err(|e| format!("数据库初始化失败: {}", e))?;
+    let db = database::init_database().map_err(|e| format!("数据库初始化失败: {e}"))?;
 
     // 服务状态
-    let skill_service =
-        SkillService::new().map_err(|e| format!("SkillService 初始化失败: {}", e))?;
+    let skill_service = SkillService::new().map_err(|e| format!("SkillService 初始化失败: {e}"))?;
     let skill_service_state = SkillServiceState(Arc::new(skill_service));
 
     let provider_pool_service = ProviderPoolService::new();
@@ -186,7 +185,7 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
     let token_cache_service_state = TokenCacheServiceState(Arc::new(token_cache_service));
 
     let machine_id_service = crate::services::machine_id_service::MachineIdService::new()
-        .map_err(|e| format!("MachineIdService 初始化失败: {}", e))?;
+        .map_err(|e| format!("MachineIdService 初始化失败: {e}"))?;
     let machine_id_service_state: MachineIdState = Arc::new(RwLock::new(machine_id_service));
 
     let resilience_config_state = ResilienceConfigState::default();
@@ -259,7 +258,7 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
 
     // 初始化会话文件存储
     let session_files_storage = crate::session_files::SessionFileStorage::new()
-        .map_err(|e| format!("SessionFileStorage 初始化失败: {}", e))?;
+        .map_err(|e| format!("SessionFileStorage 初始化失败: {e}"))?;
     let session_files_state = SessionFilesState(std::sync::Mutex::new(session_files_storage));
 
     // 初始化全局配置管理器
@@ -271,13 +270,13 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
     {
         let conn = db.lock().expect("Failed to lock database");
         database::dao::skills::SkillDao::init_default_skill_repos(&conn)
-            .map_err(|e| format!("初始化默认技能仓库失败: {}", e))?;
+            .map_err(|e| format!("初始化默认技能仓库失败: {e}"))?;
     }
 
     // 初始化上下文记忆服务
     let context_memory_config = ContextMemoryConfig::default();
     let context_memory_service = ContextMemoryService::new(context_memory_config)
-        .map_err(|e| format!("ContextMemoryService 初始化失败: {}", e))?;
+        .map_err(|e| format!("ContextMemoryService 初始化失败: {e}"))?;
     let context_memory_service_arc = Arc::new(context_memory_service);
     let context_memory_service_state =
         ContextMemoryServiceState(context_memory_service_arc.clone());
@@ -335,7 +334,7 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
 
 /// 初始化插件安装器
 fn init_plugin_installer() -> Result<PluginInstallerState, String> {
-    let db_path = database::get_db_path().map_err(|e| format!("获取数据库路径失败: {}", e))?;
+    let db_path = database::get_db_path().map_err(|e| format!("获取数据库路径失败: {e}"))?;
     let plugins_dir = dirs::data_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("proxycast")
@@ -366,7 +365,7 @@ fn init_plugin_installer() -> Result<PluginInstallerState, String> {
                 fallback_temp_dir,
                 &db_path,
             )
-            .map_err(|e| format!("后备插件安装器初始化失败: {}", e))?;
+            .map_err(|e| format!("后备插件安装器初始化失败: {e}"))?;
             Ok(PluginInstallerState(Arc::new(RwLock::new(installer))))
         }
     }
@@ -398,7 +397,7 @@ fn init_telemetry(
     };
     let shared_logger = Arc::new(
         telemetry::RequestLogger::new(log_rotation)
-            .map_err(|e| format!("RequestLogger 初始化失败: {}", e))?,
+            .map_err(|e| format!("RequestLogger 初始化失败: {e}"))?,
     );
 
     let telemetry_state = crate::commands::telemetry_cmd::TelemetryState::with_shared(
@@ -406,7 +405,7 @@ fn init_telemetry(
         shared_tokens.clone(),
         Some(shared_logger.clone()),
     )
-    .map_err(|e| format!("TelemetryState 初始化失败: {}", e))?;
+    .map_err(|e| format!("TelemetryState 初始化失败: {e}"))?;
 
     Ok((telemetry_state, shared_stats, shared_tokens, shared_logger))
 }
@@ -483,22 +482,22 @@ fn init_flow_monitor(
     ));
     let flow_replayer_state = FlowReplayerState(flow_replayer);
 
-    let db_path = database::get_db_path().map_err(|e| format!("获取数据库路径失败: {}", e))?;
+    let db_path = database::get_db_path().map_err(|e| format!("获取数据库路径失败: {e}"))?;
 
     let session_manager = Arc::new(
         SessionManager::new(db_path.clone())
-            .map_err(|e| format!("SessionManager 初始化失败: {}", e))?,
+            .map_err(|e| format!("SessionManager 初始化失败: {e}"))?,
     );
     let session_manager_state = SessionManagerState(session_manager.clone());
 
     let quick_filter_manager = Arc::new(
         QuickFilterManager::new(db_path.clone())
-            .map_err(|e| format!("QuickFilterManager 初始化失败: {}", e))?,
+            .map_err(|e| format!("QuickFilterManager 初始化失败: {e}"))?,
     );
     let quick_filter_manager_state = QuickFilterManagerState(quick_filter_manager);
 
     let bookmark_manager = Arc::new(
-        BookmarkManager::new(db_path).map_err(|e| format!("BookmarkManager 初始化失败: {}", e))?,
+        BookmarkManager::new(db_path).map_err(|e| format!("BookmarkManager 初始化失败: {e}"))?,
     );
     let bookmark_manager_state = BookmarkManagerState(bookmark_manager);
 
@@ -519,7 +518,7 @@ fn init_flow_monitor(
         let temp_dir = std::env::temp_dir().join("proxycast_flows");
         let _ = std::fs::create_dir_all(&temp_dir);
         let temp_store = FlowFileStore::new(temp_dir, rotation_config)
-            .map_err(|e| format!("临时 FlowFileStore 初始化失败: {}", e))?;
+            .map_err(|e| format!("临时 FlowFileStore 初始化失败: {e}"))?;
         let query_service =
             FlowQueryService::new(flow_monitor.memory_store(), Arc::new(temp_store));
         FlowQueryServiceState(Arc::new(query_service))

@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "0.53.0"
+version = "0.54.0"
 edition = "2021"
 authors = ["you"]
 repository = "https://github.com/aiclientproxy/proxycast"
@@ -103,9 +103,9 @@ enigo = "0.3"
 # Aster Agent Framework
 # 开发时使用本地 aster-rust，CI/CD 使用远程 GitHub 仓库
 # 本地开发: path = "../../../astercloud/aster-rust/crates/aster" (相对 src-tauri/)
-# CI/CD: git = "https://github.com/astercloud/aster-rust", tag = "v0.7.0"
+# CI/CD: git = "https://github.com/astercloud/aster-rust", tag = "v0.7.1"
 # aster = { version = "0.5.1", path = "../../../astercloud/aster-rust/crates/aster" }
-aster = { git = "https://github.com/astercloud/aster-rust", tag = "v0.7.0" }
+aster = { git = "https://github.com/astercloud/aster-rust", tag = "v0.7.1" }
 
 
 # Tauri
@@ -164,7 +164,7 @@ version = "2.4"
 
 [package]
 name = "proxycast"
-version = "0.53.0"
+version = "0.54.0"
 description = "AI API Proxy Desktop App"
 authors = ["you"]
 edition = "2021"

@@ -144,7 +144,7 @@ pub fn get_accessible_host(listen_host: &str) -> String {
 /// 格式为 `http://{host}:{port}` 的 URL
 pub fn get_accessible_url(listen_host: &str, port: u16) -> String {
     let host = get_accessible_host(listen_host);
-    format!("http://{}:{}", host, port)
+    format!("http://{host}:{port}")
 }
 
 /// 根据监听地址生成本地访问的 URL
@@ -164,7 +164,7 @@ pub fn get_local_url(listen_host: &str, port: u16) -> String {
         "0.0.0.0" | "localhost" => "127.0.0.1".to_string(),
         _ => listen_host.to_string(),
     };
-    format!("http://{}:{}", host, port)
+    format!("http://{host}:{port}")
 }
 
 #[cfg(test)]

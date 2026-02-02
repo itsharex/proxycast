@@ -361,9 +361,8 @@ impl ServerState {
                         default_provider_str
                     );
                     eprintln!(
-                        "[SERVER] 警告：默认 Provider '{}' 不是标准 Provider 类型（kiro/openai/claude等），\
-                        可能是自定义 Provider ID。如果这是预期行为，请忽略此警告。",
-                        default_provider_str
+                        "[SERVER] 警告：默认 Provider '{default_provider_str}' 不是标准 Provider 类型（kiro/openai/claude等），\
+                        可能是自定义 Provider ID。如果这是预期行为，请忽略此警告。"
                     );
                 }
             }
@@ -565,18 +564,15 @@ async fn start_config_watcher(
                                     );
                                     logs_clone.write().await.add(
                                         "info",
-                                        &format!(
-                                            "[HOT_RELOAD] 凭证池同步完成，共 {} 个凭证",
-                                            count
-                                        ),
+                                        &format!("[HOT_RELOAD] 凭证池同步完成，共 {count} 个凭证"),
                                     );
                                 }
                                 Err(e) => {
                                     tracing::warn!("[HOT_RELOAD] 凭证池同步失败: {}", e);
-                                    logs_clone.write().await.add(
-                                        "warn",
-                                        &format!("[HOT_RELOAD] 凭证池同步失败: {}", e),
-                                    );
+                                    logs_clone
+                                        .write()
+                                        .await
+                                        .add("warn", &format!("[HOT_RELOAD] 凭证池同步失败: {e}"));
                                 }
                             }
                         }
@@ -585,7 +581,7 @@ async fn start_config_watcher(
                         tracing::warn!("[HOT_RELOAD] 配置热重载失败，已回滚: {}", error);
                         logs_clone.write().await.add(
                             "warn",
-                            &format!("[HOT_RELOAD] 配置热重载失败，已回滚: {}", error),
+                            &format!("[HOT_RELOAD] 配置热重载失败，已回滚: {error}"),
                         );
                     }
                     ReloadResult::Failed {
@@ -601,8 +597,7 @@ async fn start_config_watcher(
                         logs_clone.write().await.add(
                             "error",
                             &format!(
-                                "[HOT_RELOAD] 配置热重载失败: {}, 回滚错误: {:?}",
-                                error, rollback_error
+                                "[HOT_RELOAD] 配置热重载失败: {error}, 回滚错误: {rollback_error:?}"
                             ),
                         );
                     }
@@ -712,7 +707,7 @@ async fn sync_credential_pool_from_config(
     // 从配置加载凭证
     let credentials = sync_service.load_from_config().map_err(|e| e.to_string())?;
 
-    let conn = db.lock().map_err(|e| e.to_string())?;
+    let conn = crate::database::lock_db(db)?;
     let mut synced_count = 0;
 
     for cred in &credentials {
@@ -765,7 +760,7 @@ async fn run_server(
     config_path: Option<PathBuf>,
     processor: Option<Arc<RequestProcessor>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let base_url = format!("http://{}:{}", host, port);
+    let base_url = format!("http://{host}:{port}");
 
     // 使用传入的 processor 或创建新的
     let processor = match processor {
@@ -810,8 +805,7 @@ async fn run_server(
                     default_provider_str
                 );
                 eprintln!(
-                    "[SERVER] 警告：默认 Provider '{}' 不是标准 Provider 类型，可能是自定义 Provider ID",
-                    default_provider_str
+                    "[SERVER] 警告：默认 Provider '{default_provider_str}' 不是标准 Provider 类型，可能是自定义 Provider ID"
                 );
             }
         }
@@ -912,7 +906,7 @@ async fn run_server(
                     eprintln!("[DevBridge] 启动完成");
                 }
                 Err(e) => {
-                    eprintln!("[DevBridge] 启动失败: {}", e);
+                    eprintln!("[DevBridge] 启动失败: {e}");
                 }
             }
         });
@@ -1038,13 +1032,10 @@ async fn run_server(
 
     let addr: std::net::SocketAddr = format!("{host}:{port}")
         .parse()
-        .map_err(|e| format!("无效的监听地址 {}:{} - {}", host, port, e))?;
+        .map_err(|e| format!("无效的监听地址 {host}:{port} - {e}"))?;
 
     let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
-        format!(
-            "无法绑定到 {}:{}，错误: {}。请检查地址是否有效或端口是否被占用。",
-            host, port, e
-        )
+        format!("无法绑定到 {host}:{port}，错误: {e}。请检查地址是否有效或端口是否被占用。")
     })?;
 
     tracing::info!("Server listening on {}", addr);
@@ -1108,10 +1099,7 @@ async fn gemini_generate_content(
 
     state.logs.write().await.add(
         "info",
-        &format!(
-            "[GEMINI] POST /v1/gemini/{} model={} method={}",
-            path, model, method
-        ),
+        &format!("[GEMINI] POST /v1/gemini/{path} model={model} method={method}"),
     );
 
     // 目前只支持 generateContent 方法
@@ -1247,7 +1235,7 @@ async fn gemini_generate_content(
                     let adj = adjectives[(bytes[0] as usize) % adjectives.len()];
                     let noun = nouns[(bytes[1] as usize) % nouns.len()];
                     let random_part: String = uuid.to_string()[..5].to_lowercase();
-                    antigravity.project_id = Some(format!("{}-{}-{}", adj, noun, random_part));
+                    antigravity.project_id = Some(format!("{adj}-{noun}-{random_part}"));
                 }
             }
 
@@ -1261,7 +1249,7 @@ async fn gemini_generate_content(
                 .logs
                 .write()
                 .await
-                .add("debug", &format!("[GEMINI] 使用 project_id: {}", proj_id));
+                .add("debug", &format!("[GEMINI] 使用 project_id: {proj_id}"));
 
             // 构建 Antigravity 请求体
             // 直接使用用户传入的 Gemini 格式请求，只添加必要的字段
@@ -1380,7 +1368,7 @@ async fn gemini_generate_content(
                     let adj = adjectives[(bytes[0] as usize) % adjectives.len()];
                     let noun = nouns[(bytes[1] as usize) % nouns.len()];
                     let random_part: String = uuid.to_string()[..5].to_lowercase();
-                    gemini.project_id = Some(format!("{}-{}-{}", adj, noun, random_part));
+                    gemini.project_id = Some(format!("{adj}-{noun}-{random_part}"));
                 }
             }
 
@@ -1389,10 +1377,11 @@ async fn gemini_generate_content(
                 format!("proxycast-{}", &uuid.to_string()[..8])
             });
 
-            state.logs.write().await.add(
-                "debug",
-                &format!("[GEMINI CLI] 使用 project_id: {}", proj_id),
-            );
+            state
+                .logs
+                .write()
+                .await
+                .add("debug", &format!("[GEMINI CLI] 使用 project_id: {proj_id}"));
 
             // 构建 Gemini CLI 请求体
             // Gemini CLI 使用 Cloud Code Assist 端点，不做模型名称映射
@@ -1442,7 +1431,7 @@ async fn gemini_generate_content(
                         .logs
                         .write()
                         .await
-                        .add("error", &format!("[GEMINI CLI] 请求失败: {}", api_err));
+                        .add("error", &format!("[GEMINI CLI] 请求失败: {api_err}"));
 
                     build_error_response(&api_err.to_string())
                 }
@@ -1494,7 +1483,7 @@ async fn list_routes(State(state): State<AppState>) -> impl IntoResponse {
                     .all_ips
                     .iter()
                     .find(|ip| ip.starts_with("192.168.") || ip.starts_with("10."))
-                    .or_else(|| network_info.lan_ip.as_ref())
+                    .or(network_info.lan_ip.as_ref())
                     .or_else(|| network_info.all_ips.first())
                     .cloned()
                     .unwrap_or_else(|| "localhost".to_string());
@@ -1527,12 +1516,12 @@ async fn list_routes(State(state): State<AppState>) -> impl IntoResponse {
             crate::models::route_model::RouteEndpoint {
                 path: "/v1/messages".to_string(),
                 protocol: "claude".to_string(),
-                url: format!("{}/v1/messages", display_base_url),
+                url: format!("{display_base_url}/v1/messages"),
             },
             crate::models::route_model::RouteEndpoint {
                 path: "/v1/chat/completions".to_string(),
                 protocol: "openai".to_string(),
-                url: format!("{}/v1/chat/completions", display_base_url),
+                url: format!("{display_base_url}/v1/chat/completions"),
             },
         ],
         tags: vec!["默认".to_string()],
@@ -1560,7 +1549,7 @@ async fn anthropic_messages_with_selector(
     if let Err(e) = handlers::verify_api_key_anthropic(&headers, &state.api_key).await {
         state.logs.write().await.add(
             "warn",
-            &format!("Unauthorized request to /{}/v1/messages", selector),
+            &format!("Unauthorized request to /{selector}/v1/messages"),
         );
         return e.into_response();
     }
@@ -1619,8 +1608,7 @@ async fn anthropic_messages_with_selector(
             state.logs.write().await.add(
                 "error",
                 &format!(
-                    "[ROUTE] No available credentials for selector '{}', refusing to fallback",
-                    selector
+                    "[ROUTE] No available credentials for selector '{selector}', refusing to fallback"
                 ),
             );
             (
@@ -1647,7 +1635,7 @@ async fn chat_completions_with_selector(
     if let Err(e) = handlers::verify_api_key(&headers, &state.api_key).await {
         state.logs.write().await.add(
             "warn",
-            &format!("Unauthorized request to /{}/v1/chat/completions", selector),
+            &format!("Unauthorized request to /{selector}/v1/chat/completions"),
         );
         return e.into_response();
     }
@@ -1700,8 +1688,7 @@ async fn chat_completions_with_selector(
             state.logs.write().await.add(
                 "error",
                 &format!(
-                    "[ROUTE] No available credentials for selector '{}', refusing to fallback",
-                    selector
+                    "[ROUTE] No available credentials for selector '{selector}', refusing to fallback"
                 ),
             );
             (

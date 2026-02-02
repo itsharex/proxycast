@@ -345,7 +345,7 @@ pub fn convert_openai_to_codewhisperer(
                             // P1 安全修复：使用字符边界安全的截断，防止 UTF-8 panic
                             description: if desc.len() > 500 {
                                 let truncated: String = desc.chars().take(497).collect();
-                                format!("{}...", truncated)
+                                format!("{truncated}...")
                             } else {
                                 desc
                             },

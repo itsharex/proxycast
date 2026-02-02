@@ -381,7 +381,7 @@ impl AwsEventStreamParser {
         );
 
         let value: serde_json::Value =
-            serde_json::from_str(json_str).map_err(|e| format!("JSON 解析错误: {}", e))?;
+            serde_json::from_str(json_str).map_err(|e| format!("JSON 解析错误: {e}"))?;
 
         let mut events = Vec::new();
 

@@ -151,11 +151,11 @@ impl SwitchService {
                     warn!("尝试恢复原配置: {}", current.name);
                     if let Err(restore_error) = live_sync::sync_to_live(&app_type_enum, current) {
                         error!("恢复原配置失败: {}", restore_error);
-                        return Err(format!("切换失败且无法恢复原配置: {}", sync_error));
+                        return Err(format!("切换失败且无法恢复原配置: {sync_error}"));
                     }
                 }
 
-                return Err(format!("配置同步失败: {}", sync_error));
+                return Err(format!("配置同步失败: {sync_error}"));
             }
         }
 

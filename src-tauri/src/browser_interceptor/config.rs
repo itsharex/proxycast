@@ -2,25 +2,13 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// 拦截器状态
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct InterceptorState {
     pub enabled: bool,
     pub active_hooks: Vec<String>,
     pub intercepted_count: u32,
     pub last_activity: Option<DateTime<Utc>>,
     pub can_restore: bool, // 是否可以恢复正常状态
-}
-
-impl Default for InterceptorState {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            active_hooks: Vec::new(),
-            intercepted_count: 0,
-            last_activity: None,
-            can_restore: false,
-        }
-    }
 }
 
 /// 被拦截的 URL 信息
@@ -50,23 +38,12 @@ impl InterceptedUrl {
 }
 
 /// 指纹浏览器配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FingerprintBrowserConfig {
     pub enabled: bool,
     pub executable_path: String,
     pub profile_path: String,
     pub additional_args: Vec<String>,
-}
-
-impl Default for FingerprintBrowserConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            executable_path: String::new(),
-            profile_path: String::new(),
-            additional_args: Vec::new(),
-        }
-    }
 }
 
 /// 恢复机制配置

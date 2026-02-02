@@ -21,10 +21,12 @@ use crate::ProviderType;
 /// 导出格式
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum ExportFormat {
     /// HAR (HTTP Archive) 格式
     HAR,
     /// JSON 格式
+    #[default]
     JSON,
     /// JSONL (JSON Lines) 格式
     JSONL,
@@ -32,12 +34,6 @@ pub enum ExportFormat {
     Markdown,
     /// CSV 格式（仅元数据）
     CSV,
-}
-
-impl Default for ExportFormat {
-    fn default() -> Self {
-        ExportFormat::JSON
-    }
 }
 
 // ============================================================================
@@ -794,7 +790,7 @@ impl FlowExporter {
             }),
             streaming: request.parameters.stream,
             ttfb_ms: flow.timestamps.ttfb_ms,
-            stop_reason: response.and_then(|r| r.stop_reason.as_ref().map(|s| format!("{:?}", s))),
+            stop_reason: response.and_then(|r| r.stop_reason.as_ref().map(|s| format!("{s:?}"))),
             has_tool_calls: response.map(|r| !r.tool_calls.is_empty()).unwrap_or(false),
             has_thinking: response.map(|r| r.thinking.is_some()).unwrap_or(false),
             annotations: if flow.annotations.starred
@@ -880,7 +876,7 @@ impl FlowExporter {
             .map(|(i, f)| {
                 let md = self.flow_to_markdown(f);
                 if i > 0 {
-                    format!("\n---\n\n{}", md)
+                    format!("\n---\n\n{md}")
                 } else {
                     md
                 }
@@ -909,7 +905,7 @@ impl FlowExporter {
         ));
         md.push_str(&format!("- **耗时**: {} ms\n", flow.timestamps.duration_ms));
         if let Some(ttfb) = flow.timestamps.ttfb_ms {
-            md.push_str(&format!("- **TTFB**: {} ms\n", ttfb));
+            md.push_str(&format!("- **TTFB**: {ttfb} ms\n"));
         }
         md.push_str(&format!("- **流式**: {}\n", flow.request.parameters.stream));
         md.push('\n');
@@ -930,10 +926,10 @@ impl FlowExporter {
                 response.usage.total_tokens
             ));
             if let Some(cache_read) = response.usage.cache_read_tokens {
-                md.push_str(&format!("- **缓存读取**: {}\n", cache_read));
+                md.push_str(&format!("- **缓存读取**: {cache_read}\n"));
             }
             if let Some(thinking) = response.usage.thinking_tokens {
-                md.push_str(&format!("- **思维链 Token**: {}\n", thinking));
+                md.push_str(&format!("- **思维链 Token**: {thinking}\n"));
             }
             md.push('\n');
         }
@@ -1023,7 +1019,7 @@ impl FlowExporter {
 
             // 停止原因
             if let Some(ref stop_reason) = response.stop_reason {
-                md.push_str(&format!("**停止原因**: {:?}\n\n", stop_reason));
+                md.push_str(&format!("**停止原因**: {stop_reason:?}\n\n"));
             }
         }
 
@@ -1033,7 +1029,7 @@ impl FlowExporter {
             md.push_str(&format!("- **类型**: {:?}\n", error.error_type));
             md.push_str(&format!("- **消息**: {}\n", error.message));
             if let Some(code) = error.status_code {
-                md.push_str(&format!("- **状态码**: {}\n", code));
+                md.push_str(&format!("- **状态码**: {code}\n"));
             }
             md.push_str(&format!("- **可重试**: {}\n", error.retryable));
             md.push('\n');
@@ -1049,7 +1045,7 @@ impl FlowExporter {
                 md.push_str("- ⭐ **已收藏**\n");
             }
             if let Some(ref marker) = flow.annotations.marker {
-                md.push_str(&format!("- **标记**: {}\n", marker));
+                md.push_str(&format!("- **标记**: {marker}\n"));
             }
             if !flow.annotations.tags.is_empty() {
                 md.push_str(&format!(
@@ -1058,7 +1054,7 @@ impl FlowExporter {
                 ));
             }
             if let Some(ref comment) = flow.annotations.comment {
-                md.push_str(&format!("- **评论**: {}\n", comment));
+                md.push_str(&format!("- **评论**: {comment}\n"));
             }
             md.push('\n');
         }
@@ -1721,7 +1717,7 @@ mod property_tests {
             // 验证每行都能反序列化
             for (i, line) in lines.iter().enumerate() {
                 let deserialized: LLMFlow = serde_json::from_str(line)
-                    .expect(&format!("第 {} 行应该能够反序列化", i));
+                    .unwrap_or_else(|_| panic!("第 {i} 行应该能够反序列化"));
 
                 prop_assert_eq!(
                     &flows[i].id, &deserialized.id,
@@ -1843,7 +1839,7 @@ mod redaction_property_tests {
             "[a-z]{3,10}",
             prop_oneof!["com", "org", "net", "io"],
         )
-            .prop_map(|(user, domain, tld)| format!("{}@{}.{}", user, domain, tld))
+            .prop_map(|(user, domain, tld)| format!("{user}@{domain}.{tld}"))
     }
 
     /// 生成随机中国手机号
@@ -1852,17 +1848,17 @@ mod redaction_property_tests {
             prop_oneof![Just("13"), Just("15"), Just("18"), Just("19")],
             "[0-9]{9}",
         )
-            .prop_map(|(prefix, suffix)| format!("{}{}", prefix, suffix))
+            .prop_map(|(prefix, suffix)| format!("{prefix}{suffix}"))
     }
 
     /// 生成随机 API 密钥
     fn arb_api_key() -> impl Strategy<Value = String> {
-        "[a-zA-Z0-9]{20,40}".prop_map(|s| format!("sk-{}", s))
+        "[a-zA-Z0-9]{20,40}".prop_map(|s| format!("sk-{s}"))
     }
 
     /// 生成随机 Bearer Token
     fn arb_bearer_token() -> impl Strategy<Value = String> {
-        "[a-zA-Z0-9_.-]{20,50}".prop_map(|s| format!("Bearer {}", s))
+        "[a-zA-Z0-9_.-]{20,50}".prop_map(|s| format!("Bearer {s}"))
     }
 
     /// 生成包含敏感数据的文本
@@ -1870,27 +1866,27 @@ mod redaction_property_tests {
         prop_oneof![
             // 包含邮箱
             arb_email().prop_map(|email| {
-                let text = format!("Contact me at {} for more info.", email);
+                let text = format!("Contact me at {email} for more info.");
                 (text, vec![email])
             }),
             // 包含手机号
             arb_phone_cn().prop_map(|phone| {
-                let text = format!("My phone number is {}.", phone);
+                let text = format!("My phone number is {phone}.");
                 (text, vec![phone])
             }),
             // 包含 API 密钥
             arb_api_key().prop_map(|key| {
-                let text = format!("Use this API key: {}", key);
+                let text = format!("Use this API key: {key}");
                 (text, vec![key])
             }),
             // 包含 Bearer Token
             arb_bearer_token().prop_map(|token| {
-                let text = format!("Authorization: {}", token);
+                let text = format!("Authorization: {token}");
                 (text, vec![token])
             }),
             // 包含多种敏感数据
             (arb_email(), arb_phone_cn()).prop_map(|(email, phone)| {
-                let text = format!("Email: {}, Phone: {}", email, phone);
+                let text = format!("Email: {email}, Phone: {phone}");
                 (text, vec![email, phone])
             }),
         ]
@@ -2107,7 +2103,7 @@ mod redaction_property_tests {
         #[test]
         fn prop_redact_email(email in arb_email()) {
             let redactor = Redactor::with_defaults();
-            let text = format!("Contact: {}", email);
+            let text = format!("Contact: {email}");
 
             let redacted = redactor.redact(&text);
 
@@ -2129,7 +2125,7 @@ mod redaction_property_tests {
         #[test]
         fn prop_redact_phone(phone in arb_phone_cn()) {
             let redactor = Redactor::with_defaults();
-            let text = format!("Phone: {}", phone);
+            let text = format!("Phone: {phone}");
 
             let redacted = redactor.redact(&text);
 
@@ -2151,7 +2147,7 @@ mod redaction_property_tests {
         #[test]
         fn prop_redact_api_key(key in arb_api_key()) {
             let redactor = Redactor::with_defaults();
-            let text = format!("API Key: {}", key);
+            let text = format!("API Key: {key}");
 
             let redacted = redactor.redact(&text);
 

@@ -136,7 +136,7 @@ async fn handle_socket(socket: WebSocket, state: WsHandlerState, client_info: Op
                         MAX_MESSAGE_SIZE
                     )));
                     let error_text = serde_json::to_string(&error).unwrap_or_default();
-                    if sender.send(Message::Text(error_text.into())).await.is_err() {
+                    if sender.send(Message::Text(error_text)).await.is_err() {
                         break;
                     }
                     continue;
@@ -158,8 +158,7 @@ async fn handle_socket(socket: WebSocket, state: WsHandlerState, client_info: Op
                     Err(e) => {
                         state.manager.on_error();
                         let error = WsMessage::Error(WsError::invalid_message(format!(
-                            "Failed to parse message: {}",
-                            e
+                            "Failed to parse message: {e}"
                         )));
                         let error_text = serde_json::to_string(&error).unwrap_or_default();
                         if sender.send(Message::Text(error_text)).await.is_err() {
@@ -174,7 +173,7 @@ async fn handle_socket(socket: WebSocket, state: WsHandlerState, client_info: Op
                 let error =
                     WsMessage::Error(WsError::invalid_message("Binary messages not supported"));
                 let error_text = serde_json::to_string(&error).unwrap_or_default();
-                if sender.send(Message::Text(error_text.into())).await.is_err() {
+                if sender.send(Message::Text(error_text)).await.is_err() {
                     break;
                 }
             }
@@ -317,11 +316,10 @@ async fn handle_api_request(_state: &WsHandlerState, request: &WsApiRequest) -> 
 
 /// 解析 WebSocket 消息
 pub fn parse_message(text: &str) -> Result<WsMessage, WsError> {
-    serde_json::from_str(text).map_err(|e| WsError::invalid_message(format!("Parse error: {}", e)))
+    serde_json::from_str(text).map_err(|e| WsError::invalid_message(format!("Parse error: {e}")))
 }
 
 /// 序列化 WebSocket 消息
 pub fn serialize_message(msg: &WsMessage) -> Result<String, WsError> {
-    serde_json::to_string(msg)
-        .map_err(|e| WsError::internal(None, format!("Serialize error: {}", e)))
+    serde_json::to_string(msg).map_err(|e| WsError::internal(None, format!("Serialize error: {e}")))
 }

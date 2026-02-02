@@ -8,10 +8,12 @@ use std::collections::HashMap;
 /// 服务等级
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum ServiceTier {
     /// Mini - 快速响应，适合简单任务
     Mini,
     /// Pro - 均衡选择，适合大多数任务
+    #[default]
     Pro,
     /// Max - 最强能力，适合复杂任务
     Max,
@@ -58,12 +60,6 @@ impl ServiceTier {
     /// 获取所有等级
     pub fn all() -> &'static [ServiceTier] {
         &[ServiceTier::Mini, ServiceTier::Pro, ServiceTier::Max]
-    }
-}
-
-impl Default for ServiceTier {
-    fn default() -> Self {
-        ServiceTier::Pro
     }
 }
 

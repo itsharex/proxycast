@@ -55,7 +55,7 @@ pub enum DeepLinkError {
 impl std::fmt::Display for DeepLinkError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DeepLinkError::InvalidUrl(msg) => write!(f, "无效的 URL: {}", msg),
+            DeepLinkError::InvalidUrl(msg) => write!(f, "无效的 URL: {msg}"),
             DeepLinkError::MissingRelay => write!(f, "缺少必填参数: relay"),
             DeepLinkError::MissingKey => write!(f, "缺少必填参数: key"),
         }
@@ -273,12 +273,12 @@ mod property_tests {
             ref_code in arb_ref_code(),
         ) {
             // 构建 URL
-            let mut url = format!("proxycast://connect?relay={}&key={}", relay, key);
+            let mut url = format!("proxycast://connect?relay={relay}&key={key}");
             if let Some(ref n) = name {
                 url.push_str(&format!("&name={}", urlencoding::encode(n)));
             }
             if let Some(ref r) = ref_code {
-                url.push_str(&format!("&ref={}", r));
+                url.push_str(&format!("&ref={r}"));
             }
 
             // 解析 URL
@@ -310,13 +310,13 @@ mod property_tests {
         ) {
             let url = match error_type {
                 // 缺少 relay 参数
-                0 => format!("proxycast://connect?key={}", key),
+                0 => format!("proxycast://connect?key={key}"),
                 // 缺少 key 参数
-                1 => format!("proxycast://connect?relay={}", relay),
+                1 => format!("proxycast://connect?relay={relay}"),
                 // 空 relay 参数
-                2 => format!("proxycast://connect?relay=&key={}", key),
+                2 => format!("proxycast://connect?relay=&key={key}"),
                 // 空 key 参数
-                _ => format!("proxycast://connect?relay={}&key=", relay),
+                _ => format!("proxycast://connect?relay={relay}&key="),
             };
 
             let result = parse_deep_link(&url);
@@ -345,7 +345,7 @@ mod property_tests {
             relay in arb_relay_id(),
             key in arb_api_key(),
         ) {
-            let url = format!("{}://connect?relay={}&key={}", protocol, relay, key);
+            let url = format!("{protocol}://connect?relay={relay}&key={key}");
             let result = parse_deep_link(&url);
 
             prop_assert!(
@@ -361,7 +361,7 @@ mod property_tests {
             relay in arb_relay_id(),
             key in arb_api_key(),
         ) {
-            let url = format!("proxycast://{}?relay={}&key={}", path, relay, key);
+            let url = format!("proxycast://{path}?relay={relay}&key={key}");
             let result = parse_deep_link(&url);
 
             prop_assert!(

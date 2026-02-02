@@ -46,14 +46,14 @@ pub enum BrowserInterceptorError {
 impl fmt::Display for BrowserInterceptorError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BrowserInterceptorError::ConfigError(msg) => write!(f, "配置错误: {}", msg),
-            BrowserInterceptorError::InterceptorError(msg) => write!(f, "拦截器错误: {}", msg),
-            BrowserInterceptorError::StateError(msg) => write!(f, "状态管理错误: {}", msg),
-            BrowserInterceptorError::PlatformError(msg) => write!(f, "平台错误: {}", msg),
-            BrowserInterceptorError::NotificationError(msg) => write!(f, "通知错误: {}", msg),
+            BrowserInterceptorError::ConfigError(msg) => write!(f, "配置错误: {msg}"),
+            BrowserInterceptorError::InterceptorError(msg) => write!(f, "拦截器错误: {msg}"),
+            BrowserInterceptorError::StateError(msg) => write!(f, "状态管理错误: {msg}"),
+            BrowserInterceptorError::PlatformError(msg) => write!(f, "平台错误: {msg}"),
+            BrowserInterceptorError::NotificationError(msg) => write!(f, "通知错误: {msg}"),
             BrowserInterceptorError::AlreadyRunning => write!(f, "拦截器已在运行"),
-            BrowserInterceptorError::UnsupportedPlatform(msg) => write!(f, "不支持的平台: {}", msg),
-            BrowserInterceptorError::IoError(msg) => write!(f, "IO错误: {}", msg),
+            BrowserInterceptorError::UnsupportedPlatform(msg) => write!(f, "不支持的平台: {msg}"),
+            BrowserInterceptorError::IoError(msg) => write!(f, "IO错误: {msg}"),
         }
     }
 }

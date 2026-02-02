@@ -30,7 +30,7 @@ pub fn run() {
         Ok(cfg) => cfg,
         Err(err) => {
             tracing::error!("{}", err);
-            eprintln!("{}", err);
+            eprintln!("{err}");
             return;
         }
     };
@@ -40,7 +40,7 @@ pub fn run() {
         Ok(s) => s,
         Err(err) => {
             tracing::error!("应用状态初始化失败: {}", err);
-            eprintln!("应用状态初始化失败: {}", err);
+            eprintln!("应用状态初始化失败: {err}");
             return;
         }
     };
@@ -403,7 +403,7 @@ pub fn run() {
                                                 Err(e) => {
                                                     tracing::error!("[Deep Link] 解析 URL 失败: {:?}", e);
                                                     // 发送错误事件到前端
-                                                    let _ = app_handle_clone.emit("deep-link-error", &format!("{:?}", e));
+                                                    let _ = app_handle_clone.emit("deep-link-error", &format!("{e:?}"));
                                                 }
                                             }
                                         }
@@ -439,7 +439,7 @@ pub fn run() {
                                         }
                                         Err(e) => {
                                             tracing::error!("[Deep Link] 解析 URL 失败: {:?}", e);
-                                            let _ = app_handle_clone.emit("deep-link-error", &format!("{:?}", e));
+                                            let _ = app_handle_clone.emit("deep-link-error", &format!("{e:?}"));
                                         }
                                     }
                                 }
@@ -485,7 +485,7 @@ pub fn run() {
                                             "claude_oauth" => "Claude OAuth",
                                             _ => &provider_overview.provider_type,
                                         };
-                                    loaded_types.push(format!("{} ({} 个)", provider_name, count));
+                                    loaded_types.push(format!("{provider_name} ({count} 个)"));
                                 }
                             }
 
@@ -503,7 +503,7 @@ pub fn run() {
                         Err(e) => {
                             logs.write()
                                 .await
-                                .add("warn", &format!("[启动] 获取凭证池信息失败: {}", e));
+                                .add("warn", &format!("[启动] 获取凭证池信息失败: {e}"));
                         }
                     }
 
@@ -546,7 +546,7 @@ pub fn run() {
                                 .await
                                 .add("info", &format!("[启动] 服务器已启动: {host}:{port}"));
                             server_started = true;
-                            server_address = format!("{}:{}", host, port);
+                            server_address = format!("{host}:{port}");
                         }
                         Err(e) => {
                             logs.write()

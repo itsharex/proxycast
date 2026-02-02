@@ -125,7 +125,7 @@ fn default_asr_language() -> String {
 }
 
 /// Whisper 本地配置
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct WhisperLocalConfig {
     /// 模型大小
     #[serde(default)]
@@ -133,15 +133,6 @@ pub struct WhisperLocalConfig {
     /// 模型文件路径（可选，默认自动下载）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_path: Option<String>,
-}
-
-impl Default for WhisperLocalConfig {
-    fn default() -> Self {
-        Self {
-            model: WhisperModelSize::default(),
-            model_path: None,
-        }
-    }
 }
 
 /// 讯飞语音配置

@@ -52,8 +52,8 @@ pub enum PoolError {
 impl std::fmt::Display for PoolError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PoolError::CredentialExists(id) => write!(f, "凭证已存在: {}", id),
-            PoolError::CredentialNotFound(id) => write!(f, "凭证不存在: {}", id),
+            PoolError::CredentialExists(id) => write!(f, "凭证已存在: {id}"),
+            PoolError::CredentialNotFound(id) => write!(f, "凭证不存在: {id}"),
             PoolError::EmptyPool => write!(f, "凭证池为空"),
             PoolError::NoAvailableCredential => write!(f, "没有可用的凭证"),
         }
@@ -291,7 +291,7 @@ mod pool_tests {
             id.to_string(),
             ProviderType::Kiro,
             CredentialData::ApiKey {
-                key: format!("key-{}", id),
+                key: format!("key-{id}"),
                 base_url: None,
             },
         )

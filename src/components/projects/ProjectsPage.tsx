@@ -96,27 +96,20 @@ export function ProjectsPage({ onNavigate }: ProjectsPageProps) {
     let result = projects;
 
     // 按类型过滤
-    switch (currentFilter) {
-      case "general":
-      case "social-media":
-      case "poster":
-      case "music":
-      case "knowledge":
-      case "planning":
-      case "document":
-      case "video":
-      case "novel":
-        result = result.filter((p) => p.workspaceType === currentFilter);
-        break;
-      case "favorites":
-        result = result.filter((p) => p.isFavorite);
-        break;
-      case "archived":
-        result = result.filter((p) => p.isArchived);
-        break;
-      default:
-        // 默认不显示归档的项目
-        result = result.filter((p) => !p.isArchived);
+    if (currentFilter === "all") {
+      // 默认不显示归档的项目
+      result = result.filter((p) => !p.isArchived);
+    } else if (currentFilter === "favorites") {
+      // 收藏：显示所有收藏的非归档项目
+      result = result.filter((p) => p.isFavorite && !p.isArchived);
+    } else if (currentFilter === "archived") {
+      // 归档：只显示归档的项目
+      result = result.filter((p) => p.isArchived);
+    } else {
+      // 其他情况都是具体的项目类型（UserType）
+      result = result.filter(
+        (p) => p.workspaceType === currentFilter && !p.isArchived,
+      );
     }
 
     // 搜索过滤

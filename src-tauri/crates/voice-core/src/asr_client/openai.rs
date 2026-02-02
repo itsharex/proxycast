@@ -84,8 +84,7 @@ impl AsrClient for OpenAIWhisperClient {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             return Err(VoiceError::AsrError(format!(
-                "OpenAI API 错误: {} - {}",
-                status, body
+                "OpenAI API 错误: {status} - {body}"
             )));
         }
 

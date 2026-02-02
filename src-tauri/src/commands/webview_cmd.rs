@@ -128,7 +128,7 @@ pub async fn create_webview_panel(
             return Ok(CreateWebviewResponse {
                 success: false,
                 panel_id,
-                error: Some(format!("无效的 URL: {}", e)),
+                error: Some(format!("无效的 URL: {e}")),
             });
         }
     };
@@ -171,7 +171,7 @@ pub async fn create_webview_panel(
             Ok(CreateWebviewResponse {
                 success: false,
                 panel_id,
-                error: Some(format!("创建窗口失败: {}", e)),
+                error: Some(format!("创建窗口失败: {e}")),
             })
         }
     }
@@ -227,13 +227,13 @@ pub async fn navigate_webview_panel(
     // 解析 URL
     let parsed_url = url
         .parse::<url::Url>()
-        .map_err(|e| format!("无效的 URL: {}", e))?;
+        .map_err(|e| format!("无效的 URL: {e}"))?;
 
     // 获取窗口并导航
     if let Some(window) = app.get_webview_window(&panel_id) {
         // 使用 eval 来导航
-        let js = format!("window.location.href = '{}';", parsed_url);
-        window.eval(&js).map_err(|e| format!("导航失败: {}", e))?;
+        let js = format!("window.location.href = '{parsed_url}';");
+        window.eval(&js).map_err(|e| format!("导航失败: {e}"))?;
 
         // 更新状态中的 URL
         let mut manager = state.0.write().await;
@@ -243,7 +243,7 @@ pub async fn navigate_webview_panel(
 
         Ok(true)
     } else {
-        Err(format!("窗口不存在: {}", panel_id))
+        Err(format!("窗口不存在: {panel_id}"))
     }
 }
 
@@ -270,7 +270,7 @@ pub async fn resize_webview_panel(
         // 设置大小
         window
             .set_size(tauri::LogicalSize::new(width, height))
-            .map_err(|e| format!("设置大小失败: {}", e))?;
+            .map_err(|e| format!("设置大小失败: {e}"))?;
 
         // 更新状态
         let mut manager = state.0.write().await;
@@ -281,7 +281,7 @@ pub async fn resize_webview_panel(
 
         Ok(true)
     } else {
-        Err(format!("窗口不存在: {}", panel_id))
+        Err(format!("窗口不存在: {panel_id}"))
     }
 }
 
@@ -298,9 +298,9 @@ pub async fn get_webview_panels(
 #[tauri::command]
 pub async fn focus_webview_panel(app: AppHandle, panel_id: String) -> Result<bool, String> {
     if let Some(window) = app.get_webview_window(&panel_id) {
-        window.set_focus().map_err(|e| format!("聚焦失败: {}", e))?;
+        window.set_focus().map_err(|e| format!("聚焦失败: {e}"))?;
         Ok(true)
     } else {
-        Err(format!("窗口不存在: {}", panel_id))
+        Err(format!("窗口不存在: {panel_id}"))
     }
 }

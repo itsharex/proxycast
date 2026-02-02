@@ -89,7 +89,7 @@ pub async fn handle_image_generation(
     // 安全截取 prompt，避免 UTF-8 字符边界问题
     let prompt_preview: String = request.prompt.chars().take(50).collect();
     let prompt_display = if request.prompt.chars().count() > 50 {
-        format!("{}...", prompt_preview)
+        format!("{prompt_preview}...")
     } else {
         request.prompt.clone()
     };
@@ -147,7 +147,7 @@ pub async fn handle_image_generation(
                 .logs
                 .write()
                 .await
-                .add("error", &format!("[IMAGE] 获取凭证失败: {}", e));
+                .add("error", &format!("[IMAGE] 获取凭证失败: {e}"));
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({
@@ -195,7 +195,7 @@ pub async fn handle_image_generation(
         let _ = state.pool_service.mark_unhealthy(
             db,
             &credential.uuid,
-            Some(&format!("Failed to load credentials: {}", e)),
+            Some(&format!("Failed to load credentials: {e}")),
         );
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -267,7 +267,7 @@ pub async fn handle_image_generation(
         .as_str()
         .unwrap_or("gemini-3-pro-image-preview");
 
-    eprintln!("[IMAGE] 调用 Antigravity API: model={}", model);
+    eprintln!("[IMAGE] 调用 Antigravity API: model={model}");
     eprintln!(
         "[IMAGE] 请求内容: {}",
         serde_json::to_string_pretty(&antigravity_request).unwrap_or_default()
@@ -312,7 +312,7 @@ pub async fn handle_image_generation(
                         .logs
                         .write()
                         .await
-                        .add("error", &format!("[IMAGE] 响应转换失败: {}", e));
+                        .add("error", &format!("[IMAGE] 响应转换失败: {e}"));
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(serde_json::json!({
@@ -335,7 +335,7 @@ pub async fn handle_image_generation(
                 .logs
                 .write()
                 .await
-                .add("error", &format!("[IMAGE] Antigravity API 调用失败: {}", e));
+                .add("error", &format!("[IMAGE] Antigravity API 调用失败: {e}"));
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({

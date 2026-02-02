@@ -95,7 +95,7 @@ impl SessionService {
             first_line.to_string()
         } else {
             let truncated: String = first_line.chars().take(max_length - 3).collect();
-            format!("{}...", truncated)
+            format!("{truncated}...")
         }
     }
 

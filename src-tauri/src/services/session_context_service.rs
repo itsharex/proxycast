@@ -81,7 +81,7 @@ impl SessionContextService {
 
         // 获取所有消息
         let all_messages = GeneralChatDao::get_messages(&conn, session_id, None, None)
-            .map_err(|e| format!("获取消息失败: {}", e))?;
+            .map_err(|e| format!("获取消息失败: {e}"))?;
 
         if all_messages.is_empty() {
             return Ok(vec![]);
@@ -113,7 +113,7 @@ impl SessionContextService {
             if let Ok(summary) = self.get_or_create_summary(session_id, &all_messages) {
                 // 添加摘要作为系统消息
                 let summary_message = ChatMessage {
-                    id: format!("summary-{}", session_id),
+                    id: format!("summary-{session_id}"),
                     session_id: session_id.to_string(),
                     role: MessageRole::System,
                     content: format!(
@@ -341,10 +341,10 @@ impl SessionContextService {
         let conn = self.db_connection.lock().map_err(|e| e.to_string())?;
 
         let message_count = GeneralChatDao::get_message_count(&conn, session_id)
-            .map_err(|e| format!("获取消息数量失败: {}", e))? as usize;
+            .map_err(|e| format!("获取消息数量失败: {e}"))? as usize;
 
         let messages = GeneralChatDao::get_messages(&conn, session_id, None, None)
-            .map_err(|e| format!("获取消息失败: {}", e))?;
+            .map_err(|e| format!("获取消息失败: {e}"))?;
 
         let total_characters: usize = messages.iter().map(|m| m.content.len()).sum();
         let user_messages = messages
@@ -382,7 +382,7 @@ impl SessionContextService {
         let conn = self.db_connection.lock().map_err(|e| e.to_string())?;
 
         let messages = GeneralChatDao::get_messages(&conn, session_id, None, None)
-            .map_err(|e| format!("获取消息失败: {}", e))?;
+            .map_err(|e| format!("获取消息失败: {e}"))?;
 
         if messages.len() > self.config.summary_threshold {
             debug!("为会话 {} 预热上下文", session_id);

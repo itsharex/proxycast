@@ -139,7 +139,7 @@ pub fn write_env_to_shell_config(
         for (key, value) in env_vars {
             // 转义值中的特殊字符
             let escaped_value = value.replace('\\', "\\\\").replace('"', "\\\"");
-            new_content.push_str(&format!("export {}=\"{}\"\n", key, escaped_value));
+            new_content.push_str(&format!("export {key}=\"{escaped_value}\"\n"));
         }
 
         new_content.push_str(ENV_BLOCK_END);

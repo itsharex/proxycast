@@ -309,7 +309,7 @@ pub struct OutlineNodeUpdateRequest {
 }
 
 /// 项目记忆（聚合所有记忆数据）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProjectMemory {
     /// 角色列表
     pub characters: Vec<Character>,
@@ -321,15 +321,4 @@ pub struct ProjectMemory {
     pub style_guide: Option<StyleGuide>,
     /// 大纲
     pub outline: Vec<OutlineNode>,
-}
-
-impl Default for ProjectMemory {
-    fn default() -> Self {
-        Self {
-            characters: Vec::new(),
-            world_building: None,
-            style_guide: None,
-            outline: Vec::new(),
-        }
-    }
 }

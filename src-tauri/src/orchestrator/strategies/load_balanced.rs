@@ -86,7 +86,7 @@ impl SelectionStrategy for LoadBalancedStrategy {
 
         Ok(ModelSelection {
             model: selected,
-            reason: format!("负载均衡选择 (当前负载: {}%)", load),
+            reason: format!("负载均衡选择 (当前负载: {load}%)"),
             confidence: 80,
             alternatives: available,
         })

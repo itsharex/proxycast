@@ -224,10 +224,10 @@ impl ConnectionConfigManager {
             return Ok(ConnectionsFile::new());
         }
 
-        let content = fs::read_to_string(&self.config_path)
-            .map_err(|e| format!("读取配置文件失败: {}", e))?;
+        let content =
+            fs::read_to_string(&self.config_path).map_err(|e| format!("读取配置文件失败: {e}"))?;
 
-        serde_json::from_str(&content).map_err(|e| format!("解析配置文件失败: {}", e))
+        serde_json::from_str(&content).map_err(|e| format!("解析配置文件失败: {e}"))
     }
 
     /// 保存连接配置
@@ -235,14 +235,14 @@ impl ConnectionConfigManager {
         // 确保父目录存在
         if let Some(parent) = self.config_path.parent() {
             if !parent.exists() {
-                fs::create_dir_all(parent).map_err(|e| format!("创建配置目录失败: {}", e))?;
+                fs::create_dir_all(parent).map_err(|e| format!("创建配置目录失败: {e}"))?;
             }
         }
 
         let content =
-            serde_json::to_string_pretty(config).map_err(|e| format!("序列化配置失败: {}", e))?;
+            serde_json::to_string_pretty(config).map_err(|e| format!("序列化配置失败: {e}"))?;
 
-        fs::write(&self.config_path, content).map_err(|e| format!("写入配置文件失败: {}", e))?;
+        fs::write(&self.config_path, content).map_err(|e| format!("写入配置文件失败: {e}"))?;
 
         tracing::info!("[ConnectionConfig] 配置已保存: {:?}", self.config_path);
         Ok(())
@@ -252,16 +252,16 @@ impl ConnectionConfigManager {
     pub fn save_raw(&self, content: &str) -> Result<(), String> {
         // 先验证 JSON 格式
         let _: ConnectionsFile =
-            serde_json::from_str(content).map_err(|e| format!("无效的 JSON 格式: {}", e))?;
+            serde_json::from_str(content).map_err(|e| format!("无效的 JSON 格式: {e}"))?;
 
         // 确保父目录存在
         if let Some(parent) = self.config_path.parent() {
             if !parent.exists() {
-                fs::create_dir_all(parent).map_err(|e| format!("创建配置目录失败: {}", e))?;
+                fs::create_dir_all(parent).map_err(|e| format!("创建配置目录失败: {e}"))?;
             }
         }
 
-        fs::write(&self.config_path, content).map_err(|e| format!("写入配置文件失败: {}", e))?;
+        fs::write(&self.config_path, content).map_err(|e| format!("写入配置文件失败: {e}"))?;
 
         tracing::info!("[ConnectionConfig] 原始配置已保存: {:?}", self.config_path);
         Ok(())
@@ -277,7 +277,7 @@ impl ConnectionConfigManager {
             .to_string());
         }
 
-        fs::read_to_string(&self.config_path).map_err(|e| format!("读取配置文件失败: {}", e))
+        fs::read_to_string(&self.config_path).map_err(|e| format!("读取配置文件失败: {e}"))
     }
 
     /// 从系统 SSH 配置读取 Host 列表
@@ -384,7 +384,7 @@ impl ConnectionConfigManager {
         // 获取本地系统信息
         let local_user = whoami::username();
         let local_host = whoami::fallible::hostname().unwrap_or_else(|_| "localhost".to_string());
-        let local_label = format!("{}@{}", local_user, local_host);
+        let local_label = format!("{local_user}@{local_host}");
 
         // 添加本地连接
         entries.push(ConnectionListEntry {
@@ -410,14 +410,14 @@ impl ConnectionConfigManager {
                     let host = conn.host.as_deref().unwrap_or("unknown");
                     let port = conn.port.unwrap_or(22);
                     if port == 22 {
-                        format!("{}@{}", user, host)
+                        format!("{user}@{host}")
                     } else {
-                        format!("{}@{}:{}", user, host, port)
+                        format!("{user}@{host}:{port}")
                     }
                 }
                 ConnectionConfigType::Wsl => {
                     let distro = conn.wsl_distro.as_deref().unwrap_or("default");
-                    format!("WSL: {}", distro)
+                    format!("WSL: {distro}")
                 }
                 ConnectionConfigType::Local => "Local".to_string(),
             };
@@ -444,7 +444,7 @@ impl ConnectionConfigManager {
 
             let label = if let Some(ref user) = host.user {
                 if let Some(ref hostname) = host.hostname {
-                    format!("{}@{}", user, hostname)
+                    format!("{user}@{hostname}")
                 } else {
                     format!("{}@{}", user, host.pattern)
                 }

@@ -32,12 +32,12 @@ impl MachineIdService {
 
         // 确保应用数据目录存在
         if let Err(e) = fs::create_dir_all(&app_data_dir) {
-            return Err(format!("Failed to create app data directory: {}", e));
+            return Err(format!("Failed to create app data directory: {e}"));
         }
 
         // 确保备份目录存在
         if let Err(e) = fs::create_dir_all(&backup_dir) {
-            return Err(format!("Failed to create backup directory: {}", e));
+            return Err(format!("Failed to create backup directory: {e}"));
         }
 
         Ok(MachineIdService {
@@ -70,7 +70,7 @@ impl MachineIdService {
                 self.get_linux_machine_id(requires_admin, backup_exists)
                     .await
             }
-            _ => Err(format!("Unsupported operating system: {}", os)),
+            _ => Err(format!("Unsupported operating system: {os}")),
         }
     }
 
@@ -103,7 +103,7 @@ impl MachineIdService {
             "linux" => self.set_linux_machine_id(&formatted_id).await,
             _ => Ok(MachineIdResult {
                 success: false,
-                message: format!("Unsupported operating system: {}", os),
+                message: format!("Unsupported operating system: {os}"),
                 requires_restart: false,
                 requires_admin: false,
                 new_machine_id: None,
@@ -178,10 +178,10 @@ impl MachineIdService {
         };
 
         let backup_json = serde_json::to_string_pretty(&backup)
-            .map_err(|e| format!("Failed to serialize backup: {}", e))?;
+            .map_err(|e| format!("Failed to serialize backup: {e}"))?;
 
         let write_result = fs::write(file_path, backup_json)
-            .map_err(|e| format!("Failed to write backup file: {}", e));
+            .map_err(|e| format!("Failed to write backup file: {e}"));
 
         // 添加到历史记录
         if write_result.is_ok() {
@@ -198,10 +198,10 @@ impl MachineIdService {
     /// 从文件恢复机器码
     pub async fn restore_machine_id(&self, file_path: &str) -> Result<MachineIdResult, String> {
         let backup_content = fs::read_to_string(file_path)
-            .map_err(|e| format!("Failed to read backup file: {}", e))?;
+            .map_err(|e| format!("Failed to read backup file: {e}"))?;
 
         let backup: MachineIdBackup = serde_json::from_str(&backup_content)
-            .map_err(|e| format!("Failed to parse backup file: {}", e))?;
+            .map_err(|e| format!("Failed to parse backup file: {e}"))?;
 
         self.set_machine_id(&backup.machine_id).await
     }
@@ -418,9 +418,9 @@ impl MachineIdService {
 
         // 读取系统原始 UUID
         let output = Command::new("ioreg")
-            .args(&["-rd1", "-c", "IOPlatformExpertDevice"])
+            .args(["-rd1", "-c", "IOPlatformExpertDevice"])
             .output()
-            .map_err(|e| format!("Failed to execute ioreg: {}", e))?;
+            .map_err(|e| format!("Failed to execute ioreg: {e}"))?;
 
         let output_str = String::from_utf8_lossy(&output.stdout);
 
@@ -463,7 +463,7 @@ impl MachineIdService {
             .join("proxycast")
             .join("machine-id-override");
 
-        fs::read_to_string(override_file).map_err(|e| format!("No override file found: {}", e))
+        fs::read_to_string(override_file).map_err(|e| format!("No override file found: {e}"))
     }
 
     #[cfg(target_os = "macos")]
@@ -473,11 +473,11 @@ impl MachineIdService {
             .join("proxycast");
 
         fs::create_dir_all(&override_dir)
-            .map_err(|e| format!("Failed to create override directory: {}", e))?;
+            .map_err(|e| format!("Failed to create override directory: {e}"))?;
 
         let override_file = override_dir.join("machine-id-override");
         fs::write(override_file, new_id)
-            .map_err(|e| format!("Failed to write override file: {}", e))?;
+            .map_err(|e| format!("Failed to write override file: {e}"))?;
 
         Ok(())
     }
@@ -682,10 +682,10 @@ impl MachineIdService {
         };
 
         let backup_json = serde_json::to_string_pretty(&backup)
-            .map_err(|e| format!("Failed to serialize backup: {}", e))?;
+            .map_err(|e| format!("Failed to serialize backup: {e}"))?;
 
         fs::write(backup_file, backup_json)
-            .map_err(|e| format!("Failed to create auto backup: {}", e))?;
+            .map_err(|e| format!("Failed to create auto backup: {e}"))?;
 
         Ok(())
     }
@@ -699,7 +699,7 @@ impl MachineIdService {
         }
 
         let content = fs::read_to_string(&self.history_file)
-            .map_err(|e| format!("Failed to read history file: {}", e))?;
+            .map_err(|e| format!("Failed to read history file: {e}"))?;
 
         let history: Vec<MachineIdHistory> =
             serde_json::from_str(&content).unwrap_or_else(|_| vec![]);
@@ -710,10 +710,10 @@ impl MachineIdService {
     /// 保存历史记录
     fn save_history(&self, history: &[MachineIdHistory]) -> Result<(), String> {
         let history_json = serde_json::to_string_pretty(history)
-            .map_err(|e| format!("Failed to serialize history: {}", e))?;
+            .map_err(|e| format!("Failed to serialize history: {e}"))?;
 
         fs::write(&self.history_file, history_json)
-            .map_err(|e| format!("Failed to save history: {}", e))?;
+            .map_err(|e| format!("Failed to save history: {e}"))?;
 
         Ok(())
     }

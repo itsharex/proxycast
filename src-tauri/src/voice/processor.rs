@@ -125,18 +125,18 @@ async fn call_local_llm(
     // 发送请求
     let client = reqwest::Client::new();
     let response = client
-        .post(format!("{}/v1/chat/completions", base_url))
-        .header("Authorization", format!("Bearer {}", api_key))
+        .post(format!("{base_url}/v1/chat/completions"))
+        .header("Authorization", format!("Bearer {api_key}"))
         .header("Content-Type", "application/json")
         .json(&request)
         .send()
         .await
-        .map_err(|e| format!("请求失败: {}", e))?;
+        .map_err(|e| format!("请求失败: {e}"))?;
 
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("LLM API 错误: {} - {}", status, body));
+        return Err(format!("LLM API 错误: {status} - {body}"));
     }
 
     // 解析响应
@@ -158,7 +158,7 @@ async fn call_local_llm(
     let result: ChatResponse = response
         .json()
         .await
-        .map_err(|e| format!("解析响应失败: {}", e))?;
+        .map_err(|e| format!("解析响应失败: {e}"))?;
 
     result
         .choices

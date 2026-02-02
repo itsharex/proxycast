@@ -111,17 +111,16 @@ pub async fn analyze_midi(midi_path: String) -> Result<MidiAnalysisResult, Strin
         .arg(&script_path)
         .arg(&midi_path)
         .output()
-        .map_err(|e| format!("Failed to execute Python script: {}", e))?;
+        .map_err(|e| format!("Failed to execute Python script: {e}"))?;
 
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("MIDI analysis failed: {}", error));
+        return Err(format!("MIDI analysis failed: {error}"));
     }
 
     // 解析 JSON 输出
     let result_json = String::from_utf8_lossy(&output.stdout);
-    serde_json::from_str(&result_json)
-        .map_err(|e| format!("Failed to parse analysis result: {}", e))
+    serde_json::from_str(&result_json).map_err(|e| format!("Failed to parse analysis result: {e}"))
 }
 
 /// 将 MP3 转换为 MIDI
@@ -136,11 +135,11 @@ pub async fn convert_mp3_to_midi(mp3_path: String, output_path: String) -> Resul
         .arg(&mp3_path)
         .arg(&output_path)
         .output()
-        .map_err(|e| format!("Failed to execute Python script: {}", e))?;
+        .map_err(|e| format!("Failed to execute Python script: {e}"))?;
 
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("MP3 to MIDI conversion failed: {}", error));
+        return Err(format!("MP3 to MIDI conversion failed: {error}"));
     }
 
     Ok(output_path)
@@ -149,10 +148,10 @@ pub async fn convert_mp3_to_midi(mp3_path: String, output_path: String) -> Resul
 /// 加载资源文件
 #[tauri::command]
 pub async fn load_music_resource(resource_name: String) -> Result<String, String> {
-    let resource_path = get_resource_path(&format!("music/{}", resource_name))?;
+    let resource_path = get_resource_path(&format!("music/{resource_name}"))?;
 
     std::fs::read_to_string(&resource_path)
-        .map_err(|e| format!("Failed to read resource file: {}", e))
+        .map_err(|e| format!("Failed to read resource file: {e}"))
 }
 
 /// 获取资源文件路径
@@ -160,7 +159,7 @@ fn get_resource_path(relative_path: &str) -> Result<PathBuf, String> {
     // 在开发环境中，资源文件在 src-tauri/resources/
     // 在生产环境中，资源文件会被打包到应用程序包中
     let mut path =
-        std::env::current_exe().map_err(|e| format!("Failed to get executable path: {}", e))?;
+        std::env::current_exe().map_err(|e| format!("Failed to get executable path: {e}"))?;
 
     path.pop(); // 移除可执行文件名
 
@@ -185,7 +184,7 @@ fn get_resource_path(relative_path: &str) -> Result<PathBuf, String> {
         if dev_path.exists() {
             return Ok(dev_path);
         }
-        return Err(format!("Resource not found: {}", relative_path));
+        return Err(format!("Resource not found: {relative_path}"));
     }
 
     Ok(path)
@@ -200,11 +199,11 @@ pub async fn install_python_dependencies() -> Result<String, String> {
         .arg("install")
         .args(&packages)
         .output()
-        .map_err(|e| format!("Failed to install packages: {}", e))?;
+        .map_err(|e| format!("Failed to install packages: {e}"))?;
 
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Installation failed: {}", error));
+        return Err(format!("Installation failed: {error}"));
     }
 
     Ok("Dependencies installed successfully".to_string())

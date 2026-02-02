@@ -35,7 +35,7 @@ pub async fn get_kiro_usage(
         let conn = db.lock().map_err(|e| e.to_string())?;
         ProviderPoolDao::get_by_uuid(&conn, &credential_uuid)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("凭证不存在: {}", credential_uuid))?
+            .ok_or_else(|| format!("凭证不存在: {credential_uuid}"))?
     };
 
     // 2. 验证是否为 Kiro 凭证
@@ -60,7 +60,7 @@ pub async fn get_kiro_usage(
         .map_err(|e| {
             // 提供更友好的错误信息
             if e.contains("401") || e.contains("Bad credentials") || e.contains("过期") || e.contains("无效") {
-                format!("刷新 Kiro Token 失败: OAuth 凭证已过期或无效，需要重新认证。\n💡 解决方案：\n1. 删除当前 OAuth 凭证\n2. 重新添加 OAuth 凭证\n3. 确保使用最新的凭证文件\n\n技术详情：{}", e)
+                format!("刷新 Kiro Token 失败: OAuth 凭证已过期或无效，需要重新认证。\n💡 解决方案：\n1. 删除当前 OAuth 凭证\n2. 重新添加 OAuth 凭证\n3. 确保使用最新的凭证文件\n\n技术详情：{e}")
             } else {
                 e
             }
@@ -92,11 +92,11 @@ fn read_kiro_credential_info(creds_file_path: &str) -> Result<(String, Option<St
 
     // 读取文件
     let content =
-        std::fs::read_to_string(&expanded_path).map_err(|e| format!("读取凭证文件失败: {}", e))?;
+        std::fs::read_to_string(&expanded_path).map_err(|e| format!("读取凭证文件失败: {e}"))?;
 
     // 解析 JSON
     let json: serde_json::Value =
-        serde_json::from_str(&content).map_err(|e| format!("解析凭证文件失败: {}", e))?;
+        serde_json::from_str(&content).map_err(|e| format!("解析凭证文件失败: {e}"))?;
 
     // 获取 auth_method，默认为 "social"
     let auth_method = json
@@ -135,7 +135,7 @@ fn get_machine_id() -> Result<String, String> {
     hasher.update(raw_id.as_bytes());
     let result = hasher.finalize();
 
-    Ok(format!("{:x}", result))
+    Ok(format!("{result:x}"))
 }
 
 /// 获取原始设备 ID
@@ -147,7 +147,7 @@ fn get_raw_machine_id() -> Result<String, String> {
         let output = Command::new("ioreg")
             .args(["-rd1", "-c", "IOPlatformExpertDevice"])
             .output()
-            .map_err(|e| format!("执行 ioreg 失败: {}", e))?;
+            .map_err(|e| format!("执行 ioreg 失败: {e}"))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         for line in stdout.lines() {
@@ -225,7 +225,7 @@ mod tests {
         // 这个测试在不同平台上行为不同
         let result = get_machine_id();
         // 应该能成功获取 machine_id
-        assert!(result.is_ok(), "Failed to get machine_id: {:?}", result);
+        assert!(result.is_ok(), "Failed to get machine_id: {result:?}");
         // machine_id 应该是 64 字符的十六进制字符串（SHA256）
         let id = result.unwrap();
         assert_eq!(id.len(), 64, "Machine ID should be 64 hex chars");

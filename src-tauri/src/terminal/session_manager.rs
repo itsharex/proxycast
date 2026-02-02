@@ -309,7 +309,7 @@ impl TerminalSessionManager {
     ) -> Result<(), TerminalError> {
         let decoded = BASE64
             .decode(data)
-            .map_err(|e| TerminalError::WriteFailed(format!("Base64 解码失败: {}", e)))?;
+            .map_err(|e| TerminalError::WriteFailed(format!("Base64 解码失败: {e}")))?;
         self.write_to_session(session_id, &decoded).await
     }
 
@@ -434,13 +434,10 @@ impl TerminalSessionManager {
             .ok_or_else(|| TerminalError::SessionNotFound(session_id.to_string()))?;
 
         // 检查块文件是否存在
-        let block_file_path = self
-            .block_file_base_dir
-            .join(format!("{}.block", session_id));
+        let block_file_path = self.block_file_base_dir.join(format!("{session_id}.block"));
         if !block_file_path.exists() {
             return Err(TerminalError::BlockFileError(format!(
-                "块文件不存在: {:?}",
-                block_file_path
+                "块文件不存在: {block_file_path:?}"
             )));
         }
 

@@ -112,7 +112,7 @@ impl std::fmt::Display for WSLDistroState {
 /// - `wsl://distro_name/path` - 指定发行版和初始路径
 ///
 /// _Requirements: 5.1_
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct WSLOpts {
     /// 发行版名称（None 表示使用默认发行版）
     pub distro: Option<String>,
@@ -120,16 +120,6 @@ pub struct WSLOpts {
     pub initial_path: Option<String>,
     /// 要执行的命令（None 表示启动交互式 shell）
     pub command: Option<String>,
-}
-
-impl Default for WSLOpts {
-    fn default() -> Self {
-        Self {
-            distro: None,
-            initial_path: None,
-            command: None,
-        }
-    }
 }
 
 impl WSLOpts {
@@ -188,8 +178,7 @@ impl WSLOpts {
             return Ok(Self::default());
         } else {
             return Err(TerminalError::WSLConnectionFailed(format!(
-                "无效的 WSL 连接字符串，需要以 '{}' 开头: {}",
-                WSL_CONN_PREFIX, conn_str
+                "无效的 WSL 连接字符串，需要以 '{WSL_CONN_PREFIX}' 开头: {conn_str}"
             )));
         };
 
@@ -419,8 +408,7 @@ impl WSLConn {
         let current_state = self.state();
         if !current_state.can_transition_to(ConnectionState::Connecting) {
             return Err(TerminalError::WSLConnectionFailed(format!(
-                "无法从 {} 状态开始连接",
-                current_state
+                "无法从 {current_state} 状态开始连接"
             )));
         }
 
@@ -447,10 +435,7 @@ impl WSLConn {
 
         if !distro_exists {
             let available: Vec<_> = distros.iter().map(|d| d.name.as_str()).collect();
-            let error_msg = format!(
-                "WSL 发行版 '{}' 不存在。可用的发行版: {:?}",
-                distro, available
-            );
+            let error_msg = format!("WSL 发行版 '{distro}' 不存在。可用的发行版: {available:?}");
             tracing::error!("[WSLConn] {}", error_msg);
             self.set_state(ConnectionState::Error);
             self.set_error(Some(error_msg.clone()));
@@ -1201,7 +1186,7 @@ mod tests {
         #[test]
         fn test_display() {
             let opts = WSLOpts::new().with_distro("Ubuntu");
-            assert_eq!(format!("{}", opts), "wsl://Ubuntu");
+            assert_eq!(format!("{opts}"), "wsl://Ubuntu");
         }
     }
 

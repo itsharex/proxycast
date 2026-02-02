@@ -22,7 +22,7 @@ use super::plugin_install_cmd::PluginInstallerState;
 /// 前端调试日志命令
 #[tauri::command]
 pub fn frontend_debug_log(message: String) {
-    println!("[Frontend] {}", message);
+    println!("[Frontend] {message}");
 }
 
 /// 插件管理器状态
@@ -151,7 +151,7 @@ pub async fn get_plugins_dir(
 ) -> Result<String, String> {
     let manager = state.0.read().await;
     let dir = manager.plugins_dir().to_string_lossy().to_string();
-    println!("[get_plugins_dir] 返回: {}", dir);
+    println!("[get_plugins_dir] 返回: {dir}");
     Ok(dir)
 }
 
@@ -435,7 +435,7 @@ pub async fn read_plugin_manifest_cmd(
         );
         // 输出序列化后的 JSON
         if let Ok(json) = serde_json::to_string(&manifest) {
-            println!("[read_plugin_manifest_cmd] JSON: {}", json);
+            println!("[read_plugin_manifest_cmd] JSON: {json}");
         }
         return Ok(Some(manifest));
     }
@@ -480,10 +480,10 @@ pub async fn launch_plugin_ui(
             if let Some(m) = read_plugin_manifest(&installed.install_path) {
                 (m, installed.install_path.clone())
             } else {
-                return Err(format!("插件 {} 不存在", plugin_id));
+                return Err(format!("插件 {plugin_id} 不存在"));
             }
         } else {
-            return Err(format!("插件 {} 不存在", plugin_id));
+            return Err(format!("插件 {plugin_id} 不存在"));
         }
     };
 
@@ -507,7 +507,7 @@ pub async fn launch_plugin_ui(
     // 启动二进制文件
     std::process::Command::new(&binary_path)
         .spawn()
-        .map_err(|e| format!("启动插件失败: {}", e))?;
+        .map_err(|e| format!("启动插件失败: {e}"))?;
 
     Ok(())
 }

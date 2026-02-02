@@ -88,7 +88,7 @@ impl SkillService {
                         let already_exists = all_skills.values().any(|s| s.directory == directory);
 
                         if !already_exists {
-                            let key = format!("local:{}", directory);
+                            let key = format!("local:{directory}");
                             let skill_md = entry.path().join("SKILL.md");
                             let (name, description) = if skill_md.exists() {
                                 self.parse_skill_metadata(&skill_md)
@@ -186,7 +186,7 @@ impl SkillService {
                 let name = metadata.name.unwrap_or_else(|| directory.clone());
                 let description = metadata.description.unwrap_or_default();
 
-                let key = format!("{}{}", repo_key_prefix, directory);
+                let key = format!("{repo_key_prefix}{directory}");
                 let app_key = format!("{}:{}", app_type.to_string().to_lowercase(), directory);
                 let installed = installed_states
                     .get(&app_key)
@@ -246,8 +246,7 @@ impl SkillService {
 
         for branch in branches {
             let zip_url = format!(
-                "https://github.com/{}/{}/archive/refs/heads/{}.zip",
-                repo_owner, repo_name, branch
+                "https://github.com/{repo_owner}/{repo_name}/archive/refs/heads/{branch}.zip"
             );
 
             match self
@@ -288,7 +287,7 @@ impl SkillService {
         let mut archive = zip::ZipArchive::new(cursor).context("Failed to open ZIP")?;
 
         // 查找技能目录
-        let skill_prefix = format!("/{}/", directory);
+        let skill_prefix = format!("/{directory}/");
         let mut found = false;
 
         for i in 0..archive.len() {

@@ -48,10 +48,7 @@ impl MemoryManager {
             updated_at: now,
         };
 
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         conn.execute(
             "INSERT INTO characters (id, project_id, name, aliases_json, description, personality, background, appearance, relationships_json, avatar_url, is_main, sort_order, extra_json, created_at, updated_at)
@@ -74,7 +71,7 @@ impl MemoryManager {
                 character.updated_at.timestamp_millis(),
             ],
         )
-        .map_err(|e| format!("创建角色失败: {}", e))?;
+        .map_err(|e| format!("创建角色失败: {e}"))?;
 
         tracing::info!(
             "[Memory] 创建角色: id={}, name={}",
@@ -86,44 +83,38 @@ impl MemoryManager {
 
     /// 获取角色
     pub fn get_character(&self, id: &CharacterId) -> Result<Option<Character>, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let result = conn.query_row(
             "SELECT id, project_id, name, aliases_json, description, personality, background, appearance, relationships_json, avatar_url, is_main, sort_order, extra_json, created_at, updated_at
              FROM characters WHERE id = ?",
             params![id],
-            |row| Ok(Self::row_to_character(row)?),
+            Self::row_to_character,
         );
 
         match result {
             Ok(character) => Ok(Some(character)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(format!("获取角色失败: {}", e)),
+            Err(e) => Err(format!("获取角色失败: {e}")),
         }
     }
 
     /// 列出项目的所有角色
     pub fn list_characters(&self, project_id: &str) -> Result<Vec<Character>, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let mut stmt = conn
             .prepare(
                 "SELECT id, project_id, name, aliases_json, description, personality, background, appearance, relationships_json, avatar_url, is_main, sort_order, extra_json, created_at, updated_at
                  FROM characters WHERE project_id = ? ORDER BY sort_order ASC",
             )
-            .map_err(|e| format!("准备查询失败: {}", e))?;
+            .map_err(|e| format!("准备查询失败: {e}"))?;
 
         let characters = stmt
-            .query_map(params![project_id], |row| Ok(Self::row_to_character(row)?))
-            .map_err(|e| format!("查询失败: {}", e))?
+            .query_map(params![project_id], Self::row_to_character)
+            .map_err(|e| format!("查询失败: {e}"))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("解析结果失败: {}", e))?;
+            .map_err(|e| format!("解析结果失败: {e}"))?;
 
         Ok(characters)
     }
@@ -134,10 +125,7 @@ impl MemoryManager {
         id: &CharacterId,
         updates: CharacterUpdateRequest,
     ) -> Result<Character, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
         let now = Utc::now().timestamp_millis();
 
         let mut set_clauses = vec!["updated_at = ?"];
@@ -200,7 +188,7 @@ impl MemoryManager {
             params_vec.iter().map(|p| p.as_ref()).collect();
 
         conn.execute(&sql, params_refs.as_slice())
-            .map_err(|e| format!("更新角色失败: {}", e))?;
+            .map_err(|e| format!("更新角色失败: {e}"))?;
 
         drop(conn);
         self.get_character(id)?
@@ -209,14 +197,11 @@ impl MemoryManager {
 
     /// 删除角色
     pub fn delete_character(&self, id: &CharacterId) -> Result<bool, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let affected = conn
             .execute("DELETE FROM characters WHERE id = ?", params![id])
-            .map_err(|e| format!("删除角色失败: {}", e))?;
+            .map_err(|e| format!("删除角色失败: {e}"))?;
 
         if affected > 0 {
             tracing::info!("[Memory] 删除角色: id={}", id);
@@ -225,16 +210,13 @@ impl MemoryManager {
     }
 
     fn get_next_character_order(&self, project_id: &str) -> Result<i32, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
         let result: Result<i32, _> = conn.query_row(
             "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM characters WHERE project_id = ?",
             params![project_id],
             |row| row.get(0),
         );
-        result.map_err(|e| format!("获取排序顺序失败: {}", e))
+        result.map_err(|e| format!("获取排序顺序失败: {e}"))
     }
 
     fn row_to_character(row: &rusqlite::Row) -> Result<Character, rusqlite::Error> {
@@ -279,10 +261,7 @@ impl MemoryManager {
 
     /// 获取或创建世界观
     pub fn get_world_building(&self, project_id: &str) -> Result<Option<WorldBuilding>, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let result = conn.query_row(
             "SELECT project_id, description, era, locations, rules, extra_json, updated_at
@@ -313,7 +292,7 @@ impl MemoryManager {
         match result {
             Ok(wb) => Ok(Some(wb)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(format!("获取世界观失败: {}", e)),
+            Err(e) => Err(format!("获取世界观失败: {e}")),
         }
     }
 
@@ -323,10 +302,7 @@ impl MemoryManager {
         project_id: &str,
         updates: WorldBuildingUpdateRequest,
     ) -> Result<WorldBuilding, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
         let now = Utc::now();
 
         let extra_json = updates
@@ -354,7 +330,7 @@ impl MemoryManager {
                 now.timestamp_millis(),
             ],
         )
-        .map_err(|e| format!("更新世界观失败: {}", e))?;
+        .map_err(|e| format!("更新世界观失败: {e}"))?;
 
         drop(conn);
         self.get_world_building(project_id)?
@@ -365,10 +341,7 @@ impl MemoryManager {
 
     /// 获取风格指南
     pub fn get_style_guide(&self, project_id: &str) -> Result<Option<StyleGuide>, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let result = conn.query_row(
             "SELECT project_id, style, tone, forbidden_words_json, preferred_words_json, examples, extra_json, updated_at
@@ -400,7 +373,7 @@ impl MemoryManager {
         match result {
             Ok(sg) => Ok(Some(sg)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(format!("获取风格指南失败: {}", e)),
+            Err(e) => Err(format!("获取风格指南失败: {e}")),
         }
     }
 
@@ -410,10 +383,7 @@ impl MemoryManager {
         project_id: &str,
         updates: StyleGuideUpdateRequest,
     ) -> Result<StyleGuide, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
         let now = Utc::now();
 
         let forbidden_words_json = updates
@@ -453,7 +423,7 @@ impl MemoryManager {
                 now.timestamp_millis(),
             ],
         )
-        .map_err(|e| format!("更新风格指南失败: {}", e))?;
+        .map_err(|e| format!("更新风格指南失败: {e}"))?;
 
         drop(conn);
         self.get_style_guide(project_id)?
@@ -488,10 +458,7 @@ impl MemoryManager {
             updated_at: now,
         };
 
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         conn.execute(
             "INSERT INTO outline_nodes (id, project_id, parent_id, title, content, content_id, sort_order, expanded, extra_json, created_at, updated_at)
@@ -510,7 +477,7 @@ impl MemoryManager {
                 node.updated_at.timestamp_millis(),
             ],
         )
-        .map_err(|e| format!("创建大纲节点失败: {}", e))?;
+        .map_err(|e| format!("创建大纲节点失败: {e}"))?;
 
         tracing::info!(
             "[Memory] 创建大纲节点: id={}, title={}",
@@ -522,46 +489,38 @@ impl MemoryManager {
 
     /// 获取大纲节点
     pub fn get_outline_node(&self, id: &OutlineNodeId) -> Result<Option<OutlineNode>, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let result = conn.query_row(
             "SELECT id, project_id, parent_id, title, content, content_id, sort_order, expanded, extra_json, created_at, updated_at
              FROM outline_nodes WHERE id = ?",
             params![id],
-            |row| Ok(Self::row_to_outline_node(row)?),
+            Self::row_to_outline_node,
         );
 
         match result {
             Ok(node) => Ok(Some(node)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(format!("获取大纲节点失败: {}", e)),
+            Err(e) => Err(format!("获取大纲节点失败: {e}")),
         }
     }
 
     /// 列出项目的所有大纲节点
     pub fn list_outline_nodes(&self, project_id: &str) -> Result<Vec<OutlineNode>, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let mut stmt = conn
             .prepare(
                 "SELECT id, project_id, parent_id, title, content, content_id, sort_order, expanded, extra_json, created_at, updated_at
                  FROM outline_nodes WHERE project_id = ? ORDER BY sort_order ASC",
             )
-            .map_err(|e| format!("准备查询失败: {}", e))?;
+            .map_err(|e| format!("准备查询失败: {e}"))?;
 
         let nodes = stmt
-            .query_map(params![project_id], |row| {
-                Ok(Self::row_to_outline_node(row)?)
-            })
-            .map_err(|e| format!("查询失败: {}", e))?
+            .query_map(params![project_id], |row| Self::row_to_outline_node(row))
+            .map_err(|e| format!("查询失败: {e}"))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("解析结果失败: {}", e))?;
+            .map_err(|e| format!("解析结果失败: {e}"))?;
 
         Ok(nodes)
     }
@@ -572,10 +531,7 @@ impl MemoryManager {
         id: &OutlineNodeId,
         updates: OutlineNodeUpdateRequest,
     ) -> Result<OutlineNode, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
         let now = Utc::now().timestamp_millis();
 
         let mut set_clauses = vec!["updated_at = ?"];
@@ -620,7 +576,7 @@ impl MemoryManager {
             params_vec.iter().map(|p| p.as_ref()).collect();
 
         conn.execute(&sql, params_refs.as_slice())
-            .map_err(|e| format!("更新大纲节点失败: {}", e))?;
+            .map_err(|e| format!("更新大纲节点失败: {e}"))?;
 
         drop(conn);
         self.get_outline_node(id)?
@@ -629,14 +585,11 @@ impl MemoryManager {
 
     /// 删除大纲节点
     pub fn delete_outline_node(&self, id: &OutlineNodeId) -> Result<bool, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let affected = conn
             .execute("DELETE FROM outline_nodes WHERE id = ?", params![id])
-            .map_err(|e| format!("删除大纲节点失败: {}", e))?;
+            .map_err(|e| format!("删除大纲节点失败: {e}"))?;
 
         if affected > 0 {
             tracing::info!("[Memory] 删除大纲节点: id={}", id);
@@ -649,10 +602,7 @@ impl MemoryManager {
         project_id: &str,
         parent_id: Option<&str>,
     ) -> Result<i32, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let result: Result<i32, _> = match parent_id {
             Some(pid) => conn.query_row(
@@ -667,7 +617,7 @@ impl MemoryManager {
             ),
         };
 
-        result.map_err(|e| format!("获取排序顺序失败: {}", e))
+        result.map_err(|e| format!("获取排序顺序失败: {e}"))
     }
 
     fn row_to_outline_node(row: &rusqlite::Row) -> Result<OutlineNode, rusqlite::Error> {

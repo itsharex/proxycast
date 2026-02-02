@@ -57,9 +57,9 @@ pub fn validate(shortcut: &str) -> Result<(), ShortcutError> {
     }
 
     // 尝试解析快捷键以验证格式
-    shortcut.parse::<Shortcut>().map_err(|e| {
-        ShortcutError::InvalidFormat(format!("无法解析快捷键 '{}': {}", shortcut, e))
-    })?;
+    shortcut
+        .parse::<Shortcut>()
+        .map_err(|e| ShortcutError::InvalidFormat(format!("无法解析快捷键 '{shortcut}': {e}")))?;
 
     debug!("快捷键格式验证通过: {}", shortcut);
     Ok(())
@@ -84,13 +84,13 @@ pub fn register(app: &AppHandle, shortcut_str: &str) -> Result<(), ShortcutError
     // 解析快捷键
     let shortcut: Shortcut = shortcut_str
         .parse()
-        .map_err(|e| ShortcutError::ParseFailed(format!("{}", e)))?;
+        .map_err(|e| ShortcutError::ParseFailed(format!("{e}")))?;
 
     // 获取全局快捷键管理器
     let global_shortcut = app.global_shortcut();
 
     // 检查快捷键是否已被注册
-    let is_already_registered = global_shortcut.is_registered(shortcut.clone());
+    let is_already_registered = global_shortcut.is_registered(shortcut);
     info!(
         "快捷键 {} 是否已注册: {}",
         shortcut_str, is_already_registered
@@ -101,7 +101,7 @@ pub fn register(app: &AppHandle, shortcut_str: &str) -> Result<(), ShortcutError
         // 如果是我们自己注册的，先注销
         if IS_REGISTERED.load(Ordering::SeqCst) {
             info!("尝试注销已有的快捷键");
-            if let Err(e) = global_shortcut.unregister(shortcut.clone()) {
+            if let Err(e) = global_shortcut.unregister(shortcut) {
                 error!("注销已有快捷键失败: {}", e);
             }
         } else {
@@ -115,7 +115,7 @@ pub fn register(app: &AppHandle, shortcut_str: &str) -> Result<(), ShortcutError
     // 注册快捷键
     info!("开始注册快捷键回调...");
     global_shortcut
-        .on_shortcut(shortcut.clone(), move |_app, _shortcut, event| {
+        .on_shortcut(shortcut, move |_app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
                 info!("截图快捷键被触发");
                 handle_shortcut_triggered(&app_clone);
@@ -123,7 +123,7 @@ pub fn register(app: &AppHandle, shortcut_str: &str) -> Result<(), ShortcutError
         })
         .map_err(|e| {
             error!("注册快捷键失败: {}", e);
-            ShortcutError::RegisterFailed(format!("{}", e))
+            ShortcutError::RegisterFailed(format!("{e}"))
         })?;
 
     // 更新状态
@@ -151,14 +151,14 @@ pub fn unregister(app: &AppHandle) -> Result<(), ShortcutError> {
 
         let shortcut: Shortcut = shortcut_str
             .parse()
-            .map_err(|e| ShortcutError::ParseFailed(format!("{}", e)))?;
+            .map_err(|e| ShortcutError::ParseFailed(format!("{e}")))?;
 
         let global_shortcut = app.global_shortcut();
 
-        if global_shortcut.is_registered(shortcut.clone()) {
+        if global_shortcut.is_registered(shortcut) {
             global_shortcut
                 .unregister(shortcut)
-                .map_err(|e| ShortcutError::UnregisterFailed(format!("{}", e)))?;
+                .map_err(|e| ShortcutError::UnregisterFailed(format!("{e}")))?;
         }
 
         // 更新状态

@@ -35,13 +35,13 @@ pub fn register(app: &AppHandle, shortcut_str: &str) -> Result<(), String> {
     // 解析快捷键
     let shortcut: Shortcut = shortcut_str
         .parse()
-        .map_err(|e| format!("无效的快捷键: {}", e))?;
+        .map_err(|e| format!("无效的快捷键: {e}"))?;
 
     // 获取全局快捷键管理器
     let global_shortcut = app.global_shortcut();
 
     // 检查快捷键是否已被注册
-    let is_already_registered = global_shortcut.is_registered(shortcut.clone());
+    let is_already_registered = global_shortcut.is_registered(shortcut);
     debug!(
         "[语音输入] 快捷键 {} 是否已注册: {}",
         shortcut_str, is_already_registered
@@ -52,11 +52,11 @@ pub fn register(app: &AppHandle, shortcut_str: &str) -> Result<(), String> {
         // 如果是我们自己注册的，先注销
         if IS_REGISTERED.load(Ordering::SeqCst) {
             info!("[语音输入] 尝试注销已有的快捷键");
-            if let Err(e) = global_shortcut.unregister(shortcut.clone()) {
+            if let Err(e) = global_shortcut.unregister(shortcut) {
                 error!("[语音输入] 注销已有快捷键失败: {}", e);
             }
         } else {
-            return Err(format!("快捷键已被占用: {}", shortcut_str));
+            return Err(format!("快捷键已被占用: {shortcut_str}"));
         }
     }
 
@@ -66,7 +66,7 @@ pub fn register(app: &AppHandle, shortcut_str: &str) -> Result<(), String> {
     // 注册快捷键
     info!("[语音输入] 开始注册快捷键回调...");
     global_shortcut
-        .on_shortcut(shortcut.clone(), move |_app, _shortcut, event| {
+        .on_shortcut(shortcut, move |_app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
                 info!("[语音输入] 快捷键按下");
                 // 打开截图输入框（语音模式）
@@ -85,7 +85,7 @@ pub fn register(app: &AppHandle, shortcut_str: &str) -> Result<(), String> {
         })
         .map_err(|e| {
             error!("[语音输入] 注册快捷键失败: {}", e);
-            format!("注册快捷键失败: {}", e)
+            format!("注册快捷键失败: {e}")
         })?;
 
     // 更新状态
@@ -105,14 +105,14 @@ pub fn unregister(app: &AppHandle) -> Result<(), String> {
 
         let shortcut: Shortcut = shortcut_str
             .parse()
-            .map_err(|e| format!("解析快捷键失败: {}", e))?;
+            .map_err(|e| format!("解析快捷键失败: {e}"))?;
 
         let global_shortcut = app.global_shortcut();
 
-        if global_shortcut.is_registered(shortcut.clone()) {
+        if global_shortcut.is_registered(shortcut) {
             global_shortcut
                 .unregister(shortcut)
-                .map_err(|e| format!("注销快捷键失败: {}", e))?;
+                .map_err(|e| format!("注销快捷键失败: {e}"))?;
         }
 
         // 更新状态
@@ -180,13 +180,13 @@ pub fn register_translate(
     // 解析快捷键
     let shortcut: Shortcut = shortcut_str
         .parse()
-        .map_err(|e| format!("无效的快捷键: {}", e))?;
+        .map_err(|e| format!("无效的快捷键: {e}"))?;
 
     // 获取全局快捷键管理器
     let global_shortcut = app.global_shortcut();
 
     // 检查快捷键是否已被注册
-    let is_already_registered = global_shortcut.is_registered(shortcut.clone());
+    let is_already_registered = global_shortcut.is_registered(shortcut);
     debug!(
         "[语音输入] 翻译快捷键 {} 是否已注册: {}",
         shortcut_str, is_already_registered
@@ -197,11 +197,11 @@ pub fn register_translate(
         // 如果是我们自己注册的，先注销
         if IS_TRANSLATE_REGISTERED.load(Ordering::SeqCst) {
             info!("[语音输入] 尝试注销已有的翻译快捷键");
-            if let Err(e) = global_shortcut.unregister(shortcut.clone()) {
+            if let Err(e) = global_shortcut.unregister(shortcut) {
                 error!("[语音输入] 注销已有翻译快捷键失败: {}", e);
             }
         } else {
-            return Err(format!("快捷键已被占用: {}", shortcut_str));
+            return Err(format!("快捷键已被占用: {shortcut_str}"));
         }
     }
 
@@ -212,7 +212,7 @@ pub fn register_translate(
     // 注册快捷键
     info!("[语音输入] 开始注册翻译快捷键回调...");
     global_shortcut
-        .on_shortcut(shortcut.clone(), move |_app, _shortcut, event| {
+        .on_shortcut(shortcut, move |_app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
                 info!("[语音输入] 翻译快捷键按下");
                 // 打开截图输入框（翻译模式）
@@ -232,7 +232,7 @@ pub fn register_translate(
         })
         .map_err(|e| {
             error!("[语音输入] 注册翻译快捷键失败: {}", e);
-            format!("注册翻译快捷键失败: {}", e)
+            format!("注册翻译快捷键失败: {e}")
         })?;
 
     // 更新状态
@@ -252,14 +252,14 @@ pub fn unregister_translate(app: &AppHandle) -> Result<(), String> {
 
         let shortcut: Shortcut = shortcut_str
             .parse()
-            .map_err(|e| format!("解析快捷键失败: {}", e))?;
+            .map_err(|e| format!("解析快捷键失败: {e}"))?;
 
         let global_shortcut = app.global_shortcut();
 
-        if global_shortcut.is_registered(shortcut.clone()) {
+        if global_shortcut.is_registered(shortcut) {
             global_shortcut
                 .unregister(shortcut)
-                .map_err(|e| format!("注销翻译快捷键失败: {}", e))?;
+                .map_err(|e| format!("注销翻译快捷键失败: {e}"))?;
         }
 
         // 更新状态

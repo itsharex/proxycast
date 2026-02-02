@@ -1073,7 +1073,7 @@ mod tests {
         // 验证预设过滤器内容
         for (name, expr, _) in PRESET_FILTERS {
             let filter = manager.find_by_name(name).unwrap();
-            assert!(filter.is_some(), "Preset filter '{}' should exist", name);
+            assert!(filter.is_some(), "Preset filter '{name}' should exist");
             let filter = filter.unwrap();
             assert_eq!(filter.filter_expr, *expr);
             assert!(filter.is_preset);
@@ -1138,9 +1138,9 @@ mod property_tests {
             Just("~e | ~t".to_string()),
             Just("~e & ~t".to_string()),
             Just("!~e".to_string()),
-            "[a-zA-Z0-9_-]{1,20}".prop_map(|s| format!("~m {}", s)),
-            "[a-zA-Z0-9_-]{1,20}".prop_map(|s| format!("~p {}", s)),
-            "[a-zA-Z0-9_-]{1,20}".prop_map(|s| format!("~tag {}", s)),
+            "[a-zA-Z0-9_-]{1,20}".prop_map(|s| format!("~m {s}")),
+            "[a-zA-Z0-9_-]{1,20}".prop_map(|s| format!("~p {s}")),
+            "[a-zA-Z0-9_-]{1,20}".prop_map(|s| format!("~tag {s}")),
         ]
     }
 
@@ -1294,7 +1294,7 @@ mod property_tests {
             // 保存所有过滤器
             let mut saved_ids = Vec::new();
             for (i, (name, filter_expr, description, group)) in filters.iter().enumerate() {
-                let unique_name = format!("{}_{}", name, i);
+                let unique_name = format!("{name}_{i}");
                 let filter = manager.save(&unique_name, filter_expr, description.as_deref(), group.as_deref()).unwrap();
                 saved_ids.push(filter.id);
             }

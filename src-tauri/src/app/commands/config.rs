@@ -156,7 +156,7 @@ pub async fn set_endpoint_provider(
             .endpoint_providers
             .set_provider(&endpoint, provider.clone())
         {
-            return Err(format!("未知的客户端类型: {}", endpoint));
+            return Err(format!("未知的客户端类型: {endpoint}"));
         }
 
         config::save_config(&s.config).map_err(|e| e.to_string())?;
@@ -181,10 +181,7 @@ pub async fn set_endpoint_provider(
     let provider_display = provider.as_deref().unwrap_or("默认");
     logs.write().await.add(
         "info",
-        &format!(
-            "客户端 {} 的 Provider 已设置为: {}",
-            endpoint, provider_display
-        ),
+        &format!("客户端 {endpoint} 的 Provider 已设置为: {provider_display}"),
     );
 
     tracing::info!(
@@ -274,10 +271,7 @@ pub async fn update_provider_env_vars(
             // 未知类型，默认使用 ANTHROPIC_BASE_URL（因为大多数第三方 Provider 都是 Anthropic 兼容的）
             logs.write().await.add(
                 "info",
-                &format!(
-                    "Provider 类型 '{}' 使用默认 ANTHROPIC_BASE_URL",
-                    provider_type
-                ),
+                &format!("Provider 类型 '{provider_type}' 使用默认 ANTHROPIC_BASE_URL"),
             );
             let mut vars = vec![("ANTHROPIC_BASE_URL".to_string(), api_host.clone())];
             if let Some(key) = api_key {
@@ -324,7 +318,7 @@ pub async fn update_provider_env_vars(
     if let Err(e) = write_env_to_shell_config(&env_vars) {
         logs.write()
             .await
-            .add("warn", &format!("写入 shell 配置文件失败: {}", e));
+            .add("warn", &format!("写入 shell 配置文件失败: {e}"));
         // 不中断流程
     }
 

@@ -16,10 +16,7 @@ impl MessageProcessor {
     /// 解析 ChatCompletions 请求
     pub fn parse_chat_completions(payload: &Value) -> Result<ChatCompletionRequest, WsError> {
         serde_json::from_value(payload.clone()).map_err(|e| {
-            WsError::invalid_request(
-                None,
-                format!("Failed to parse ChatCompletionRequest: {}", e),
-            )
+            WsError::invalid_request(None, format!("Failed to parse ChatCompletionRequest: {e}"))
         })
     }
 
@@ -28,7 +25,7 @@ impl MessageProcessor {
         serde_json::from_value(payload.clone()).map_err(|e| {
             WsError::invalid_request(
                 None,
-                format!("Failed to parse AnthropicMessagesRequest: {}", e),
+                format!("Failed to parse AnthropicMessagesRequest: {e}"),
             )
         })
     }

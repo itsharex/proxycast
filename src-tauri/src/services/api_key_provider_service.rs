@@ -141,13 +141,13 @@ impl EncryptionService {
     fn decrypt(&self, ciphertext: &str) -> Result<String, String> {
         let encrypted = BASE64
             .decode(ciphertext)
-            .map_err(|e| format!("Base64 解码失败: {}", e))?;
+            .map_err(|e| format!("Base64 解码失败: {e}"))?;
         let decrypted: Vec<u8> = encrypted
             .iter()
             .enumerate()
             .map(|(i, b)| b ^ self.key[i % self.key.len()])
             .collect();
-        String::from_utf8(decrypted).map_err(|e| format!("UTF-8 解码失败: {}", e))
+        String::from_utf8(decrypted).map_err(|e| format!("UTF-8 解码失败: {e}"))
     }
 
     /// 检查是否为加密后的值（非明文）
@@ -198,7 +198,7 @@ impl ApiKeyProviderService {
 
         let provider_with_keys = self
             .get_provider(db, provider_id)?
-            .ok_or_else(|| format!("Provider not found: {}", provider_id))?;
+            .ok_or_else(|| format!("Provider not found: {provider_id}"))?;
 
         let provider = &provider_with_keys.provider;
 
@@ -274,14 +274,14 @@ impl ApiKeyProviderService {
         let resp = provider
             .call_api(&request)
             .await
-            .map_err(|e| format!("API 调用失败: {}", e))?;
+            .map_err(|e| format!("API 调用失败: {e}"))?;
 
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
 
         if status.is_success() {
-            let parsed: serde_json::Value = serde_json::from_str(&body)
-                .map_err(|e| format!("解析响应失败: {} - {}", e, body))?;
+            let parsed: serde_json::Value =
+                serde_json::from_str(&body).map_err(|e| format!("解析响应失败: {e} - {body}"))?;
 
             let content = parsed["choices"]
                 .as_array()
@@ -301,13 +301,13 @@ impl ApiKeyProviderService {
             let resp2 = provider
                 .call_api(&request2)
                 .await
-                .map_err(|e| format!("API 调用失败: {}", e))?;
+                .map_err(|e| format!("API 调用失败: {e}"))?;
 
             let status2 = resp2.status();
             let body2 = resp2.text().await.unwrap_or_default();
 
             if !status2.is_success() {
-                return Err(format!("API 返回错误: {} - {}", status2, body2));
+                return Err(format!("API 返回错误: {status2} - {body2}"));
             }
 
             let content = Self::parse_chat_completions_sse_content(&body2);
@@ -321,7 +321,7 @@ impl ApiKeyProviderService {
                 .await;
         }
 
-        Err(format!("API 返回错误: {} - {}", status, body))
+        Err(format!("API 返回错误: {status} - {body}"))
     }
 
     fn parse_chat_completions_sse_content(body: &str) -> String {
@@ -379,11 +379,11 @@ impl ApiKeyProviderService {
         // 构建 /responses 端点 URL
         let base = api_host.trim_end_matches('/');
         let url = if base.ends_with("/v1") {
-            format!("{}/responses", base)
+            format!("{base}/responses")
         } else if base.ends_with("/openai") {
-            format!("{}/v1/responses", base)
+            format!("{base}/v1/responses")
         } else {
-            format!("{}/v1/responses", base)
+            format!("{base}/v1/responses")
         };
 
         // Codex Responses 格式请求体（input 必须是列表）
@@ -392,18 +392,18 @@ impl ApiKeyProviderService {
         let client = reqwest::Client::new();
         let resp = client
             .post(&url)
-            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
             .await
-            .map_err(|e| format!("API 调用失败: {}", e))?;
+            .map_err(|e| format!("API 调用失败: {e}"))?;
 
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
 
         if !status.is_success() {
-            return Err(format!("API 返回错误: {} - {}", status, body));
+            return Err(format!("API 返回错误: {status} - {body}"));
         }
 
         // 解析 Codex SSE 响应
@@ -457,7 +457,7 @@ impl ApiKeyProviderService {
     /// 检查数据库中是否存在系统 Provider，如果不存在则插入
     /// **Validates: Requirements 9.3**
     pub fn initialize_system_providers(&self, db: &DbConnection) -> Result<usize, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let system_providers = get_system_providers();
         let mut inserted_count = 0;
 
@@ -487,7 +487,7 @@ impl ApiKeyProviderService {
         // 首先确保系统 Provider 已初始化
         self.initialize_system_providers(db)?;
 
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let providers =
             ApiKeyProviderDao::get_all_providers_with_keys(&conn).map_err(|e| e.to_string())?;
 
@@ -514,7 +514,7 @@ impl ApiKeyProviderService {
         db: &DbConnection,
         id: &str,
     ) -> Result<Option<ProviderWithKeys>, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let provider =
             ApiKeyProviderDao::get_provider_by_id(&conn, id).map_err(|e| e.to_string())?;
 
@@ -564,7 +564,7 @@ impl ApiKeyProviderService {
             updated_at: now,
         };
 
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         ApiKeyProviderDao::insert_provider(&conn, &provider).map_err(|e| e.to_string())?;
 
         Ok(provider)
@@ -586,10 +586,10 @@ impl ApiKeyProviderService {
         region: Option<String>,
         custom_models: Option<Vec<String>>,
     ) -> Result<ApiKeyProvider, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let mut provider = ApiKeyProviderDao::get_provider_by_id(&conn, id)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Provider not found: {}", id))?;
+            .ok_or_else(|| format!("Provider not found: {id}"))?;
 
         // 更新字段
         if let Some(n) = name {
@@ -636,12 +636,12 @@ impl ApiKeyProviderService {
     /// 删除自定义 Provider
     /// 系统 Provider 不允许删除
     pub fn delete_custom_provider(&self, db: &DbConnection, id: &str) -> Result<bool, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
 
         // 检查是否为系统 Provider
         let provider = ApiKeyProviderDao::get_provider_by_id(&conn, id)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Provider not found: {}", id))?;
+            .ok_or_else(|| format!("Provider not found: {id}"))?;
 
         if provider.is_system {
             return Err("不允许删除系统 Provider".to_string());
@@ -668,17 +668,17 @@ impl ApiKeyProviderService {
             provider_id
         );
 
-        let mut conn = db.lock().map_err(|e| e.to_string())?;
+        let mut conn = crate::database::lock_db(db)?;
 
         // 使用事务确保操作的原子性
         let tx = conn
             .transaction()
-            .map_err(|e| format!("开始事务失败: {}", e))?;
+            .map_err(|e| format!("开始事务失败: {e}"))?;
 
         // 验证 Provider 存在
         let provider = ApiKeyProviderDao::get_provider_by_id(&tx, provider_id)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Provider not found: {}", provider_id))?;
+            .ok_or_else(|| format!("Provider not found: {provider_id}"))?;
 
         tracing::info!(
             "[ApiKeyProviderService] 找到 Provider: name={}, id={}",
@@ -741,7 +741,7 @@ impl ApiKeyProviderService {
         }
 
         // 提交事务
-        tx.commit().map_err(|e| format!("提交事务失败: {}", e))?;
+        tx.commit().map_err(|e| format!("提交事务失败: {e}"))?;
 
         tracing::info!(
             "[ApiKeyProviderService] 成功添加 API Key: provider={}, alias={:?}",
@@ -754,7 +754,7 @@ impl ApiKeyProviderService {
 
     /// 删除 API Key
     pub fn delete_api_key(&self, db: &DbConnection, key_id: &str) -> Result<bool, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         ApiKeyProviderDao::delete_api_key(&conn, key_id).map_err(|e| e.to_string())
     }
 
@@ -765,10 +765,10 @@ impl ApiKeyProviderService {
         key_id: &str,
         enabled: bool,
     ) -> Result<ApiKeyEntry, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let mut key = ApiKeyProviderDao::get_api_key_by_id(&conn, key_id)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("API Key not found: {}", key_id))?;
+            .ok_or_else(|| format!("API Key not found: {key_id}"))?;
 
         key.enabled = enabled;
         ApiKeyProviderDao::update_api_key(&conn, &key).map_err(|e| e.to_string())?;
@@ -783,10 +783,10 @@ impl ApiKeyProviderService {
         key_id: &str,
         alias: Option<String>,
     ) -> Result<ApiKeyEntry, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let mut key = ApiKeyProviderDao::get_api_key_by_id(&conn, key_id)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("API Key not found: {}", key_id))?;
+            .ok_or_else(|| format!("API Key not found: {key_id}"))?;
 
         key.alias = alias;
         ApiKeyProviderDao::update_api_key(&conn, &key).map_err(|e| e.to_string())?;
@@ -803,7 +803,7 @@ impl ApiKeyProviderService {
         db: &DbConnection,
         provider_id: &str,
     ) -> Result<Option<String>, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
 
         // 获取所有启用的 API Keys
         let keys = ApiKeyProviderDao::get_enabled_api_keys_by_provider(&conn, provider_id)
@@ -836,7 +836,7 @@ impl ApiKeyProviderService {
         db: &DbConnection,
         provider_id: &str,
     ) -> Result<Option<(String, String)>, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
 
         // 获取所有启用的 API Keys
         let keys = ApiKeyProviderDao::get_enabled_api_keys_by_provider(&conn, provider_id)
@@ -865,10 +865,10 @@ impl ApiKeyProviderService {
 
     /// 记录 API Key 使用
     pub fn record_usage(&self, db: &DbConnection, key_id: &str) -> Result<(), String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let key = ApiKeyProviderDao::get_api_key_by_id(&conn, key_id)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("API Key not found: {}", key_id))?;
+            .ok_or_else(|| format!("API Key not found: {key_id}"))?;
 
         ApiKeyProviderDao::update_api_key_usage(&conn, key_id, key.usage_count + 1, Utc::now())
             .map_err(|e| e.to_string())
@@ -881,7 +881,7 @@ impl ApiKeyProviderService {
         db: &DbConnection,
         provider_id: &str,
     ) -> Result<Option<(String, ApiKeyProvider)>, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
 
         // 获取 Provider 信息
         let provider = match ApiKeyProviderDao::get_provider_by_id(&conn, provider_id)
@@ -928,7 +928,7 @@ impl ApiKeyProviderService {
         db: &DbConnection,
         provider_type: ApiProviderType,
     ) -> Result<Option<(String, String, ApiKeyProvider)>, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
 
         // 获取所有启用的 API Keys（按类型）
         let keys = ApiKeyProviderDao::get_enabled_api_keys_by_type(&conn, provider_type)
@@ -939,7 +939,7 @@ impl ApiKeyProviderService {
         }
 
         // 使用类型名称作为轮询索引的 key
-        let type_key = format!("type:{}", provider_type);
+        let type_key = format!("type:{provider_type}");
         let index = {
             let mut indices = self.round_robin_index.write().map_err(|e| e.to_string())?;
             indices
@@ -958,7 +958,7 @@ impl ApiKeyProviderService {
 
     /// 记录 API Key 错误
     pub fn record_error(&self, db: &DbConnection, key_id: &str) -> Result<(), String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         ApiKeyProviderDao::increment_api_key_error(&conn, key_id).map_err(|e| e.to_string())
     }
 
@@ -983,13 +983,13 @@ impl ApiKeyProviderService {
 
     /// 获取 UI 状态
     pub fn get_ui_state(&self, db: &DbConnection, key: &str) -> Result<Option<String>, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         ApiKeyProviderDao::get_ui_state(&conn, key).map_err(|e| e.to_string())
     }
 
     /// 设置 UI 状态
     pub fn set_ui_state(&self, db: &DbConnection, key: &str, value: &str) -> Result<(), String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         ApiKeyProviderDao::set_ui_state(&conn, key, value).map_err(|e| e.to_string())
     }
 
@@ -1000,7 +1000,7 @@ impl ApiKeyProviderService {
         db: &DbConnection,
         sort_orders: Vec<(String, i32)>,
     ) -> Result<(), String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         ApiKeyProviderDao::update_provider_sort_orders(&conn, &sort_orders)
             .map_err(|e| e.to_string())
     }
@@ -1013,7 +1013,7 @@ impl ApiKeyProviderService {
         db: &DbConnection,
         include_keys: bool,
     ) -> Result<serde_json::Value, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let providers =
             ApiKeyProviderDao::get_all_providers_with_keys(&conn).map_err(|e| e.to_string())?;
 
@@ -1067,13 +1067,13 @@ impl ApiKeyProviderService {
         config_json: &str,
     ) -> Result<ImportResult, String> {
         let config: serde_json::Value =
-            serde_json::from_str(config_json).map_err(|e| format!("JSON 解析失败: {}", e))?;
+            serde_json::from_str(config_json).map_err(|e| format!("JSON 解析失败: {e}"))?;
 
         let providers = config["providers"]
             .as_array()
             .ok_or_else(|| "配置格式错误: 缺少 providers 数组".to_string())?;
 
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let mut imported_providers = 0;
         let mut skipped_providers = 0;
         let mut errors = Vec::new();
@@ -1100,11 +1100,11 @@ impl ApiKeyProviderService {
 
             // 解析 Provider
             let provider: ApiKeyProvider = serde_json::from_value(provider_data.clone())
-                .map_err(|e| format!("Provider 解析失败: {}", e))?;
+                .map_err(|e| format!("Provider 解析失败: {e}"))?;
 
             // 插入 Provider
             if let Err(e) = ApiKeyProviderDao::insert_provider(&conn, &provider) {
-                errors.push(format!("导入 Provider {} 失败: {}", id, e));
+                errors.push(format!("导入 Provider {id} 失败: {e}"));
                 continue;
             }
 
@@ -1148,17 +1148,13 @@ impl ApiKeyProviderService {
         client_type: Option<&crate::server::client_detector::ClientType>,
     ) -> Result<Option<ProviderCredential>, String> {
         eprintln!(
-            "[get_fallback_credential] 开始查找: pool_type={:?}, provider_id_hint={:?}",
-            pool_type, provider_id_hint
+            "[get_fallback_credential] 开始查找: pool_type={pool_type:?}, provider_id_hint={provider_id_hint:?}"
         );
 
         // 策略 1: 优先通过 provider_id 直接查找 (支持 deepseek, moonshot 等 60+ Provider)
         // 这些 Provider 在 API Key Provider 中有独立配置，应该优先使用
         if let Some(provider_id) = provider_id_hint {
-            eprintln!(
-                "[get_fallback_credential] 尝试按 provider_id '{}' 查找",
-                provider_id
-            );
+            eprintln!("[get_fallback_credential] 尝试按 provider_id '{provider_id}' 查找");
             if let Some(cred) = self
                 .find_by_provider_id(db, provider_id, client_type)
                 .await?
@@ -1169,18 +1165,12 @@ impl ApiKeyProviderService {
                 );
                 return Ok(Some(cred));
             }
-            eprintln!(
-                "[get_fallback_credential] provider_id '{}' 未找到凭证",
-                provider_id
-            );
+            eprintln!("[get_fallback_credential] provider_id '{provider_id}' 未找到凭证");
         }
 
         // 策略 2: 通过类型映射查找（降级方案）
         if let Some(api_type) = self.map_pool_type_to_api_type(pool_type) {
-            eprintln!(
-                "[get_fallback_credential] 尝试类型映射: {:?} -> {:?}",
-                pool_type, api_type
-            );
+            eprintln!("[get_fallback_credential] 尝试类型映射: {pool_type:?} -> {api_type:?}");
             if let Some(cred) = self.find_by_api_type(db, pool_type, &api_type)? {
                 eprintln!(
                     "[get_fallback_credential] 通过类型映射找到凭证: {:?}",
@@ -1191,8 +1181,7 @@ impl ApiKeyProviderService {
         }
 
         eprintln!(
-            "[get_fallback_credential] 未找到 {:?} 的降级凭证 (provider_id_hint: {:?})",
-            pool_type, provider_id_hint
+            "[get_fallback_credential] 未找到 {pool_type:?} 的降级凭证 (provider_id_hint: {provider_id_hint:?})"
         );
         Ok(None)
     }
@@ -1233,7 +1222,7 @@ impl ApiKeyProviderService {
         pool_type: &PoolProviderType,
         api_type: &ApiProviderType,
     ) -> Result<Option<ProviderCredential>, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
 
         // 查找该类型的启用的 Provider（按 sort_order 排序）
         let providers = ApiKeyProviderDao::get_all_providers(&conn).map_err(|e| e.to_string())?;
@@ -1303,7 +1292,7 @@ impl ApiKeyProviderService {
     ) -> Result<Option<ProviderCredential>, String> {
         // First, get all data we need while holding the lock
         let (provider, keys) = {
-            let conn = db.lock().map_err(|e| e.to_string())?;
+            let conn = crate::database::lock_db(db)?;
 
             // 直接按 provider_id 查找
             let provider = ApiKeyProviderDao::get_provider_by_id(&conn, provider_id)
@@ -1318,14 +1307,11 @@ impl ApiKeyProviderService {
                     p
                 }
                 Some(_p) => {
-                    eprintln!(
-                        "[find_by_provider_id] provider '{}' 存在但未启用",
-                        provider_id
-                    );
+                    eprintln!("[find_by_provider_id] provider '{provider_id}' 存在但未启用");
                     return Ok(None);
                 }
                 None => {
-                    eprintln!("[find_by_provider_id] provider '{}' 不存在", provider_id);
+                    eprintln!("[find_by_provider_id] provider '{provider_id}' 不存在");
                     return Ok(None);
                 }
             };
@@ -1335,10 +1321,7 @@ impl ApiKeyProviderService {
                 .map_err(|e| e.to_string())?;
 
             if keys.is_empty() {
-                eprintln!(
-                    "[find_by_provider_id] provider '{}' 没有启用的 API Key",
-                    provider_id
-                );
+                eprintln!("[find_by_provider_id] provider '{provider_id}' 没有启用的 API Key");
                 return Ok(None);
             }
 
@@ -1409,8 +1392,7 @@ impl ApiKeyProviderService {
             Some(key) => key,
             None => {
                 eprintln!(
-                    "[find_by_provider_id] provider '{}' 的所有 API Key 都不兼容当前客户端 ({:?})",
-                    provider_id, client_type
+                    "[find_by_provider_id] provider '{provider_id}' 的所有 API Key 都不兼容当前客户端 ({client_type:?})"
                 );
                 return Ok(None);
             }
@@ -1479,7 +1461,7 @@ impl ApiKeyProviderService {
 
         let now = chrono::Utc::now();
         Ok(ProviderCredential {
-            uuid: format!("fallback-{}", key_id),
+            uuid: format!("fallback-{key_id}"),
             provider_type: pool_type,
             credential: credential_data,
             name: Some(format!("[降级] {}", provider.name)),
@@ -1537,7 +1519,7 @@ impl ApiKeyProviderService {
 
         let now = chrono::Utc::now();
         Ok(ProviderCredential {
-            uuid: format!("fallback-{}", key_id),
+            uuid: format!("fallback-{key_id}"),
             provider_type: *pool_type,
             credential: credential_data,
             name: Some(format!("[降级] {}", provider.name)),
@@ -1588,7 +1570,7 @@ impl ApiKeyProviderService {
         // 获取 Provider 信息
         let provider_with_keys = self
             .get_provider(db, provider_id)?
-            .ok_or_else(|| format!("Provider not found: {}", provider_id))?;
+            .ok_or_else(|| format!("Provider not found: {provider_id}"))?;
 
         let provider = &provider_with_keys.provider;
 
@@ -1639,7 +1621,7 @@ impl ApiKeyProviderService {
             }
             _ => {
                 // OpenAI 兼容类型，优先使用 /models 端点
-                eprintln!("[TEST_CONNECTION] model_name param: {:?}", model_name);
+                eprintln!("[TEST_CONNECTION] model_name param: {model_name:?}");
                 eprintln!(
                     "[TEST_CONNECTION] provider.custom_models: {:?}",
                     provider.custom_models
@@ -1649,7 +1631,7 @@ impl ApiKeyProviderService {
                     .test_openai_models_endpoint(&api_key, &provider.api_host)
                     .await;
 
-                eprintln!("[TEST_CONNECTION] models_result: {:?}", models_result);
+                eprintln!("[TEST_CONNECTION] models_result: {models_result:?}");
 
                 // 如果 /models 端点失败：
                 // 1) 优先用传入的 model_name
@@ -1657,16 +1639,13 @@ impl ApiKeyProviderService {
                 if models_result.is_err() {
                     let test_model = model_name.or_else(|| provider.custom_models.first().cloned());
 
-                    eprintln!("[TEST_CONNECTION] fallback test_model: {:?}", test_model);
+                    eprintln!("[TEST_CONNECTION] fallback test_model: {test_model:?}");
 
                     if let Some(test_model) = test_model {
                         let chat_result = self
                             .test_openai_chat_completion(&api_key, &provider.api_host, &test_model)
                             .await;
-                        eprintln!(
-                            "[TEST_CONNECTION] chat_completion result: {:?}",
-                            chat_result
-                        );
+                        eprintln!("[TEST_CONNECTION] chat_completion result: {chat_result:?}");
                         chat_result
                     } else {
                         models_result
@@ -1709,7 +1688,7 @@ impl ApiKeyProviderService {
         let response = provider
             .list_models()
             .await
-            .map_err(|e| format!("获取模型列表失败: {}", e))?;
+            .map_err(|e| format!("获取模型列表失败: {e}"))?;
 
         // 解析模型列表
         let models: Vec<String> = response["data"]
@@ -1761,7 +1740,7 @@ impl ApiKeyProviderService {
         let response = provider
             .messages(&request)
             .await
-            .map_err(|e| format!("API 调用失败: {}", e))?;
+            .map_err(|e| format!("API 调用失败: {e}"))?;
 
         if response.status().is_success() {
             Ok(())
@@ -1800,7 +1779,7 @@ impl ApiKeyProviderService {
         let response = provider
             .messages(&request)
             .await
-            .map_err(|e| format!("API 调用失败: {}", e))?;
+            .map_err(|e| format!("API 调用失败: {e}"))?;
 
         if response.status().is_success() {
             Ok(vec![model.to_string()])
@@ -1813,7 +1792,7 @@ impl ApiKeyProviderService {
                 return Err("CLAUDE_CODE_ONLY".to_string());
             }
 
-            Err(format!("API 返回错误: {} - {}", status, body))
+            Err(format!("API 返回错误: {status} - {body}"))
         }
     }
 
@@ -1830,28 +1809,28 @@ impl ApiKeyProviderService {
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
             .build()
-            .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+            .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
 
         // Gemini API 的模型列表端点
         let base = api_host.trim_end_matches('/');
-        let url = format!("{}/v1beta/models?key={}", base, api_key);
+        let url = format!("{base}/v1beta/models?key={api_key}");
 
         let response = client
             .get(&url)
             .send()
             .await
-            .map_err(|e| format!("请求失败: {}", e))?;
+            .map_err(|e| format!("请求失败: {e}"))?;
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(format!("API 返回错误: {} - {}", status, body));
+            return Err(format!("API 返回错误: {status} - {body}"));
         }
 
         let data: serde_json::Value = response
             .json()
             .await
-            .map_err(|e| format!("解析响应失败: {}", e))?;
+            .map_err(|e| format!("解析响应失败: {e}"))?;
 
         let models: Vec<String> = data["models"]
             .as_array()

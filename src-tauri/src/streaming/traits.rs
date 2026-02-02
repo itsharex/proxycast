@@ -130,7 +130,7 @@ pub fn reqwest_stream_to_stream_response(response: reqwest::Response) -> StreamR
 
     let stream = response
         .bytes_stream()
-        .map(|result| result.map_err(|e| StreamError::from(e)));
+        .map(|result| result.map_err(StreamError::from));
 
     Box::pin(stream)
 }

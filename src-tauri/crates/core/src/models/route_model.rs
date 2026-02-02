@@ -56,7 +56,7 @@ impl RouteInfo {
             "openai" => format!("/{}/v1/chat/completions", self.selector),
             _ => return,
         };
-        let url = format!("{}{}", base_url, path);
+        let url = format!("{base_url}{path}");
         self.endpoints.push(RouteEndpoint {
             path,
             protocol: protocol.to_string(),
@@ -81,11 +81,10 @@ impl RouteInfo {
                         model,
                         format!(
                             r#"{{
-  "model": "{}",
+  "model": "{model}",
   "max_tokens": 1024,
   "messages": [{{"role": "user", "content": "Hello!"}}]
-}}"#,
-                            model
+}}"#
                         ),
                     )
                 }
@@ -101,10 +100,9 @@ impl RouteInfo {
                         model,
                         format!(
                             r#"{{
-  "model": "{}",
+  "model": "{model}",
   "messages": [{{"role": "user", "content": "Hello!"}}]
-}}"#,
-                            model
+}}"#
                         ),
                     )
                 }

@@ -113,12 +113,9 @@ impl AnthropicSseGenerator {
 
         // 确保发送 message_start
         if !self.message_started {
-            match event {
-                StreamEvent::MessageStart { id, model } => {
-                    self.message_id = id.clone();
-                    self.model = model.clone();
-                }
-                _ => {}
+            if let StreamEvent::MessageStart { id, model } = event {
+                self.message_id = id.clone();
+                self.model = model.clone();
             }
             sse_events.push(self.create_message_start());
             self.message_started = true;
@@ -266,7 +263,7 @@ impl AnthropicSseGenerator {
                 }
             }
         });
-        format!("event: message_start\ndata: {}\n\n", event)
+        format!("event: message_start\ndata: {event}\n\n")
     }
 
     fn create_content_block_start_text(&self, index: u32) -> String {
@@ -278,7 +275,7 @@ impl AnthropicSseGenerator {
                 "text": ""
             }
         });
-        format!("event: content_block_start\ndata: {}\n\n", event)
+        format!("event: content_block_start\ndata: {event}\n\n")
     }
 
     fn create_content_block_start_tool(&self, index: u32, id: &str, name: &str) -> String {
@@ -292,7 +289,7 @@ impl AnthropicSseGenerator {
                 "input": {}
             }
         });
-        format!("event: content_block_start\ndata: {}\n\n", event)
+        format!("event: content_block_start\ndata: {event}\n\n")
     }
 
     fn create_text_delta(&self, index: u32, text: &str) -> String {
@@ -304,7 +301,7 @@ impl AnthropicSseGenerator {
                 "text": text
             }
         });
-        format!("event: content_block_delta\ndata: {}\n\n", event)
+        format!("event: content_block_delta\ndata: {event}\n\n")
     }
 
     fn create_input_json_delta(&self, index: u32, partial_json: &str) -> String {
@@ -316,7 +313,7 @@ impl AnthropicSseGenerator {
                 "partial_json": partial_json
             }
         });
-        format!("event: content_block_delta\ndata: {}\n\n", event)
+        format!("event: content_block_delta\ndata: {event}\n\n")
     }
 
     fn create_content_block_stop(&self, index: u32) -> String {
@@ -324,7 +321,7 @@ impl AnthropicSseGenerator {
             "type": "content_block_stop",
             "index": index
         });
-        format!("event: content_block_stop\ndata: {}\n\n", event)
+        format!("event: content_block_stop\ndata: {event}\n\n")
     }
 
     fn create_message_delta(&self, stop_reason: &StopReason) -> String {
@@ -338,21 +335,21 @@ impl AnthropicSseGenerator {
                 "output_tokens": self.output_tokens
             }
         });
-        format!("event: message_delta\ndata: {}\n\n", event)
+        format!("event: message_delta\ndata: {event}\n\n")
     }
 
     fn create_message_stop(&self) -> String {
         let event = serde_json::json!({
             "type": "message_stop"
         });
-        format!("event: message_stop\ndata: {}\n\n", event)
+        format!("event: message_stop\ndata: {event}\n\n")
     }
 
     fn create_ping(&self) -> String {
         let event = serde_json::json!({
             "type": "ping"
         });
-        format!("event: ping\ndata: {}\n\n", event)
+        format!("event: ping\ndata: {event}\n\n")
     }
 
     fn create_error(&self, error_type: &str, message: &str) -> String {
@@ -363,7 +360,7 @@ impl AnthropicSseGenerator {
                 "message": message
             }
         });
-        format!("event: error\ndata: {}\n\n", event)
+        format!("event: error\ndata: {event}\n\n")
     }
 }
 

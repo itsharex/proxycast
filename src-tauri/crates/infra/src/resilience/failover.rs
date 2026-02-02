@@ -131,7 +131,7 @@ impl FailoverResult {
             switched: true,
             new_provider: Some(new_provider),
             failure_type,
-            message: format!("已切换到 Provider: {}", new_provider),
+            message: format!("已切换到 Provider: {new_provider}"),
         }
     }
 
@@ -206,7 +206,7 @@ impl Failover {
         if !should_switch {
             return FailoverResult::not_switched(
                 failure_type,
-                &format!("不在 {:?} 故障时切换", failure_type),
+                &format!("不在 {failure_type:?} 故障时切换"),
             );
         }
 
@@ -347,7 +347,7 @@ impl FailoverManager {
         if !should_switch {
             return FailoverResult::not_switched(
                 failure_type,
-                &format!("不在 {:?} 故障时切换", failure_type),
+                &format!("不在 {failure_type:?} 故障时切换"),
             );
         }
 

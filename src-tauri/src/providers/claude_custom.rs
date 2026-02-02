@@ -82,9 +82,9 @@ impl ClaudeCustomProvider {
         // 如果用户输入了带 /v1 的 URL，直接拼接 endpoint
         // 否则拼接 /v1/endpoint
         if base.ends_with("/v1") {
-            format!("{}/{}", base, endpoint)
+            format!("{base}/{endpoint}")
         } else {
-            format!("{}/v1/{}", base, endpoint)
+            format!("{base}/v1/{endpoint}")
         }
     }
 
@@ -596,11 +596,9 @@ impl StreamingProvider for ClaudeCustomProvider {
                 serde_json::Value::Object(obj) => {
                     // 处理 {"type": "function", "function": {"name": "xxx"}} 格式
                     if let Some(func) = obj.get("function") {
-                        if let Some(name) = func.get("name").and_then(|n| n.as_str()) {
-                            Some(serde_json::json!({"type": "tool", "name": name}))
-                        } else {
-                            None
-                        }
+                        func.get("name")
+                            .and_then(|n| n.as_str())
+                            .map(|name| serde_json::json!({"type": "tool", "name": name}))
                     } else if let Some(t) = obj.get("type").and_then(|t| t.as_str()) {
                         match t {
                             "any" | "tool" => Some(serde_json::json!({"type": "any"})),

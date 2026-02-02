@@ -120,7 +120,7 @@ fn mask_api_key(key: &str) -> String {
     } else {
         let prefix: String = chars[..6].iter().collect();
         let suffix: String = chars[chars.len() - 4..].iter().collect();
-        format!("{}****{}", prefix, suffix)
+        format!("{prefix}****{suffix}")
     }
 }
 
@@ -222,7 +222,7 @@ pub fn add_custom_api_key_provider(
     let provider_type: ApiProviderType = request
         .provider_type
         .parse()
-        .map_err(|e: String| format!("无效的 Provider 类型: {}", e))?;
+        .map_err(|e: String| format!("无效的 Provider 类型: {e}"))?;
 
     let provider = service.0.add_custom_provider(
         &db,
@@ -251,7 +251,7 @@ pub fn update_api_key_provider(
         .provider_type
         .map(|t| t.parse())
         .transpose()
-        .map_err(|e: String| format!("无效的 Provider 类型: {}", e))?;
+        .map_err(|e: String| format!("无效的 Provider 类型: {e}"))?;
 
     let provider = service.0.update_provider(
         &db,
@@ -403,7 +403,7 @@ pub fn export_api_key_providers(
     include_keys: bool,
 ) -> Result<String, String> {
     let config = service.0.export_config(&db, include_keys)?;
-    serde_json::to_string_pretty(&config).map_err(|e| format!("序列化失败: {}", e))
+    serde_json::to_string_pretty(&config).map_err(|e| format!("序列化失败: {e}"))
 }
 
 /// 导入 Provider 配置

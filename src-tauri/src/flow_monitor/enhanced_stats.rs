@@ -27,21 +27,12 @@ pub struct TimeSeriesPoint {
 }
 
 /// 分布数据
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Distribution {
     /// 分布桶 (标签, 数量)
     pub buckets: Vec<(String, u64)>,
     /// 总数
     pub total: u64,
-}
-
-impl Default for Distribution {
-    fn default() -> Self {
-        Self {
-            buckets: Vec::new(),
-            total: 0,
-        }
-    }
 }
 
 /// 趋势数据
@@ -117,19 +108,15 @@ impl Default for StatsTimeRange {
 /// 统计报告格式
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum ReportFormat {
     /// JSON 格式
+    #[default]
     Json,
     /// Markdown 格式
     Markdown,
     /// CSV 格式
     Csv,
-}
-
-impl Default for ReportFormat {
-    fn default() -> Self {
-        ReportFormat::Json
-    }
 }
 
 // ============================================================================
@@ -506,7 +493,7 @@ impl EnhancedStatsService {
         md.push_str("| 模型 | Token 数 |\n");
         md.push_str("|------|----------|\n");
         for (model, tokens) in &stats.token_by_model.buckets {
-            md.push_str(&format!("| {} | {} |\n", model, tokens));
+            md.push_str(&format!("| {model} | {tokens} |\n"));
         }
         md.push_str(&format!(
             "| **总计** | **{}** |\n\n",
@@ -527,7 +514,7 @@ impl EnhancedStatsService {
         md.push_str("| 延迟范围 | 请求数 |\n");
         md.push_str("|----------|--------|\n");
         for (range, count) in &stats.latency_histogram.buckets {
-            md.push_str(&format!("| {} | {} |\n", range, count));
+            md.push_str(&format!("| {range} | {count} |\n"));
         }
         md.push('\n');
 
@@ -537,7 +524,7 @@ impl EnhancedStatsService {
             md.push_str("| 错误类型 | 数量 |\n");
             md.push_str("|----------|------|\n");
             for (error_type, count) in &stats.error_distribution.buckets {
-                md.push_str(&format!("| {} | {} |\n", error_type, count));
+                md.push_str(&format!("| {error_type} | {count} |\n"));
             }
             md.push('\n');
         }
@@ -553,7 +540,7 @@ impl EnhancedStatsService {
         csv.push_str("# Token Distribution by Model\n");
         csv.push_str("Model,Tokens\n");
         for (model, tokens) in &stats.token_by_model.buckets {
-            csv.push_str(&format!("{},{}\n", model, tokens));
+            csv.push_str(&format!("{model},{tokens}\n"));
         }
         csv.push('\n');
 
@@ -561,7 +548,7 @@ impl EnhancedStatsService {
         csv.push_str("# Success Rate by Provider\n");
         csv.push_str("Provider,SuccessRate\n");
         for (provider, rate) in &stats.success_by_provider {
-            csv.push_str(&format!("{},{:.4}\n", provider, rate));
+            csv.push_str(&format!("{provider},{rate:.4}\n"));
         }
         csv.push('\n');
 
@@ -569,7 +556,7 @@ impl EnhancedStatsService {
         csv.push_str("# Latency Histogram\n");
         csv.push_str("Range,Count\n");
         for (range, count) in &stats.latency_histogram.buckets {
-            csv.push_str(&format!("{},{}\n", range, count));
+            csv.push_str(&format!("{range},{count}\n"));
         }
         csv.push('\n');
 
@@ -577,7 +564,7 @@ impl EnhancedStatsService {
         csv.push_str("# Error Distribution\n");
         csv.push_str("ErrorType,Count\n");
         for (error_type, count) in &stats.error_distribution.buckets {
-            csv.push_str(&format!("{},{}\n", error_type, count));
+            csv.push_str(&format!("{error_type},{count}\n"));
         }
 
         csv

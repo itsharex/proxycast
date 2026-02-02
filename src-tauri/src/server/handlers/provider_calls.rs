@@ -138,7 +138,7 @@ pub async fn call_provider_anthropic(
                         let _ = state.pool_service.mark_unhealthy(
                             db,
                             &credential.uuid,
-                            Some(&format!("Failed to load credentials: {}", e)),
+                            Some(&format!("Failed to load credentials: {e}")),
                         );
                         return (
                             StatusCode::INTERNAL_SERVER_ERROR,
@@ -151,7 +151,7 @@ pub async fn call_provider_anthropic(
                         let _ = state.pool_service.mark_unhealthy(
                             db,
                             &credential.uuid,
-                            Some(&format!("Token refresh failed: {}", e)),
+                            Some(&format!("Token refresh failed: {e}")),
                         );
                         return (
                             StatusCode::UNAUTHORIZED,
@@ -233,7 +233,7 @@ pub async fn call_provider_anthropic(
                         let _ = state.pool_service.mark_unhealthy(
                             db,
                             &credential.uuid,
-                            Some(&format!("Token refresh failed: {}", e)),
+                            Some(&format!("Token refresh failed: {e}")),
                         );
                         return (
                             StatusCode::UNAUTHORIZED,
@@ -279,7 +279,7 @@ pub async fn call_provider_anthropic(
                             let _ = state.pool_service.mark_unhealthy(
                                 db,
                                 &credential.uuid,
-                                Some(&format!("Retry failed: {}", body)),
+                                Some(&format!("Retry failed: {body}")),
                             );
                             (
                                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -341,7 +341,7 @@ pub async fn call_provider_anthropic(
                     let _ = state.pool_service.mark_unhealthy(
                         db,
                         &credential.uuid,
-                        Some(&format!("Failed to load credentials: {}", e)),
+                        Some(&format!("Failed to load credentials: {e}")),
                     );
                 }
                 return (
@@ -693,7 +693,7 @@ pub async fn call_provider_anthropic(
                         Err(e) => {
                             state.logs.write().await.add(
                                 "error",
-                                &format!("[CLAUDE] 读取响应失败: {}", e),
+                                &format!("[CLAUDE] 读取响应失败: {e}"),
                             );
                             if let Some(db) = &state.db {
                                 let _ = state.pool_service.mark_unhealthy(
@@ -882,7 +882,7 @@ pub async fn call_provider_anthropic(
                                     let _ = state.pool_service.mark_unhealthy(
                                         db,
                                         &credential.uuid,
-                                        Some(&format!("API error: {}", status)),
+                                        Some(&format!("API error: {status}")),
                                     );
                                 }
                                 (
@@ -905,7 +905,7 @@ pub async fn call_provider_anthropic(
                         let _ = state.pool_service.mark_unhealthy(
                             db,
                             &credential.uuid,
-                            Some(&format!("API call failed: {}", e)),
+                            Some(&format!("API call failed: {e}")),
                         );
                     }
                     (
@@ -982,7 +982,7 @@ pub async fn call_provider_openai(
                         let _ = state.pool_service.mark_unhealthy(
                             db,
                             &credential.uuid,
-                            Some(&format!("Failed to load credentials: {}", e)),
+                            Some(&format!("Failed to load credentials: {e}")),
                         );
                         return (
                             StatusCode::INTERNAL_SERVER_ERROR,
@@ -994,7 +994,7 @@ pub async fn call_provider_openai(
                         let _ = state.pool_service.mark_unhealthy(
                             db,
                             &credential.uuid,
-                            Some(&format!("Token refresh failed: {}", e)),
+                            Some(&format!("Token refresh failed: {e}")),
                         );
                         return (
                             StatusCode::UNAUTHORIZED,
@@ -1231,20 +1231,20 @@ pub async fn call_provider_openai(
         }
         CredentialData::AntigravityOAuth { creds_file_path, project_id } => {
             eprintln!("\n========== [ANTIGRAVITY] 开始处理 Antigravity 请求 ==========");
-            eprintln!("[ANTIGRAVITY] 凭证文件: {}", creds_file_path);
-            eprintln!("[ANTIGRAVITY] 项目ID: {:?}", project_id);
+            eprintln!("[ANTIGRAVITY] 凭证文件: {creds_file_path}");
+            eprintln!("[ANTIGRAVITY] 项目ID: {project_id:?}");
             eprintln!("[ANTIGRAVITY] 模型: {}", request.model);
             eprintln!("[ANTIGRAVITY] 流式: {}", request.stream);
 
             let mut antigravity = AntigravityProvider::new();
             if let Err(e) = antigravity.load_credentials_from_path(creds_file_path).await {
-                eprintln!("[ANTIGRAVITY] 加载凭证失败: {}", e);
+                eprintln!("[ANTIGRAVITY] 加载凭证失败: {e}");
                 // 记录凭证加载失败
                 if let Some(db) = &state.db {
                     let _ = state.pool_service.mark_unhealthy(
                         db,
                         &credential.uuid,
-                        Some(&format!("Failed to load credentials: {}", e)),
+                        Some(&format!("Failed to load credentials: {e}")),
                     );
                 }
                 return (
@@ -1257,7 +1257,7 @@ pub async fn call_provider_openai(
 
             // 使用新的 validate_token() 方法检查 Token 状态
             let validation_result = antigravity.validate_token();
-            eprintln!("[ANTIGRAVITY] Token 验证结果: {:?}", validation_result);
+            eprintln!("[ANTIGRAVITY] Token 验证结果: {validation_result:?}");
             eprintln!("[ANTIGRAVITY] needs_refresh() = {}", validation_result.needs_refresh());
             tracing::info!("[Antigravity] Token 验证结果: {:?}", validation_result);
 
@@ -1279,7 +1279,7 @@ pub async fn call_provider_openai(
                         }
                     }
                     Err(refresh_error) => {
-                        eprintln!("[ANTIGRAVITY] Token 刷新失败: {:?}", refresh_error);
+                        eprintln!("[ANTIGRAVITY] Token 刷新失败: {refresh_error:?}");
                         tracing::error!("[Antigravity] Token 刷新失败: {:?}", refresh_error);
                         // 使用新的 mark_unhealthy_with_details 方法
                         if let Some(db) = &state.db {
@@ -1403,7 +1403,7 @@ pub async fn call_provider_openai(
                                         "finish_reason": null
                                     }]
                                 });
-                                sse_events.push_str(&format!("data: {}\n\n", chunk_response.to_string()));
+                                sse_events.push_str(&format!("data: {chunk_response}\n\n"));
                             }
 
                             // 发送结束 chunk
@@ -1418,7 +1418,7 @@ pub async fn call_provider_openai(
                                     "finish_reason": "stop"
                                 }]
                             });
-                            sse_events.push_str(&format!("data: {}\n\n", done_response.to_string()));
+                            sse_events.push_str(&format!("data: {done_response}\n\n"));
                             sse_events.push_str("data: [DONE]\n\n");
 
                             return Response::builder()
@@ -1476,7 +1476,7 @@ pub async fn call_provider_openai(
                                         }
                                     }
                                     Err(e) => {
-                                        eprintln!("[ANTIGRAVITY_STREAM] chunk #{} 错误: {}", chunk_count, e);
+                                        eprintln!("[ANTIGRAVITY_STREAM] chunk #{chunk_count} 错误: {e}");
                                         let _ = tx.send(Err(e.to_string()));
                                         return;
                                     }
@@ -1499,7 +1499,7 @@ pub async fn call_provider_openai(
                                     yield Ok::<_, std::io::Error>(axum::body::Bytes::from(sse_content));
                                 }
                                 Ok(Err(e)) => {
-                                    eprintln!("[ANTIGRAVITY_STREAM] 解析错误: {}", e);
+                                    eprintln!("[ANTIGRAVITY_STREAM] 解析错误: {e}");
                                     let error_event = format!(
                                         "data: {{\"error\": {{\"message\": \"{}\"}}}}\n\ndata: [DONE]\n\n",
                                         e.replace("\"", "\\\"")
@@ -1544,7 +1544,7 @@ pub async fn call_provider_openai(
 
             // 获取 project_id 用于请求
             let proj_id = antigravity.project_id.clone().unwrap_or_default();
-            eprintln!("[ANTIGRAVITY_OPENAI] 项目ID: {}", proj_id);
+            eprintln!("[ANTIGRAVITY_OPENAI] 项目ID: {proj_id}");
 
             // 转换请求格式
             eprintln!("[ANTIGRAVITY_OPENAI] 开始转换请求格式...");
@@ -1868,14 +1868,12 @@ pub async fn call_provider_openai(
                                 );
                                 let _ = state.pool_service.record_usage(db, &credential.uuid);
                             }
-                        } else {
-                            if let Some(db) = &state.db {
-                                let _ = state.pool_service.mark_unhealthy(
-                                    db,
-                                    &credential.uuid,
-                                    Some(&format!("API error: {}", status)),
-                                );
-                            }
+                        } else if let Some(db) = &state.db {
+                            let _ = state.pool_service.mark_unhealthy(
+                                db,
+                                &credential.uuid,
+                                Some(&format!("API error: {status}")),
+                            );
                         }
 
                         match resp.bytes().await {
@@ -1902,7 +1900,7 @@ pub async fn call_provider_openai(
                             let _ = state.pool_service.mark_unhealthy(
                                 db,
                                 &credential.uuid,
-                                Some(&format!("API call failed: {}", e)),
+                                Some(&format!("API call failed: {e}")),
                             );
                         }
                         (
@@ -2012,7 +2010,7 @@ pub async fn call_provider_openai(
                                                         &json,
                                                         &mut state.convert_state,
                                                     ) {
-                                                        output.push_str(&format!("data: {}\n\n", converted));
+                                                        output.push_str(&format!("data: {converted}\n\n"));
                                                     }
                                                 }
                                             }
@@ -2022,7 +2020,7 @@ pub async fn call_provider_openai(
                                     }
                                     Err(e) => {
                                         tracing::error!("[Codex] Stream error: {}", e);
-                                        Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+                                        Err(std::io::Error::other(e.to_string()))
                                     }
                                 }
                             }
@@ -2714,7 +2712,7 @@ pub async fn handle_kiro_stream(
                 let _ = state.pool_service.mark_unhealthy(
                     db,
                     &credential.uuid,
-                    Some(&format!("Failed to load credentials: {}", e)),
+                    Some(&format!("Failed to load credentials: {e}")),
                 );
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -2726,7 +2724,7 @@ pub async fn handle_kiro_stream(
                 let _ = state.pool_service.mark_unhealthy(
                     db,
                     &credential.uuid,
-                    Some(&format!("Token refresh failed: {}", e)),
+                    Some(&format!("Token refresh failed: {e}")),
                 );
                 return (
                     StatusCode::UNAUTHORIZED,
@@ -2781,7 +2779,7 @@ pub async fn handle_kiro_stream(
                         let _ = state.pool_service.mark_unhealthy(
                             db,
                             &credential.uuid,
-                            Some(&format!("Token refresh failed: {}", refresh_err)),
+                            Some(&format!("Token refresh failed: {refresh_err}")),
                         );
                         return (
                             StatusCode::UNAUTHORIZED,
@@ -2951,7 +2949,7 @@ pub async fn handle_kiro_stream(
                     if let Some(ref fid) = flow_id_for_stream {
                         let flow_error = FlowError::new(
                             flow_error_type,
-                            format!("流式传输错误: {}", e),
+                            format!("流式传输错误: {e}"),
                         );
                         flow_monitor_for_stream.fail_flow(fid, flow_error).await;
                     }
@@ -3067,7 +3065,7 @@ fn parse_antigravity_accumulated_response(data: &str, model: &str) -> Result<Str
     let _ = std::fs::create_dir_all(&debug_dir);
     let debug_file = debug_dir.join("antigravity_stream_raw.txt");
     let _ = std::fs::write(&debug_file, data);
-    eprintln!("[ANTIGRAVITY_PARSE] 原始数据已保存到: {:?}", debug_file);
+    eprintln!("[ANTIGRAVITY_PARSE] 原始数据已保存到: {debug_file:?}");
 
     // 打印数据的前1000字符用于调试
     eprintln!(
@@ -3126,7 +3124,7 @@ fn parse_antigravity_accumulated_response(data: &str, model: &str) -> Result<Str
         let json_start = start + pos;
         // 尝试从这个位置解析 JSON
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data[json_start..]) {
-            eprintln!("[ANTIGRAVITY_PARSE] 在位置 {} 找到有效 JSON", json_start);
+            eprintln!("[ANTIGRAVITY_PARSE] 在位置 {json_start} 找到有效 JSON");
             return parse_antigravity_json(&json, model);
         }
         start = json_start + 1;
@@ -3135,7 +3133,7 @@ fn parse_antigravity_accumulated_response(data: &str, model: &str) -> Result<Str
         }
     }
 
-    Err(format!("无法解析响应数据，请查看 {:?}", debug_file))
+    Err(format!("无法解析响应数据，请查看 {debug_file:?}"))
 }
 
 /// 从 JSON 中提取内容
@@ -3294,8 +3292,8 @@ fn build_sse_response(
 
     // 添加图片
     for (mime, data) in images {
-        let image_url = format!("data:{};base64,{}", mime, data);
-        content.push_str(&format!("\n\n![Generated Image]({})", image_url));
+        let image_url = format!("data:{mime};base64,{data}");
+        content.push_str(&format!("\n\n![Generated Image]({image_url})"));
     }
 
     eprintln!("[ANTIGRAVITY_PARSE] 构建 SSE，内容长度: {}", content.len());
@@ -3317,7 +3315,7 @@ fn build_sse_response(
                 "finish_reason": serde_json::Value::Null
             }]
         });
-        sse_output.push_str(&format!("data: {}\n\n", content_chunk.to_string()));
+        sse_output.push_str(&format!("data: {content_chunk}\n\n"));
     }
 
     let done_chunk = serde_json::json!({
@@ -3331,7 +3329,7 @@ fn build_sse_response(
             "finish_reason": "stop"
         }]
     });
-    sse_output.push_str(&format!("data: {}\n\n", done_chunk.to_string()));
+    sse_output.push_str(&format!("data: {done_chunk}\n\n"));
     sse_output.push_str("data: [DONE]\n\n");
 
     Ok(sse_output)
@@ -3382,8 +3380,8 @@ fn convert_gemini_chunk_to_openai_sse(json: &serde_json::Value, model: &str) -> 
                             .unwrap_or("image/png");
 
                         // 将图片作为 markdown 格式的 data URL
-                        let image_url = format!("data:{};base64,{}", mime_type, data);
-                        image_data = Some(format!("\n\n![Generated Image]({})", image_url));
+                        let image_url = format!("data:{mime_type};base64,{data}");
+                        image_data = Some(format!("\n\n![Generated Image]({image_url})"));
                         has_image = true;
                     }
                 }
@@ -3410,7 +3408,7 @@ fn convert_gemini_chunk_to_openai_sse(json: &serde_json::Value, model: &str) -> 
 
     // 合并文本和图片内容
     let final_content = match (content_delta, image_data) {
-        (Some(text), Some(img)) => Some(format!("{}{}", text, img)),
+        (Some(text), Some(img)) => Some(format!("{text}{img}")),
         (Some(text), None) => Some(text),
         (None, Some(img)) => Some(img),
         (None, None) => None,
@@ -3438,7 +3436,7 @@ fn convert_gemini_chunk_to_openai_sse(json: &serde_json::Value, model: &str) -> 
         }]
     });
 
-    Some(format!("data: {}\n\n", response.to_string()))
+    Some(format!("data: {response}\n\n"))
 }
 
 /// 将 OpenAI ChatCompletionResponse 转换为 Anthropic MessagesResponse 格式

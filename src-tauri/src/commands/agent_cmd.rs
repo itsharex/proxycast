@@ -53,7 +53,7 @@ pub async fn agent_start_process(
 
     agent_state.init_agent_with_db(&db).await?;
 
-    let base_url = format!("http://{}:{}", host, port);
+    let base_url = format!("http://{host}:{port}");
 
     Ok(AgentProcessStatus {
         running: true,
@@ -153,7 +153,7 @@ pub async fn agent_create_session(
     };
 
     {
-        let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
         if let Err(e) = AgentDao::create_session(&conn, &session) {
             tracing::warn!("[Agent] 保存会话到数据库失败: {}", e);
         }
@@ -180,10 +180,10 @@ fn build_system_prompt_with_skills(
                 xml.push_str("  <skill>\n");
                 xml.push_str(&format!("    <name>{}</name>\n", skill.name));
                 if let Some(desc) = &skill.description {
-                    xml.push_str(&format!("    <description>{}</description>\n", desc));
+                    xml.push_str(&format!("    <description>{desc}</description>\n"));
                 }
                 if let Some(path) = &skill.path {
-                    xml.push_str(&format!("    <location>{}</location>\n", path));
+                    xml.push_str(&format!("    <location>{path}</location>\n"));
                 }
                 xml.push_str("  </skill>\n");
             }
@@ -196,7 +196,7 @@ fn build_system_prompt_with_skills(
     };
 
     match (base_prompt, skills_xml) {
-        (Some(base), Some(skills)) => Some(format!("{}\n\n{}", base, skills)),
+        (Some(base), Some(skills)) => Some(format!("{base}\n\n{skills}")),
         (Some(base), None) => Some(base),
         (None, Some(skills)) => Some(skills),
         (None, None) => None,
@@ -242,10 +242,9 @@ pub struct SessionInfo {
 /// 获取会话列表
 #[tauri::command]
 pub async fn agent_list_sessions(db: State<'_, DbConnection>) -> Result<Vec<SessionInfo>, String> {
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
-    let sessions =
-        AgentDao::list_sessions(&conn).map_err(|e| format!("获取会话列表失败: {}", e))?;
+    let sessions = AgentDao::list_sessions(&conn).map_err(|e| format!("获取会话列表失败: {e}"))?;
 
     let result: Vec<SessionInfo> = sessions
         .into_iter()
@@ -272,10 +271,10 @@ pub async fn agent_get_session(
     db: State<'_, DbConnection>,
     session_id: String,
 ) -> Result<SessionInfo, String> {
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
     let session = AgentDao::get_session(&conn, &session_id)
-        .map_err(|e| format!("获取会话失败: {}", e))?
+        .map_err(|e| format!("获取会话失败: {e}"))?
         .ok_or_else(|| "会话不存在".to_string())?;
 
     let messages_count = AgentDao::get_message_count(&conn, &session_id).unwrap_or(0);
@@ -297,8 +296,8 @@ pub async fn agent_delete_session(
     db: State<'_, DbConnection>,
     session_id: String,
 ) -> Result<(), String> {
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
-    AgentDao::delete_session(&conn, &session_id).map_err(|e| format!("删除会话失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
+    AgentDao::delete_session(&conn, &session_id).map_err(|e| format!("删除会话失败: {e}"))?;
     Ok(())
 }
 
@@ -308,9 +307,9 @@ pub async fn agent_get_session_messages(
     db: State<'_, DbConnection>,
     session_id: String,
 ) -> Result<Vec<AgentMessage>, String> {
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
     let messages =
-        AgentDao::get_messages(&conn, &session_id).map_err(|e| format!("获取消息失败: {}", e))?;
+        AgentDao::get_messages(&conn, &session_id).map_err(|e| format!("获取消息失败: {e}"))?;
     Ok(messages)
 }
 
@@ -321,9 +320,9 @@ pub async fn agent_rename_session(
     session_id: String,
     title: String,
 ) -> Result<(), String> {
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
     AgentDao::update_title(&conn, &session_id, &title)
-        .map_err(|e| format!("更新会话标题失败: {}", e))?;
+        .map_err(|e| format!("更新会话标题失败: {e}"))?;
     Ok(())
 }
 
@@ -335,11 +334,11 @@ pub async fn agent_generate_title(
     db: State<'_, DbConnection>,
     session_id: String,
 ) -> Result<String, String> {
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
     // 获取会话的前几条消息（用于生成标题）
     let messages =
-        AgentDao::get_messages(&conn, &session_id).map_err(|e| format!("获取消息失败: {}", e))?;
+        AgentDao::get_messages(&conn, &session_id).map_err(|e| format!("获取消息失败: {e}"))?;
 
     // 过滤出 user 和 assistant 消息
     let chat_messages: Vec<_> = messages
@@ -366,7 +365,7 @@ pub async fn agent_generate_title(
         } else {
             content
         };
-        conversation.push_str(&format!("{}：{}\n", role, truncated_content));
+        conversation.push_str(&format!("{role}：{truncated_content}\n"));
     }
 
     // 使用 AI 生成标题（通过 aster_agent_chat_stream 生成）

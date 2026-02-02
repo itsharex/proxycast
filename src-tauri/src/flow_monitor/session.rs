@@ -764,7 +764,7 @@ impl SessionManager {
                     flows.len()
                 );
                 if let Some(ref desc) = session.description {
-                    md.push_str(&format!("**描述**: {}\n\n", desc));
+                    md.push_str(&format!("**描述**: {desc}\n\n"));
                 }
                 md.push_str("---\n\n");
                 md.push_str(&exporter.export_markdown_multiple(flows));
@@ -969,7 +969,7 @@ mod tests {
         let mut ids = std::collections::HashSet::new();
         for i in 0..100 {
             let session = manager
-                .create_session(format!("Session {}", i), None)
+                .create_session(format!("Session {i}"), None)
                 .unwrap();
             assert!(ids.insert(session.id), "Session ID should be unique");
         }

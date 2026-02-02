@@ -343,13 +343,13 @@ impl PluginInstaller {
     ) -> Result<(), InstallError> {
         let file = File::open(path)?;
         let mut archive = zip::ZipArchive::new(file)
-            .map_err(|e| InstallError::ExtractFailed(format!("无法读取 ZIP 文件: {}", e)))?;
+            .map_err(|e| InstallError::ExtractFailed(format!("无法读取 ZIP 文件: {e}")))?;
 
         let total = archive.len();
         for i in 0..total {
-            let mut file = archive.by_index(i).map_err(|e| {
-                InstallError::ExtractFailed(format!("无法读取 ZIP 条目 {}: {}", i, e))
-            })?;
+            let mut file = archive
+                .by_index(i)
+                .map_err(|e| InstallError::ExtractFailed(format!("无法读取 ZIP 条目 {i}: {e}")))?;
 
             let outpath = match file.enclosed_name() {
                 Some(path) => dest.join(path),
@@ -410,26 +410,26 @@ impl PluginInstaller {
         let mut archive_for_count = tar::Archive::new(gz_for_count);
         let total = archive_for_count
             .entries()
-            .map_err(|e| InstallError::ExtractFailed(format!("无法读取 tar.gz: {}", e)))?
+            .map_err(|e| InstallError::ExtractFailed(format!("无法读取 tar.gz: {e}")))?
             .count();
 
         let mut count = 0;
         for entry in archive
             .entries()
-            .map_err(|e| InstallError::ExtractFailed(format!("无法读取 tar.gz: {}", e)))?
+            .map_err(|e| InstallError::ExtractFailed(format!("无法读取 tar.gz: {e}")))?
         {
             let mut entry = entry
-                .map_err(|e| InstallError::ExtractFailed(format!("tar.gz 条目读取失败: {}", e)))?;
+                .map_err(|e| InstallError::ExtractFailed(format!("tar.gz 条目读取失败: {e}")))?;
 
             entry
                 .unpack_in(dest)
-                .map_err(|e| InstallError::ExtractFailed(format!("解压失败: {}", e)))?;
+                .map_err(|e| InstallError::ExtractFailed(format!("解压失败: {e}")))?;
 
             count += 1;
             let percent = (count as f64 / total as f64 * 100.0) as u8;
             progress.on_progress(InstallProgress::extracting(
                 percent,
-                format!("解压中 ({}/{})", count, total),
+                format!("解压中 ({count}/{total})"),
             ));
         }
 
@@ -568,18 +568,17 @@ mod tests {
 
     /// 创建有效的测试插件包 (ZIP)
     fn create_test_plugin_zip(dir: &Path, name: &str, version: &str) -> PathBuf {
-        let file_path = dir.join(format!("{}.zip", name));
+        let file_path = dir.join(format!("{name}.zip"));
 
         let manifest_json = format!(
             r#"{{
-                "name": "{}",
-                "version": "{}",
+                "name": "{name}",
+                "version": "{version}",
                 "description": "Test plugin",
                 "entry": "config.json",
                 "plugin_type": "script",
                 "hooks": []
-            }}"#,
-            name, version
+            }}"#
         );
 
         let config_json = r#"{"enabled": true}"#;
@@ -608,7 +607,7 @@ mod tests {
         let progress = NoopProgressCallback;
         let result = installer.install_from_file(&package_path, &progress).await;
 
-        assert!(result.is_ok(), "安装应该成功: {:?}", result);
+        assert!(result.is_ok(), "安装应该成功: {result:?}");
 
         let installed = result.unwrap();
         assert_eq!(installed.name, "test-plugin");
@@ -647,7 +646,7 @@ mod tests {
         let result2 = installer
             .install_from_file(&package_path_v2, &progress)
             .await;
-        assert!(result2.is_ok(), "更新安装应该成功: {:?}", result2);
+        assert!(result2.is_ok(), "更新安装应该成功: {result2:?}");
 
         let updated = result2.unwrap();
         assert_eq!(updated.name, "update-plugin");
@@ -677,7 +676,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             InstallError::InvalidPackage(_) => {}
-            e => panic!("期望 InvalidPackage 错误，实际: {:?}", e),
+            e => panic!("期望 InvalidPackage 错误，实际: {e:?}"),
         }
     }
 
@@ -701,7 +700,7 @@ mod tests {
 
         // 卸载
         let result = installer.uninstall("uninstall-test").await;
-        assert!(result.is_ok(), "卸载应该成功: {:?}", result);
+        assert!(result.is_ok(), "卸载应该成功: {result:?}");
 
         // 验证已卸载
         assert!(!installer.is_installed("uninstall-test").unwrap());
@@ -718,7 +717,7 @@ mod tests {
             InstallError::NotFound(name) => {
                 assert_eq!(name, "non-existent");
             }
-            e => panic!("期望 NotFound 错误，实际: {:?}", e),
+            e => panic!("期望 NotFound 错误，实际: {e:?}"),
         }
     }
 
@@ -787,7 +786,7 @@ mod property_tests {
     /// 生成有效的版本号
     fn arb_valid_version() -> impl Strategy<Value = String> {
         (1u32..10, 0u32..10, 0u32..10)
-            .prop_map(|(major, minor, patch)| format!("{}.{}.{}", major, minor, patch))
+            .prop_map(|(major, minor, patch)| format!("{major}.{minor}.{patch}"))
     }
 
     /// 创建测试用的安装器
@@ -809,18 +808,17 @@ mod property_tests {
 
     /// 创建有效的测试插件包 (ZIP)
     fn create_valid_plugin_zip(dir: &Path, name: &str, version: &str) -> PathBuf {
-        let file_path = dir.join(format!("{}.zip", name));
+        let file_path = dir.join(format!("{name}.zip"));
 
         let manifest_json = format!(
             r#"{{
-                "name": "{}",
-                "version": "{}",
+                "name": "{name}",
+                "version": "{version}",
                 "description": "Test plugin",
                 "entry": "config.json",
                 "plugin_type": "script",
                 "hooks": []
-            }}"#,
-            name, version
+            }}"#
         );
 
         let config_json = r#"{"enabled": true}"#;
@@ -843,7 +841,7 @@ mod property_tests {
 
     /// 创建无效的插件包（缺少 plugin.json）
     fn create_invalid_plugin_zip_no_manifest(dir: &Path, name: &str) -> PathBuf {
-        let file_path = dir.join(format!("{}-invalid.zip", name));
+        let file_path = dir.join(format!("{name}-invalid.zip"));
 
         let file = File::create(&file_path).unwrap();
         let mut zip = zip::ZipWriter::new(file);

@@ -482,7 +482,7 @@ fn arb_sse_data() -> impl Strategy<Value = String> {
 
 /// 生成任意的 SSE 行
 fn arb_sse_line() -> impl Strategy<Value = String> {
-    arb_sse_data().prop_map(|data| format!("data: {}", data))
+    arb_sse_data().prop_map(|data| format!("data: {data}"))
 }
 
 /// 生成任意的 SSE 响应体（多行）
@@ -491,7 +491,7 @@ fn arb_sse_body() -> impl Strategy<Value = (Vec<String>, String)> {
         let lines: Vec<String> = data_items.clone();
         let body = data_items
             .iter()
-            .map(|d| format!("data: {}\n\n", d))
+            .map(|d| format!("data: {d}\n\n"))
             .collect::<Vec<_>>()
             .join("");
         (lines, body)
@@ -579,7 +579,7 @@ proptest! {
         index in 0u32..1000u32
     ) {
         let forwarder = StreamForwarder::new(request_id.clone());
-        let sse_line = format!("data: {}", data);
+        let sse_line = format!("data: {data}");
 
         // 转换单行 SSE
         let result = forwarder.convert_sse_line(&sse_line, index);

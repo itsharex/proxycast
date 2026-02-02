@@ -146,7 +146,7 @@ pub fn open_floating_window(app: &AppHandle, image_path: &Path) -> Result<(), Wi
     // 构建窗口 URL，包含图片路径参数
     let image_path_str = image_path.to_str().unwrap_or("");
     let encoded_path = urlencoding::encode(image_path_str);
-    let url = format!("/smart-input?image={}", encoded_path);
+    let url = format!("/smart-input?image={encoded_path}");
 
     debug!("悬浮窗口 URL: {}", url);
 
@@ -180,20 +180,20 @@ pub fn open_floating_window(app: &AppHandle, image_path: &Path) -> Result<(), Wi
         }
 
         // 使用 JavaScript 导航到新的 URL（更新图片路径）
-        let js = format!("window.location.href = '{}';", url);
+        let js = format!("window.location.href = '{url}';");
         window
             .eval(&js)
-            .map_err(|e| WindowError::OperationFailed(format!("导航失败: {}", e)))?;
+            .map_err(|e| WindowError::OperationFailed(format!("导航失败: {e}")))?;
 
         // 显示窗口
         window
             .show()
-            .map_err(|e| WindowError::OperationFailed(format!("显示窗口失败: {}", e)))?;
+            .map_err(|e| WindowError::OperationFailed(format!("显示窗口失败: {e}")))?;
 
         // 聚焦窗口
         window
             .set_focus()
-            .map_err(|e| WindowError::OperationFailed(format!("聚焦窗口失败: {}", e)))?;
+            .map_err(|e| WindowError::OperationFailed(format!("聚焦窗口失败: {e}")))?;
 
         return Ok(());
     }
@@ -216,7 +216,7 @@ pub fn open_floating_window(app: &AppHandle, image_path: &Path) -> Result<(), Wi
         .focused(true)
         .transparent(true)
         .build()
-        .map_err(|e| WindowError::CreateFailed(format!("{}", e)))?;
+        .map_err(|e| WindowError::CreateFailed(format!("{e}")))?;
 
     // macOS: 设置窗口和 webview 背景透明
     #[cfg(target_os = "macos")]
@@ -254,7 +254,7 @@ pub fn close_floating_window(app: &AppHandle) -> Result<(), WindowError> {
     if let Some(window) = app.get_webview_window(FLOATING_WINDOW_LABEL) {
         window
             .close()
-            .map_err(|e| WindowError::OperationFailed(format!("关闭窗口失败: {}", e)))?;
+            .map_err(|e| WindowError::OperationFailed(format!("关闭窗口失败: {e}")))?;
         info!("悬浮窗口已关闭");
     } else {
         debug!("悬浮窗口不存在，无需关闭");
@@ -287,7 +287,7 @@ pub fn focus_floating_window(app: &AppHandle) -> Result<(), WindowError> {
     if let Some(window) = app.get_webview_window(FLOATING_WINDOW_LABEL) {
         window
             .set_focus()
-            .map_err(|e| WindowError::OperationFailed(format!("聚焦窗口失败: {}", e)))?;
+            .map_err(|e| WindowError::OperationFailed(format!("聚焦窗口失败: {e}")))?;
         Ok(())
     } else {
         Err(WindowError::NotFound(FLOATING_WINDOW_LABEL.to_string()))
@@ -309,7 +309,7 @@ pub fn open_floating_window_with_text(app: &AppHandle, text: &str) -> Result<(),
 
     // 构建窗口 URL，包含文本参数
     let encoded_text = urlencoding::encode(text);
-    let url = format!("/smart-input?text={}", encoded_text);
+    let url = format!("/smart-input?text={encoded_text}");
 
     open_floating_window_with_url(app, &url)
 }
@@ -364,18 +364,18 @@ fn open_floating_window_with_url(app: &AppHandle, url: &str) -> Result<(), Windo
         }
 
         // 导航到新 URL（强制刷新）
-        let js = format!("window.location.replace('{}');", url);
+        let js = format!("window.location.replace('{url}');");
         window
             .eval(&js)
-            .map_err(|e| WindowError::OperationFailed(format!("导航失败: {}", e)))?;
+            .map_err(|e| WindowError::OperationFailed(format!("导航失败: {e}")))?;
 
         window
             .show()
-            .map_err(|e| WindowError::OperationFailed(format!("显示窗口失败: {}", e)))?;
+            .map_err(|e| WindowError::OperationFailed(format!("显示窗口失败: {e}")))?;
 
         window
             .set_focus()
-            .map_err(|e| WindowError::OperationFailed(format!("聚焦窗口失败: {}", e)))?;
+            .map_err(|e| WindowError::OperationFailed(format!("聚焦窗口失败: {e}")))?;
 
         // 如果是语音模式，额外发送事件确保前端收到
         if is_voice_mode {
@@ -408,7 +408,7 @@ fn open_floating_window_with_url(app: &AppHandle, url: &str) -> Result<(), Windo
         .focused(true)
         .transparent(true)
         .build()
-        .map_err(|e| WindowError::CreateFailed(format!("{}", e)))?;
+        .map_err(|e| WindowError::CreateFailed(format!("{e}")))?;
 
     // macOS: 设置窗口背景透明
     #[cfg(target_os = "macos")]
@@ -443,7 +443,7 @@ pub fn send_voice_stop_event(app: &AppHandle) -> Result<(), WindowError> {
     if let Some(window) = app.get_webview_window(FLOATING_WINDOW_LABEL) {
         window
             .emit("voice-stop-recording", ())
-            .map_err(|e| WindowError::OperationFailed(format!("发送停止录音事件失败: {}", e)))?;
+            .map_err(|e| WindowError::OperationFailed(format!("发送停止录音事件失败: {e}")))?;
         info!("[语音输入] 已发送停止录音事件到截图输入框");
     }
     Ok(())
@@ -465,10 +465,7 @@ pub fn open_floating_window_with_translate(
 ) -> Result<(), WindowError> {
     info!("打开翻译模式的悬浮输入框，指令: {}", instruction_id);
     let encoded_instruction = urlencoding::encode(instruction_id);
-    let url = format!(
-        "/smart-input?voice=true&translate=true&instruction={}",
-        encoded_instruction
-    );
+    let url = format!("/smart-input?voice=true&translate=true&instruction={encoded_instruction}");
     open_floating_window_with_url(app, &url)
 }
 

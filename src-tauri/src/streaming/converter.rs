@@ -625,7 +625,7 @@ impl StreamConverter {
                 }
             }
         });
-        format!("event: message_start\ndata: {}\n\n", event)
+        format!("event: message_start\ndata: {event}\n\n")
     }
 
     fn create_anthropic_content_block_start_text(&self, index: u32) -> String {
@@ -637,7 +637,7 @@ impl StreamConverter {
                 "text": ""
             }
         });
-        format!("event: content_block_start\ndata: {}\n\n", event)
+        format!("event: content_block_start\ndata: {event}\n\n")
     }
 
     fn create_anthropic_content_block_start_tool(
@@ -656,7 +656,7 @@ impl StreamConverter {
                 "input": {}
             }
         });
-        format!("event: content_block_start\ndata: {}\n\n", event)
+        format!("event: content_block_start\ndata: {event}\n\n")
     }
 
     fn create_anthropic_text_delta(&self, index: u32, text: &str) -> String {
@@ -668,7 +668,7 @@ impl StreamConverter {
                 "text": text
             }
         });
-        format!("event: content_block_delta\ndata: {}\n\n", event)
+        format!("event: content_block_delta\ndata: {event}\n\n")
     }
 
     fn create_anthropic_input_json_delta(&self, index: u32, partial_json: &str) -> String {
@@ -680,7 +680,7 @@ impl StreamConverter {
                 "partial_json": partial_json
             }
         });
-        format!("event: content_block_delta\ndata: {}\n\n", event)
+        format!("event: content_block_delta\ndata: {event}\n\n")
     }
 
     fn create_anthropic_content_block_stop(&self, index: u32) -> String {
@@ -688,7 +688,7 @@ impl StreamConverter {
             "type": "content_block_stop",
             "index": index
         });
-        format!("event: content_block_stop\ndata: {}\n\n", event)
+        format!("event: content_block_stop\ndata: {event}\n\n")
     }
 
     fn create_anthropic_message_delta(&self) -> String {
@@ -702,14 +702,14 @@ impl StreamConverter {
                 "output_tokens": 0
             }
         });
-        format!("event: message_delta\ndata: {}\n\n", event)
+        format!("event: message_delta\ndata: {event}\n\n")
     }
 
     fn create_anthropic_message_stop(&self) -> String {
         let event = serde_json::json!({
             "type": "message_stop"
         });
-        format!("event: message_stop\ndata: {}\n\n", event)
+        format!("event: message_stop\ndata: {event}\n\n")
     }
 
     // ========================================================================
@@ -738,7 +738,7 @@ impl StreamConverter {
                 "finish_reason": null
             }]
         });
-        format!("data: {}\n\n", chunk)
+        format!("data: {chunk}\n\n")
     }
 
     fn create_openai_tool_call_chunk(
@@ -781,7 +781,7 @@ impl StreamConverter {
                 "finish_reason": null
             }]
         });
-        format!("data: {}\n\n", chunk)
+        format!("data: {chunk}\n\n")
     }
 
     fn create_openai_finish_chunk(&self, finish_reason: &str) -> String {
@@ -796,7 +796,7 @@ impl StreamConverter {
                 "finish_reason": finish_reason
             }]
         });
-        format!("data: {}\n\n", chunk)
+        format!("data: {chunk}\n\n")
     }
 }
 
@@ -1376,7 +1376,7 @@ mod property_tests {
             value in "[a-zA-Z0-9]{1,20}",
             split_points in prop::collection::vec(1usize..50, 1..5)
         ) {
-            let json = format!("{{\"{}\":\"{}\"}}", key, value);
+            let json = format!("{{\"{key}\":\"{value}\"}}");
             let bytes = json.as_bytes();
 
             let mut acc = PartialJsonAccumulator::new();
@@ -1423,7 +1423,7 @@ mod property_tests {
             value in "[a-zA-Z0-9]{1,10}",
             chunk_size in 1usize..10
         ) {
-            let json = format!("{{\"{}\":{{\"{}\":\"{}\"}}}}", outer_key, inner_key, value);
+            let json = format!("{{\"{outer_key}\":{{\"{inner_key}\":\"{value}\"}}}}");
             let bytes = json.as_bytes();
 
             let mut acc = PartialJsonAccumulator::new();
@@ -1459,7 +1459,7 @@ mod property_tests {
             chunk_size in 1usize..15
         ) {
             // 创建包含括号的字符串值
-            let json = format!("{{\"{}\":\"{}{{}}[]{}\"}}", key, prefix, suffix);
+            let json = format!("{{\"{key}\":\"{prefix}{{}}[]{suffix}\"}}");
             let bytes = json.as_bytes();
 
             let mut acc = PartialJsonAccumulator::new();
@@ -1494,8 +1494,8 @@ mod property_tests {
             key2 in "[a-z]{1,5}",
             value2 in "[a-zA-Z0-9]{1,10}"
         ) {
-            let json1 = format!("{{\"{}\":\"{}\"}}", key1, value1);
-            let json2 = format!("{{\"{}\":\"{}\"}}", key2, value2);
+            let json1 = format!("{{\"{key1}\":\"{value1}\"}}");
+            let json2 = format!("{{\"{key2}\":\"{value2}\"}}");
 
             let mut acc = PartialJsonAccumulator::new();
 

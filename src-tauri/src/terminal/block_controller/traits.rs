@@ -170,18 +170,10 @@ impl BlockMeta {
 }
 
 /// 运行时选项
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RuntimeOpts {
     /// 终端大小
     pub term_size: TermSize,
-}
-
-impl Default for RuntimeOpts {
-    fn default() -> Self {
-        Self {
-            term_size: TermSize::default(),
-        }
-    }
 }
 
 /// 块控制器 trait

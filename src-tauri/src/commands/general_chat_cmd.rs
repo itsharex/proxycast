@@ -43,8 +43,8 @@ pub async fn general_chat_create_session(
         metadata,
     };
 
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
-    GeneralChatDao::create_session(&conn, &session).map_err(|e| format!("创建会话失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
+    GeneralChatDao::create_session(&conn, &session).map_err(|e| format!("创建会话失败: {e}"))?;
 
     tracing::info!(
         "[GeneralChat] 创建会话: id={}, name={}",
@@ -59,9 +59,9 @@ pub async fn general_chat_create_session(
 pub async fn general_chat_list_sessions(
     db: State<'_, DbConnection>,
 ) -> Result<Vec<ChatSession>, String> {
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
     let sessions =
-        GeneralChatDao::list_sessions(&conn).map_err(|e| format!("获取会话列表失败: {}", e))?;
+        GeneralChatDao::list_sessions(&conn).map_err(|e| format!("获取会话列表失败: {e}"))?;
 
     Ok(sessions)
 }
@@ -77,17 +77,17 @@ pub async fn general_chat_get_session(
     session_id: String,
     message_limit: Option<i32>,
 ) -> Result<SessionDetail, String> {
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
     let session = GeneralChatDao::get_session(&conn, &session_id)
-        .map_err(|e| format!("获取会话失败: {}", e))?
+        .map_err(|e| format!("获取会话失败: {e}"))?
         .ok_or_else(|| "会话不存在".to_string())?;
 
     let messages = GeneralChatDao::get_messages(&conn, &session_id, message_limit, None)
-        .map_err(|e| format!("获取消息失败: {}", e))?;
+        .map_err(|e| format!("获取消息失败: {e}"))?;
 
     let message_count = GeneralChatDao::get_message_count(&conn, &session_id)
-        .map_err(|e| format!("获取消息数量失败: {}", e))?;
+        .map_err(|e| format!("获取消息数量失败: {e}"))?;
 
     Ok(SessionDetail {
         session,
@@ -105,10 +105,10 @@ pub async fn general_chat_delete_session(
     db: State<'_, DbConnection>,
     session_id: String,
 ) -> Result<bool, String> {
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
     let deleted = GeneralChatDao::delete_session(&conn, &session_id)
-        .map_err(|e| format!("删除会话失败: {}", e))?;
+        .map_err(|e| format!("删除会话失败: {e}"))?;
 
     if deleted {
         tracing::info!("[GeneralChat] 删除会话: id={}", session_id);
@@ -128,10 +128,10 @@ pub async fn general_chat_rename_session(
     session_id: String,
     name: String,
 ) -> Result<bool, String> {
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
     let renamed = GeneralChatDao::rename_session(&conn, &session_id, &name)
-        .map_err(|e| format!("重命名会话失败: {}", e))?;
+        .map_err(|e| format!("重命名会话失败: {e}"))?;
 
     if renamed {
         tracing::info!("[GeneralChat] 重命名会话: id={}, name={}", session_id, name);
@@ -155,10 +155,10 @@ pub async fn general_chat_get_messages(
     limit: Option<i32>,
     before_id: Option<String>,
 ) -> Result<Vec<ChatMessage>, String> {
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
     let messages = GeneralChatDao::get_messages(&conn, &session_id, limit, before_id.as_deref())
-        .map_err(|e| format!("获取消息失败: {}", e))?;
+        .map_err(|e| format!("获取消息失败: {e}"))?;
 
     Ok(messages)
 }
@@ -186,7 +186,7 @@ pub async fn general_chat_add_message(
         "user" => MessageRole::User,
         "assistant" => MessageRole::Assistant,
         "system" => MessageRole::System,
-        _ => return Err(format!("无效的消息角色: {}", role)),
+        _ => return Err(format!("无效的消息角色: {role}")),
     };
 
     let message = ChatMessage {
@@ -200,16 +200,16 @@ pub async fn general_chat_add_message(
         metadata,
     };
 
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
     // 检查会话是否存在
     if !GeneralChatDao::session_exists(&conn, &session_id)
-        .map_err(|e| format!("检查会话失败: {}", e))?
+        .map_err(|e| format!("检查会话失败: {e}"))?
     {
         return Err("会话不存在".to_string());
     }
 
-    GeneralChatDao::add_message(&conn, &message).map_err(|e| format!("添加消息失败: {}", e))?;
+    GeneralChatDao::add_message(&conn, &message).map_err(|e| format!("添加消息失败: {e}"))?;
 
     tracing::debug!(
         "[GeneralChat] 添加消息: session={}, role={:?}, len={}",
@@ -295,17 +295,17 @@ pub async fn general_chat_send_message(
     };
 
     {
-        let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         // 检查会话是否存在
         if !GeneralChatDao::session_exists(&conn, &request.session_id)
-            .map_err(|e| format!("检查会话失败: {}", e))?
+            .map_err(|e| format!("检查会话失败: {e}"))?
         {
             return Err("会话不存在".to_string());
         }
 
         GeneralChatDao::add_message(&conn, &user_message)
-            .map_err(|e| format!("保存用户消息失败: {}", e))?;
+            .map_err(|e| format!("保存用户消息失败: {e}"))?;
     }
 
     // 设置停止标志
@@ -363,9 +363,9 @@ pub async fn general_chat_send_message(
     };
 
     {
-        let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
         GeneralChatDao::add_message(&conn, &assistant_message)
-            .map_err(|e| format!("保存 AI 响应失败: {}", e))?;
+            .map_err(|e| format!("保存 AI 响应失败: {e}"))?;
     }
 
     // 发送完成事件
@@ -395,8 +395,8 @@ pub async fn general_chat_stop_generation(session_id: String) -> Result<bool, St
     tracing::info!("[GeneralChat] 停止生成: session={}", session_id);
 
     let mut flags = STOP_FLAGS.write().await;
-    if flags.contains_key(&session_id) {
-        flags.insert(session_id, true);
+    if let std::collections::hash_map::Entry::Occupied(mut e) = flags.entry(session_id) {
+        e.insert(true);
         Ok(true)
     } else {
         Ok(false)
@@ -410,10 +410,10 @@ pub struct GenerateTitleRequest {
     pub session_id: String,
     /// 用户第一条消息内容
     pub first_message: String,
-    /// Provider 名称（可选）
+    /// Provider 名称（可选，暂未使用，预留给未来支持多 provider）
     #[serde(default)]
     pub provider: Option<String>,
-    /// 模型名称（可选）
+    /// 模型名称（可选，用于指定生成标题的模型）
     #[serde(default)]
     pub model: Option<String>,
 }
@@ -430,9 +430,11 @@ pub async fn general_chat_generate_title(
     request: GenerateTitleRequest,
 ) -> Result<String, String> {
     tracing::info!(
-        "[GeneralChat] 生成标题: session={}, message_len={}",
+        "[GeneralChat] 生成标题: session={}, message_len={}, provider={:?}, model={:?}",
         request.session_id,
-        request.first_message.len()
+        request.first_message.len(),
+        request.provider,
+        request.model
     );
 
     // 生成标题的 prompt
@@ -441,8 +443,9 @@ pub async fn general_chat_generate_title(
         request.first_message.chars().take(500).collect::<String>()
     );
 
-    // 尝试调用 AI 生成标题
-    let title = match generate_title_with_ai(&prompt).await {
+    // 尝试调用 AI 生成标题，使用指定的模型或默认模型
+    let model = request.model.as_deref();
+    let title = match generate_title_with_ai(&prompt, model).await {
         Ok(ai_title) => {
             tracing::info!("[GeneralChat] AI 生成标题成功: {}", ai_title);
             // 清理 AI 返回的标题（去除引号、换行等）
@@ -457,9 +460,9 @@ pub async fn general_chat_generate_title(
 
     // 更新数据库中的会话标题
     {
-        let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
         GeneralChatDao::rename_session(&conn, &request.session_id, &title)
-            .map_err(|e| format!("更新标题失败: {}", e))?;
+            .map_err(|e| format!("更新标题失败: {e}"))?;
     }
 
     tracing::info!(
@@ -472,7 +475,7 @@ pub async fn general_chat_generate_title(
 }
 
 /// 使用 AI 生成标题
-async fn generate_title_with_ai(prompt: &str) -> Result<String, String> {
+async fn generate_title_with_ai(prompt: &str, model: Option<&str>) -> Result<String, String> {
     use crate::models::openai::{ChatCompletionRequest, ChatMessage, MessageContent};
     use crate::providers::openai_custom::OpenAICustomProvider;
 
@@ -484,7 +487,7 @@ async fn generate_title_with_ai(prompt: &str) -> Result<String, String> {
     );
 
     let request = ChatCompletionRequest {
-        model: "default".to_string(), // 使用默认模型
+        model: model.unwrap_or("default").to_string(),
         messages: vec![ChatMessage {
             role: "user".to_string(),
             content: Some(MessageContent::Text(prompt.to_string())),
@@ -504,17 +507,17 @@ async fn generate_title_with_ai(prompt: &str) -> Result<String, String> {
     let resp = provider
         .call_api(&request)
         .await
-        .map_err(|e| format!("API 调用失败: {}", e))?;
+        .map_err(|e| format!("API 调用失败: {e}"))?;
 
     let status = resp.status();
     let body = resp.text().await.unwrap_or_default();
 
     if !status.is_success() {
-        return Err(format!("API 返回错误: {} - {}", status, body));
+        return Err(format!("API 返回错误: {status} - {body}"));
     }
 
     let parsed: serde_json::Value =
-        serde_json::from_str(&body).map_err(|e| format!("解析响应失败: {}", e))?;
+        serde_json::from_str(&body).map_err(|e| format!("解析响应失败: {e}"))?;
 
     let content = parsed["choices"]
         .as_array()

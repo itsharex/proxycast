@@ -242,7 +242,7 @@ impl OpenAiSseGenerator {
                 };
 
                 let chunk_str = format!("data: {}\n\n", serde_json::to_string(&chunk).ok()?);
-                Some(format!("{}data: [DONE]\n\n", chunk_str))
+                Some(format!("{chunk_str}data: [DONE]\n\n"))
             }
 
             StreamEvent::Usage {
@@ -272,7 +272,7 @@ impl OpenAiSseGenerator {
                         "message": message,
                     }
                 });
-                Some(format!("data: {}\n\n", error_obj))
+                Some(format!("data: {error_obj}\n\n"))
             }
 
             StreamEvent::Ping => {

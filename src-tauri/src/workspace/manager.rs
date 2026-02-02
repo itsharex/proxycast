@@ -73,10 +73,7 @@ impl WorkspaceManager {
             stats: None,
         };
 
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         Self::ensure_workspace_columns(&conn)?;
 
@@ -87,10 +84,10 @@ impl WorkspaceManager {
                 params![&root_path_str],
                 |row| row.get(0),
             )
-            .map_err(|e| format!("检查路径失败: {}", e))?;
+            .map_err(|e| format!("检查路径失败: {e}"))?;
 
         if exists {
-            return Err(format!("路径已存在: {}", root_path_str));
+            return Err(format!("路径已存在: {root_path_str}"));
         }
 
         let settings_json =
@@ -116,7 +113,7 @@ impl WorkspaceManager {
                 workspace.updated_at.timestamp_millis(),
             ],
         )
-        .map_err(|e| format!("创建 workspace 失败: {}", e))?;
+        .map_err(|e| format!("创建 workspace 失败: {e}"))?;
 
         tracing::info!(
             "[Workspace] 创建: id={}, name={}, path={}",
@@ -132,20 +129,20 @@ impl WorkspaceManager {
     fn ensure_workspace_columns(conn: &rusqlite::Connection) -> Result<(), String> {
         let mut stmt = conn
             .prepare("PRAGMA table_info(workspaces)")
-            .map_err(|e| format!("读取 workspaces 表结构失败: {}", e))?;
+            .map_err(|e| format!("读取 workspaces 表结构失败: {e}"))?;
 
         let columns = stmt
             .query_map([], |row| {
                 let column_name: String = row.get(1)?;
                 Ok(column_name)
             })
-            .map_err(|e| format!("读取 workspaces 表结构失败: {}", e))?
+            .map_err(|e| format!("读取 workspaces 表结构失败: {e}"))?
             .collect::<Result<HashSet<_>, _>>()
-            .map_err(|e| format!("解析 workspaces 表结构失败: {}", e))?;
+            .map_err(|e| format!("解析 workspaces 表结构失败: {e}"))?;
 
         let add_column = |sql: &str| -> Result<(), String> {
             conn.execute(sql, [])
-                .map_err(|e| format!("更新 workspaces 表结构失败: {}", e))?;
+                .map_err(|e| format!("更新 workspaces 表结构失败: {e}"))?;
             Ok(())
         };
 
@@ -170,24 +167,21 @@ impl WorkspaceManager {
 
     /// 获取 workspace
     pub fn get(&self, id: &WorkspaceId) -> Result<Option<Workspace>, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let result = conn.query_row(
             "SELECT id, name, workspace_type, root_path, is_default, settings_json, created_at, updated_at, icon, color, is_favorite, is_archived, tags_json
              FROM workspaces WHERE id = ?",
             params![id],
             |row| {
-                Ok(Self::row_to_workspace(row)?)
+                Self::row_to_workspace(row)
             },
         );
 
         match result {
             Ok(workspace) => Ok(Some(workspace)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(format!("获取 workspace 失败: {}", e)),
+            Err(e) => Err(format!("获取 workspace 失败: {e}")),
         }
     }
 
@@ -195,56 +189,47 @@ impl WorkspaceManager {
     pub fn get_by_path(&self, root_path: &PathBuf) -> Result<Option<Workspace>, String> {
         let root_path_str = root_path.to_str().ok_or("无效的路径")?;
 
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let result = conn.query_row(
             "SELECT id, name, workspace_type, root_path, is_default, settings_json, created_at, updated_at, icon, color, is_favorite, is_archived, tags_json
              FROM workspaces WHERE root_path = ?",
             params![root_path_str],
             |row| {
-                Ok(Self::row_to_workspace(row)?)
+                Self::row_to_workspace(row)
             },
         );
 
         match result {
             Ok(workspace) => Ok(Some(workspace)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(format!("获取 workspace 失败: {}", e)),
+            Err(e) => Err(format!("获取 workspace 失败: {e}")),
         }
     }
 
     /// 列出所有 workspace
     pub fn list(&self) -> Result<Vec<Workspace>, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let mut stmt = conn
             .prepare(
                 "SELECT id, name, workspace_type, root_path, is_default, settings_json, created_at, updated_at, icon, color, is_favorite, is_archived, tags_json
                  FROM workspaces ORDER BY updated_at DESC",
             )
-            .map_err(|e| format!("准备查询失败: {}", e))?;
+            .map_err(|e| format!("准备查询失败: {e}"))?;
 
         let workspaces = stmt
-            .query_map([], |row| Ok(Self::row_to_workspace(row)?))
-            .map_err(|e| format!("查询失败: {}", e))?
+            .query_map([], Self::row_to_workspace)
+            .map_err(|e| format!("查询失败: {e}"))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("解析结果失败: {}", e))?;
+            .map_err(|e| format!("解析结果失败: {e}"))?;
 
         Ok(workspaces)
     }
 
     /// 列出所有项目类型的 workspace
     pub fn list_projects(&self) -> Result<Vec<Workspace>, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let mut stmt = conn
             .prepare(
@@ -253,23 +238,20 @@ impl WorkspaceManager {
                  WHERE workspace_type IN ('drama', 'novel', 'social', 'document', 'general')
                  ORDER BY updated_at DESC",
             )
-            .map_err(|e| format!("准备查询失败: {}", e))?;
+            .map_err(|e| format!("准备查询失败: {e}"))?;
 
         let workspaces = stmt
-            .query_map([], |row| Ok(Self::row_to_workspace(row)?))
-            .map_err(|e| format!("查询失败: {}", e))?
+            .query_map([], Self::row_to_workspace)
+            .map_err(|e| format!("查询失败: {e}"))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("解析结果失败: {}", e))?;
+            .map_err(|e| format!("解析结果失败: {e}"))?;
 
         Ok(workspaces)
     }
 
     /// 列出指定类型的项目
     pub fn list_by_type(&self, workspace_type: &WorkspaceType) -> Result<Vec<Workspace>, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let mut stmt = conn
             .prepare(
@@ -278,25 +260,22 @@ impl WorkspaceManager {
                  WHERE workspace_type = ?
                  ORDER BY updated_at DESC",
             )
-            .map_err(|e| format!("准备查询失败: {}", e))?;
+            .map_err(|e| format!("准备查询失败: {e}"))?;
 
         let workspaces = stmt
             .query_map(params![workspace_type.as_str()], |row| {
-                Ok(Self::row_to_workspace(row)?)
+                Self::row_to_workspace(row)
             })
-            .map_err(|e| format!("查询失败: {}", e))?
+            .map_err(|e| format!("查询失败: {e}"))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("解析结果失败: {}", e))?;
+            .map_err(|e| format!("解析结果失败: {e}"))?;
 
         Ok(workspaces)
     }
 
     /// 列出收藏的项目
     pub fn list_favorites(&self) -> Result<Vec<Workspace>, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let mut stmt = conn
             .prepare(
@@ -305,23 +284,20 @@ impl WorkspaceManager {
                  WHERE is_favorite = 1 AND is_archived = 0
                  ORDER BY updated_at DESC",
             )
-            .map_err(|e| format!("准备查询失败: {}", e))?;
+            .map_err(|e| format!("准备查询失败: {e}"))?;
 
         let workspaces = stmt
-            .query_map([], |row| Ok(Self::row_to_workspace(row)?))
-            .map_err(|e| format!("查询失败: {}", e))?
+            .query_map([], Self::row_to_workspace)
+            .map_err(|e| format!("查询失败: {e}"))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("解析结果失败: {}", e))?;
+            .map_err(|e| format!("解析结果失败: {e}"))?;
 
         Ok(workspaces)
     }
 
     /// 列出归档的项目
     pub fn list_archived(&self) -> Result<Vec<Workspace>, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let mut stmt = conn
             .prepare(
@@ -330,23 +306,20 @@ impl WorkspaceManager {
                  WHERE is_archived = 1
                  ORDER BY updated_at DESC",
             )
-            .map_err(|e| format!("准备查询失败: {}", e))?;
+            .map_err(|e| format!("准备查询失败: {e}"))?;
 
         let workspaces = stmt
-            .query_map([], |row| Ok(Self::row_to_workspace(row)?))
-            .map_err(|e| format!("查询失败: {}", e))?
+            .query_map([], Self::row_to_workspace)
+            .map_err(|e| format!("查询失败: {e}"))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("解析结果失败: {}", e))?;
+            .map_err(|e| format!("解析结果失败: {e}"))?;
 
         Ok(workspaces)
     }
 
     /// 更新 workspace
     pub fn update(&self, id: &WorkspaceId, updates: WorkspaceUpdate) -> Result<Workspace, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
         let now = Utc::now().timestamp_millis();
 
         // 构建更新语句
@@ -401,7 +374,7 @@ impl WorkspaceManager {
             params_vec.iter().map(|p| p.as_ref()).collect();
 
         conn.execute(&sql, params_refs.as_slice())
-            .map_err(|e| format!("更新 workspace 失败: {}", e))?;
+            .map_err(|e| format!("更新 workspace 失败: {e}"))?;
 
         drop(conn);
 
@@ -410,14 +383,11 @@ impl WorkspaceManager {
 
     /// 删除 workspace
     pub fn delete(&self, id: &WorkspaceId) -> Result<bool, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let affected = conn
             .execute("DELETE FROM workspaces WHERE id = ?", params![id])
-            .map_err(|e| format!("删除 workspace 失败: {}", e))?;
+            .map_err(|e| format!("删除 workspace 失败: {e}"))?;
 
         if affected > 0 {
             tracing::info!("[Workspace] 删除: id={}", id);
@@ -428,14 +398,11 @@ impl WorkspaceManager {
 
     /// 设置默认 workspace
     pub fn set_default(&self, id: &WorkspaceId) -> Result<(), String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         // 先清除所有默认标记
         conn.execute("UPDATE workspaces SET is_default = 0", [])
-            .map_err(|e| format!("清除默认标记失败: {}", e))?;
+            .map_err(|e| format!("清除默认标记失败: {e}"))?;
 
         // 设置新的默认
         let affected = conn
@@ -443,7 +410,7 @@ impl WorkspaceManager {
                 "UPDATE workspaces SET is_default = 1, updated_at = ? WHERE id = ?",
                 params![Utc::now().timestamp_millis(), id],
             )
-            .map_err(|e| format!("设置默认 workspace 失败: {}", e))?;
+            .map_err(|e| format!("设置默认 workspace 失败: {e}"))?;
 
         if affected == 0 {
             return Err("Workspace 不存在".to_string());
@@ -455,24 +422,21 @@ impl WorkspaceManager {
 
     /// 获取默认 workspace
     pub fn get_default(&self) -> Result<Option<Workspace>, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let result = conn.query_row(
             "SELECT id, name, workspace_type, root_path, is_default, settings_json, created_at, updated_at, icon, color, is_favorite, is_archived, tags_json
              FROM workspaces WHERE is_default = 1",
             [],
             |row| {
-                Ok(Self::row_to_workspace(row)?)
+                Self::row_to_workspace(row)
             },
         );
 
         match result {
             Ok(workspace) => Ok(Some(workspace)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(format!("获取默认 workspace 失败: {}", e)),
+            Err(e) => Err(format!("获取默认 workspace 失败: {e}")),
         }
     }
 

@@ -386,7 +386,7 @@ impl OSCParser {
     /// 完整的 OSC 52 序列
     pub fn encode_clipboard(selection: &str, content: &str) -> Vec<u8> {
         let encoded = BASE64.encode(content.as_bytes());
-        format!("\x1b]52;{};{}\x07", selection, encoded).into_bytes()
+        format!("\x1b]52;{selection};{encoded}\x07").into_bytes()
     }
 
     /// 构建 OSC 7 序列
@@ -399,7 +399,7 @@ impl OSCParser {
     /// 完整的 OSC 7 序列
     pub fn build_osc_7(hostname: Option<&str>, path: &str) -> Vec<u8> {
         let host = hostname.unwrap_or("");
-        format!("\x1b]7;file://{}{}\x07", host, path).into_bytes()
+        format!("\x1b]7;file://{host}{path}\x07").into_bytes()
     }
 
     /// 构建 OSC 133 序列

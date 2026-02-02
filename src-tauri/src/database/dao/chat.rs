@@ -53,7 +53,7 @@ impl std::str::FromStr for ChatMode {
             "agent" => Ok(ChatMode::Agent),
             "general" => Ok(ChatMode::General),
             "creator" => Ok(ChatMode::Creator),
-            _ => Err(format!("未知的对话模式: {}", s)),
+            _ => Err(format!("未知的对话模式: {s}")),
         }
     }
 }
@@ -279,7 +279,7 @@ impl ChatDao {
         let tool_calls_json = message
             .tool_calls
             .as_ref()
-            .map(|tc| serde_json::to_string(tc))
+            .map(serde_json::to_string)
             .transpose()
             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
 
@@ -387,9 +387,8 @@ impl ChatDao {
             serde_json::json!([{"type": "text", "text": content_json}])
         });
 
-        let tool_calls: Option<serde_json::Value> = tool_calls_json
-            .map(|json| serde_json::from_str(&json).ok())
-            .flatten();
+        let tool_calls: Option<serde_json::Value> =
+            tool_calls_json.and_then(|json| serde_json::from_str(&json).ok());
 
         Ok(ChatMessage {
             id: row.get(0)?,

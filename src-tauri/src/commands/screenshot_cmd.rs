@@ -77,7 +77,7 @@ pub async fn save_experimental_config(
     debug!("开始保存配置到文件...");
     if let Err(e) = config_manager.save_config(&new_config).await {
         error!("保存配置失败: {}", e);
-        return Err(format!("保存配置失败: {}", e));
+        return Err(format!("保存配置失败: {e}"));
     }
     info!("配置文件保存成功");
 
@@ -91,14 +91,14 @@ pub async fn save_experimental_config(
             if let Err(e) = shortcut::register(&app, &experimental_config.screenshot_chat.shortcut)
             {
                 error!("注册快捷键失败: {}", e);
-                return Err(format!("注册快捷键失败: {}", e));
+                return Err(format!("注册快捷键失败: {e}"));
             }
             info!("快捷键注册成功");
         } else {
             info!("截图对话功能已禁用，注销快捷键");
             if let Err(e) = shortcut::unregister(&app) {
                 error!("注销快捷键失败: {}", e);
-                return Err(format!("注销快捷键失败: {}", e));
+                return Err(format!("注销快捷键失败: {e}"));
             }
             info!("快捷键注销成功");
         }
@@ -134,7 +134,7 @@ pub async fn start_screenshot(app: AppHandle) -> Result<String, String> {
         }
         Err(e) => {
             error!("截图失败: {}", e);
-            Err(format!("截图失败: {}", e))
+            Err(format!("截图失败: {e}"))
         }
     }
 }
@@ -156,7 +156,7 @@ pub fn validate_shortcut(shortcut_str: String) -> Result<bool, String> {
 
     match shortcut::validate(&shortcut_str) {
         Ok(()) => Ok(true),
-        Err(e) => Err(format!("{}", e)),
+        Err(e) => Err(format!("{e}")),
     }
 }
 
@@ -183,7 +183,7 @@ pub async fn update_screenshot_shortcut(
     info!("更新截图快捷键: {}", new_shortcut);
 
     // 验证新快捷键格式
-    shortcut::validate(&new_shortcut).map_err(|e| format!("快捷键格式无效: {}", e))?;
+    shortcut::validate(&new_shortcut).map_err(|e| format!("快捷键格式无效: {e}"))?;
 
     // 获取当前配置
     let mut config = config_manager.config();
@@ -191,7 +191,7 @@ pub async fn update_screenshot_shortcut(
     // 检查功能是否启用
     if config.experimental.screenshot_chat.enabled {
         // 更新快捷键（原子操作）
-        shortcut::update(&app, &new_shortcut).map_err(|e| format!("更新快捷键失败: {}", e))?;
+        shortcut::update(&app, &new_shortcut).map_err(|e| format!("更新快捷键失败: {e}"))?;
     }
 
     // 更新配置
@@ -201,7 +201,7 @@ pub async fn update_screenshot_shortcut(
     config_manager
         .save_config(&config)
         .await
-        .map_err(|e| format!("保存配置失败: {}", e))?;
+        .map_err(|e| format!("保存配置失败: {e}"))?;
 
     info!("截图快捷键更新成功");
     Ok(())
@@ -220,8 +220,7 @@ pub async fn update_screenshot_shortcut(
 pub fn close_screenshot_chat_window(app: AppHandle) -> Result<(), String> {
     info!("关闭截图对话窗口");
 
-    crate::screenshot::window::close_floating_window(&app)
-        .map_err(|e| format!("关闭窗口失败: {}", e))
+    crate::screenshot::window::close_floating_window(&app).map_err(|e| format!("关闭窗口失败: {e}"))
 }
 
 /// 打开带预填文本的输入框
@@ -239,7 +238,7 @@ pub fn open_input_with_text(app: AppHandle, text: String) -> Result<(), String> 
     info!("打开带预填文本的输入框: {} 字符", text.len());
 
     crate::screenshot::window::open_floating_window_with_text(&app, &text)
-        .map_err(|e| format!("打开窗口失败: {}", e))
+        .map_err(|e| format!("打开窗口失败: {e}"))
 }
 
 /// 读取图片文件并转换为 Base64
@@ -267,7 +266,7 @@ pub async fn read_image_as_base64(path: String) -> Result<String, String> {
     // 读取文件内容
     let bytes = fs::read(path)
         .await
-        .map_err(|e| format!("读取文件失败: {}", e))?;
+        .map_err(|e| format!("读取文件失败: {e}"))?;
 
     // 检查文件是否为空
     if bytes.is_empty() {
@@ -335,7 +334,7 @@ pub async fn send_screenshot_chat(
     if let Some(main_window) = app.get_webview_window("main") {
         main_window
             .emit("smart-input-message", &chat_message)
-            .map_err(|e| format!("发送事件失败: {}", e))?;
+            .map_err(|e| format!("发送事件失败: {e}"))?;
 
         // 恢复并聚焦主窗口（主窗口在截图时被最小化）
         let _ = main_window.unminimize();
@@ -344,7 +343,7 @@ pub async fn send_screenshot_chat(
     } else {
         // 尝试发送到所有窗口
         app.emit("smart-input-message", &chat_message)
-            .map_err(|e| format!("发送事件失败: {}", e))?;
+            .map_err(|e| format!("发送事件失败: {e}"))?;
     }
 
     info!("截图对话消息已发送");

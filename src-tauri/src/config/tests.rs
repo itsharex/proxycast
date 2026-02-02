@@ -720,7 +720,7 @@ fn arb_tilde_user_path() -> impl Strategy<Value = String> {
 
     (username, proptest::collection::vec(path_segment, 0..4)).prop_map(|(user, segments)| {
         if segments.is_empty() {
-            format!("~{}", user)
+            format!("~{user}")
         } else {
             format!("~{}/{}", user, segments.join("/"))
         }
@@ -872,7 +872,7 @@ proptest! {
     #[test]
     fn prop_collapse_non_home_path_unchanged(path in arb_absolute_path()) {
         // 确保路径不在主目录下（使用 /tmp 或类似路径）
-        let test_path = format!("/tmp{}", path);
+        let test_path = format!("/tmp{path}");
         let collapsed = collapse_tilde(&test_path);
 
         prop_assert_eq!(
@@ -892,7 +892,7 @@ proptest! {
 /// 生成有效的 YAML 注释（以 # 开头）
 fn arb_yaml_comment() -> impl Strategy<Value = String> {
     // 生成注释内容：字母、数字、空格、中文字符
-    "[a-zA-Z0-9 ]{1,50}".prop_map(|s| format!("# {}", s))
+    "[a-zA-Z0-9 ]{1,50}".prop_map(|s| format!("# {s}"))
 }
 
 /// 生成带注释的 YAML 配置字符串
@@ -1039,7 +1039,7 @@ proptest! {
 
         // 创建带头部注释的 YAML
         let yaml = ConfigManager::to_yaml(&config).expect("序列化应成功");
-        let yaml_with_header = format!("{}\n{}", header_comment, yaml);
+        let yaml_with_header = format!("{header_comment}\n{yaml}");
 
         // 写入文件
         std::fs::write(&config_path, &yaml_with_header).expect("写入文件失败");

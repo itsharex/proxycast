@@ -480,7 +480,7 @@ pub async fn management_add_credential(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(AddCredentialResponse {
                             success: false,
-                            message: format!("Failed to add credential: {}", e),
+                            message: format!("Failed to add credential: {e}"),
                             id: None,
                         }),
                     );
@@ -548,7 +548,7 @@ pub async fn management_update_config(
                 StatusCode::BAD_REQUEST,
                 Json(UpdateConfigResponse {
                     success: false,
-                    message: format!("Invalid provider type: {}", provider),
+                    message: format!("Invalid provider type: {provider}"),
                 }),
             );
         }

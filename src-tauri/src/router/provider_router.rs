@@ -204,7 +204,7 @@ impl ProviderRouter {
         };
 
         if route.route_type == RouteType::Default {
-            format!("{}/v1/{}", base_url, endpoint)
+            format!("{base_url}/v1/{endpoint}")
         } else {
             let selector = route
                 .credential_name
@@ -212,7 +212,7 @@ impl ProviderRouter {
                 .or(route.credential_uuid.as_ref())
                 .map(|s| s.as_str())
                 .unwrap_or("unknown");
-            format!("{}/{}/v1/{}", base_url, selector, endpoint)
+            format!("{base_url}/{selector}/v1/{endpoint}")
         }
     }
 }

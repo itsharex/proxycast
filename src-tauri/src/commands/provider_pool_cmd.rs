@@ -41,7 +41,7 @@ fn get_credentials_dir() -> Result<PathBuf, String> {
 
     // 确保目录存在
     if !app_data_dir.exists() {
-        fs::create_dir_all(&app_data_dir).map_err(|e| format!("创建凭证存储目录失败: {}", e))?;
+        fs::create_dir_all(&app_data_dir).map_err(|e| format!("创建凭证存储目录失败: {e}"))?;
     }
 
     Ok(app_data_dir)
@@ -60,7 +60,7 @@ fn copy_and_rename_credential_file(
 
     // 验证源文件存在
     if !source.exists() {
-        return Err(format!("凭证文件不存在: {}", expanded_source));
+        return Err(format!("凭证文件不存在: {expanded_source}"));
     }
 
     // 生成新的文件名：{provider_type}_{uuid}_{timestamp}.json
@@ -84,9 +84,9 @@ fn copy_and_rename_credential_file(
 
     // 对于 Kiro 凭证，需要合并 clientIdHash 文件中的 client_id/client_secret
     if provider_type == "kiro" {
-        let content = fs::read_to_string(source).map_err(|e| format!("读取凭证文件失败: {}", e))?;
+        let content = fs::read_to_string(source).map_err(|e| format!("读取凭证文件失败: {e}"))?;
         let mut creds: serde_json::Value =
-            serde_json::from_str(&content).map_err(|e| format!("解析凭证文件失败: {}", e))?;
+            serde_json::from_str(&content).map_err(|e| format!("解析凭证文件失败: {e}"))?;
 
         // 检测 refreshToken 是否被截断（仅记录警告，不阻止添加）
         // 正常的 refreshToken 长度应该在 500+ 字符，如果小于 100 字符则可能被截断
@@ -126,7 +126,7 @@ fn copy_and_rename_credential_file(
 
         // 方式1：如果有 clientIdHash，读取对应文件
         if let Some(hash) = creds.get("clientIdHash").and_then(|v| v.as_str()) {
-            let hash_file_path = aws_sso_cache_dir.join(format!("{}.json", hash));
+            let hash_file_path = aws_sso_cache_dir.join(format!("{hash}.json"));
 
             if hash_file_path.exists() {
                 if let Ok(hash_content) = fs::read_to_string(&hash_file_path) {
@@ -213,11 +213,11 @@ fn copy_and_rename_credential_file(
 
         // 写入合并后的凭证到副本文件
         let merged_content =
-            serde_json::to_string_pretty(&creds).map_err(|e| format!("序列化凭证失败: {}", e))?;
-        fs::write(&target_path, merged_content).map_err(|e| format!("写入凭证文件失败: {}", e))?;
+            serde_json::to_string_pretty(&creds).map_err(|e| format!("序列化凭证失败: {e}"))?;
+        fs::write(&target_path, merged_content).map_err(|e| format!("写入凭证文件失败: {e}"))?;
     } else {
         // 其他类型直接复制
-        fs::copy(source, &target_path).map_err(|e| format!("复制凭证文件失败: {}", e))?;
+        fs::copy(source, &target_path).map_err(|e| format!("复制凭证文件失败: {e}"))?;
     }
 
     // 返回新的文件路径
@@ -235,7 +235,7 @@ fn cleanup_credential_file(file_path: &str) -> Result<(), String> {
                 if canonical_path.starts_with(canonical_dir) {
                     if let Err(e) = fs::remove_file(&canonical_path) {
                         // 只记录警告，不中断删除过程
-                        println!("Warning: Failed to delete credential file: {}", e);
+                        println!("Warning: Failed to delete credential file: {e}");
                     }
                 }
             }
@@ -322,7 +322,7 @@ pub fn update_provider_pool_credential(
         let conn = db.lock().map_err(|e| e.to_string())?;
         let current_credential = ProviderPoolDao::get_by_uuid(&conn, &uuid)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("凭证不存在: {}", uuid))?;
+            .ok_or_else(|| format!("凭证不存在: {uuid}"))?;
 
         // 根据凭证类型复制新文件
         let new_stored_path = match &current_credential.credential {
@@ -413,7 +413,7 @@ pub fn update_provider_pool_credential(
         let conn = db.lock().map_err(|e| e.to_string())?;
         let mut current_credential = ProviderPoolDao::get_by_uuid(&conn, &uuid)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("凭证不存在: {}", uuid))?;
+            .ok_or_else(|| format!("凭证不存在: {uuid}"))?;
 
         // 更新 api_key 和 base_url
         match &mut current_credential.credential {
@@ -647,7 +647,7 @@ pub fn add_kiro_oauth_credential(
 fn create_kiro_credential_from_json(json_content: &str) -> Result<String, String> {
     // 验证 JSON 格式
     let creds: serde_json::Value =
-        serde_json::from_str(json_content).map_err(|e| format!("JSON 格式无效: {}", e))?;
+        serde_json::from_str(json_content).map_err(|e| format!("JSON 格式无效: {e}"))?;
 
     // 验证必要字段
     if creds.get("refreshToken").is_none() {
@@ -699,7 +699,7 @@ fn create_kiro_credential_from_json(json_content: &str) -> Result<String, String
 
         // 方式1：如果有 clientIdHash，读取对应文件
         if let Some(hash) = merged_creds.get("clientIdHash").and_then(|v| v.as_str()) {
-            let hash_file_path = aws_sso_cache_dir.join(format!("{}.json", hash));
+            let hash_file_path = aws_sso_cache_dir.join(format!("{hash}.json"));
 
             if hash_file_path.exists() {
                 if let Ok(hash_content) = fs::read_to_string(&hash_file_path) {
@@ -784,9 +784,9 @@ fn create_kiro_credential_from_json(json_content: &str) -> Result<String, String
     }
 
     // 写入凭证文件
-    let merged_content = serde_json::to_string_pretty(&merged_creds)
-        .map_err(|e| format!("序列化凭证失败: {}", e))?;
-    fs::write(&target_path, merged_content).map_err(|e| format!("写入凭证文件失败: {}", e))?;
+    let merged_content =
+        serde_json::to_string_pretty(&merged_creds).map_err(|e| format!("序列化凭证失败: {e}"))?;
+    fs::write(&target_path, merged_content).map_err(|e| format!("写入凭证文件失败: {e}"))?;
 
     tracing::info!("[KIRO] 凭证文件已创建: {:?}", target_path);
 
@@ -1061,7 +1061,7 @@ pub async fn debug_kiro_credentials() -> Result<String, String> {
 
             // P0 安全修复：不再输出敏感信息（clientIdHash、token 前缀等）
             let detected_method = provider.detect_auth_method();
-            result.push_str(&format!("🎯 检测到的认证方式: {}\n", detected_method));
+            result.push_str(&format!("🎯 检测到的认证方式: {detected_method}\n"));
 
             result.push_str("\n🚀 尝试刷新 token...\n");
             match provider.refresh_token().await {
@@ -1070,12 +1070,12 @@ pub async fn debug_kiro_credentials() -> Result<String, String> {
                     // 不再输出 token 前缀
                 }
                 Err(e) => {
-                    result.push_str(&format!("❌ Token 刷新失败: {}\n", e));
+                    result.push_str(&format!("❌ Token 刷新失败: {e}\n"));
                 }
             }
         }
         Err(e) => {
-            result.push_str(&format!("❌ 凭证加载失败: {}\n", e));
+            result.push_str(&format!("❌ 凭证加载失败: {e}\n"));
         }
     }
 
@@ -1139,12 +1139,12 @@ pub async fn test_user_credentials() -> Result<String, String> {
                         json.get("clientIdHash").and_then(|v| v.as_str()).is_some();
                     let region = json.get("region").and_then(|v| v.as_str());
 
-                    result.push_str(&format!("🔑 有 accessToken: {}\n", has_access_token));
-                    result.push_str(&format!("🔄 有 refreshToken: {}\n", has_refresh_token));
-                    result.push_str(&format!("📄 authMethod: {:?}\n", auth_method));
+                    result.push_str(&format!("🔑 有 accessToken: {has_access_token}\n"));
+                    result.push_str(&format!("🔄 有 refreshToken: {has_refresh_token}\n"));
+                    result.push_str(&format!("📄 authMethod: {auth_method:?}\n"));
                     // P0 安全修复：不输出 clientIdHash 值
-                    result.push_str(&format!("🏷️ 有 clientIdHash: {}\n", has_client_id_hash));
-                    result.push_str(&format!("🌍 region: {:?}\n", region));
+                    result.push_str(&format!("🏷️ 有 clientIdHash: {has_client_id_hash}\n"));
+                    result.push_str(&format!("🌍 region: {region:?}\n"));
 
                     // 使用 KiroProvider 测试加载
                     result.push_str("\n🔧 使用 KiroProvider 测试加载...\n");
@@ -1172,7 +1172,7 @@ pub async fn test_user_credentials() -> Result<String, String> {
                             ));
 
                             let detected_method = provider.detect_auth_method();
-                            result.push_str(&format!("🎯 检测到的认证方式: {}\n", detected_method));
+                            result.push_str(&format!("🎯 检测到的认证方式: {detected_method}\n"));
 
                             result.push_str("\n🚀 尝试刷新 token...\n");
                             match provider.refresh_token().await {
@@ -1184,22 +1184,22 @@ pub async fn test_user_credentials() -> Result<String, String> {
                                     // P0 安全修复：不输出 token 前缀
                                 }
                                 Err(e) => {
-                                    result.push_str(&format!("❌ Token 刷新失败: {}\n", e));
+                                    result.push_str(&format!("❌ Token 刷新失败: {e}\n"));
                                 }
                             }
                         }
                         Err(e) => {
-                            result.push_str(&format!("❌ KiroProvider 加载失败: {}\n", e));
+                            result.push_str(&format!("❌ KiroProvider 加载失败: {e}\n"));
                         }
                     }
                 }
                 Err(e) => {
-                    result.push_str(&format!("❌ JSON 格式无效: {}\n", e));
+                    result.push_str(&format!("❌ JSON 格式无效: {e}\n"));
                 }
             }
         }
         Err(e) => {
-            result.push_str(&format!("❌ 无法读取凭证文件: {}\n", e));
+            result.push_str(&format!("❌ 无法读取凭证文件: {e}\n"));
         }
     }
 
@@ -1267,7 +1267,7 @@ pub async fn get_antigravity_auth_url_and_wait(
     let (auth_url, wait_future) =
         antigravity::start_oauth_server_and_get_url(skip_project_id_fetch.unwrap_or(false))
             .await
-            .map_err(|e| format!("启动 OAuth 服务器失败: {}", e))?;
+            .map_err(|e| format!("启动 OAuth 服务器失败: {e}"))?;
 
     tracing::info!("[Antigravity OAuth] 授权 URL: {}", auth_url);
 
@@ -1328,7 +1328,7 @@ pub async fn start_antigravity_oauth_login(
     // 启动 OAuth 登录
     let result = antigravity::start_oauth_login(skip_project_id_fetch.unwrap_or(false))
         .await
-        .map_err(|e| format!("Antigravity OAuth 登录失败: {}", e))?;
+        .map_err(|e| format!("Antigravity OAuth 登录失败: {e}"))?;
 
     tracing::info!(
         "[Antigravity OAuth] 登录成功，凭证保存到: {}",
@@ -1383,7 +1383,7 @@ pub async fn get_codex_auth_url_and_wait(
     // 启动服务器并获取授权 URL
     let (auth_url, wait_future) = codex::start_codex_oauth_server_and_get_url()
         .await
-        .map_err(|e| format!("启动 OAuth 服务器失败: {}", e))?;
+        .map_err(|e| format!("启动 OAuth 服务器失败: {e}"))?;
 
     tracing::info!("[Codex OAuth] 授权 URL: {}", auth_url);
 
@@ -1437,7 +1437,7 @@ pub async fn start_codex_oauth_login(
     // 启动 OAuth 登录
     let result = codex::start_codex_oauth_login()
         .await
-        .map_err(|e| format!("Codex OAuth 登录失败: {}", e))?;
+        .map_err(|e| format!("Codex OAuth 登录失败: {e}"))?;
 
     tracing::info!(
         "[Codex OAuth] 登录成功，凭证保存到: {}",
@@ -1499,7 +1499,7 @@ pub async fn get_claude_oauth_auth_url_and_wait(
 
     // 生成授权参数
     let params = claude_oauth::generate_claude_oauth_params()
-        .map_err(|e| format!("生成授权参数失败: {}", e))?;
+        .map_err(|e| format!("生成授权参数失败: {e}"))?;
 
     tracing::info!("[Claude OAuth] 授权 URL: {}", params.auth_url);
 
@@ -1546,7 +1546,7 @@ pub async fn exchange_claude_oauth_code(
         &state,
     )
     .await
-    .map_err(|e| format!("Claude OAuth Token 交换失败: {}", e))?;
+    .map_err(|e| format!("Claude OAuth Token 交换失败: {e}"))?;
 
     tracing::info!(
         "[Claude OAuth] 登录成功，凭证保存到: {}",
@@ -1587,7 +1587,7 @@ pub async fn start_claude_oauth_login(
     // 生成授权参数并打开浏览器
     let params = claude_oauth::start_claude_oauth_login()
         .await
-        .map_err(|e| format!("Claude OAuth 登录失败: {}", e))?;
+        .map_err(|e| format!("Claude OAuth 登录失败: {e}"))?;
 
     Ok(ClaudeOAuthParamsResponse {
         auth_url: params.auth_url,
@@ -1631,7 +1631,7 @@ pub async fn claude_oauth_with_cookie(
     // 执行 Cookie 自动授权
     let result = claude_oauth::oauth_with_cookie(&session_key, is_setup)
         .await
-        .map_err(|e| format!("Claude Cookie 授权失败: {}", e))?;
+        .map_err(|e| format!("Claude Cookie 授权失败: {e}"))?;
 
     tracing::info!(
         "[Claude OAuth] Cookie 授权成功，凭证保存到: {}",
@@ -1688,7 +1688,7 @@ pub async fn get_kiro_credential_fingerprint(
         let conn = db.lock().map_err(|e| e.to_string())?;
         let credential = ProviderPoolDao::get_by_uuid(&conn, &uuid)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("凭证不存在: {}", uuid))?;
+            .ok_or_else(|| format!("凭证不存在: {uuid}"))?;
 
         // 检查是否为 Kiro 凭证
         match &credential.credential {
@@ -1702,7 +1702,7 @@ pub async fn get_kiro_credential_fingerprint(
     provider
         .load_credentials_from_path(&creds_file_path)
         .await
-        .map_err(|e| format!("加载凭证失败: {}", e))?;
+        .map_err(|e| format!("加载凭证失败: {e}"))?;
 
     // 确定指纹来源
     let (source, profile_arn, client_id) = if provider.credentials.profile_arn.is_some() {
@@ -1800,7 +1800,7 @@ pub async fn get_gemini_auth_url_and_wait(
 
     // 返回错误，让前端知道需要用户手动输入授权码
     // 这不是真正的错误，只是流程需要用户交互
-    Err(format!("AUTH_URL:{}", auth_url))
+    Err(format!("AUTH_URL:{auth_url}"))
 }
 
 /// 用 Gemini 授权码交换 Token 并添加凭证
@@ -1836,7 +1836,7 @@ pub async fn exchange_gemini_code(
     // 交换 token 并创建凭证
     let result = gemini::exchange_gemini_code_and_create_credentials(&code, &code_verifier)
         .await
-        .map_err(|e| format!("交换授权码失败: {}", e))?;
+        .map_err(|e| format!("交换授权码失败: {e}"))?;
 
     tracing::info!(
         "[Gemini OAuth] 登录成功，凭证保存到: {}",
@@ -1883,7 +1883,7 @@ pub async fn start_gemini_oauth_login(
     // 启动 OAuth 登录
     let result = gemini::start_gemini_oauth_login()
         .await
-        .map_err(|e| format!("Gemini OAuth 登录失败: {}", e))?;
+        .map_err(|e| format!("Gemini OAuth 登录失败: {e}"))?;
 
     tracing::info!(
         "[Gemini OAuth] 登录成功，凭证保存到: {}",
@@ -1976,7 +1976,7 @@ pub async fn start_kiro_builder_id_login(
     region: Option<String>,
 ) -> Result<KiroBuilderIdLoginResponse, String> {
     let region = region.unwrap_or_else(|| "us-east-1".to_string());
-    let oidc_base = format!("https://oidc.{}.amazonaws.com", region);
+    let oidc_base = format!("https://oidc.{region}.amazonaws.com");
     let start_url = "https://view.awsapps.com/start";
     let scopes = vec![
         "codewhisperer:completions",
@@ -2001,12 +2001,12 @@ pub async fn start_kiro_builder_id_login(
     });
 
     let reg_res = client
-        .post(format!("{}/client/register", oidc_base))
+        .post(format!("{oidc_base}/client/register"))
         .header("Content-Type", "application/json")
         .json(&reg_body)
         .send()
         .await
-        .map_err(|e| format!("注册客户端请求失败: {}", e))?;
+        .map_err(|e| format!("注册客户端请求失败: {e}"))?;
 
     if !reg_res.status().is_success() {
         let err_text = reg_res.text().await.unwrap_or_default();
@@ -2016,14 +2016,14 @@ pub async fn start_kiro_builder_id_login(
             verification_uri: None,
             expires_in: None,
             interval: None,
-            error: Some(format!("注册客户端失败: {}", err_text)),
+            error: Some(format!("注册客户端失败: {err_text}")),
         });
     }
 
     let reg_data: serde_json::Value = reg_res
         .json()
         .await
-        .map_err(|e| format!("解析注册响应失败: {}", e))?;
+        .map_err(|e| format!("解析注册响应失败: {e}"))?;
 
     let client_id = reg_data["clientId"]
         .as_str()
@@ -2048,12 +2048,12 @@ pub async fn start_kiro_builder_id_login(
     });
 
     let auth_res = client
-        .post(format!("{}/device_authorization", oidc_base))
+        .post(format!("{oidc_base}/device_authorization"))
         .header("Content-Type", "application/json")
         .json(&auth_body)
         .send()
         .await
-        .map_err(|e| format!("设备授权请求失败: {}", e))?;
+        .map_err(|e| format!("设备授权请求失败: {e}"))?;
 
     if !auth_res.status().is_success() {
         let err_text = auth_res.text().await.unwrap_or_default();
@@ -2063,14 +2063,14 @@ pub async fn start_kiro_builder_id_login(
             verification_uri: None,
             expires_in: None,
             interval: None,
-            error: Some(format!("设备授权失败: {}", err_text)),
+            error: Some(format!("设备授权失败: {err_text}")),
         });
     }
 
     let auth_data: serde_json::Value = auth_res
         .json()
         .await
-        .map_err(|e| format!("解析授权响应失败: {}", e))?;
+        .map_err(|e| format!("解析授权响应失败: {e}"))?;
 
     let device_code = auth_data["deviceCode"]
         .as_str()
@@ -2160,12 +2160,12 @@ pub async fn poll_kiro_builder_id_auth() -> Result<KiroBuilderIdPollResponse, St
     });
 
     let token_res = client
-        .post(format!("{}/token", oidc_base))
+        .post(format!("{oidc_base}/token"))
         .header("Content-Type", "application/json")
         .json(&token_body)
         .send()
         .await
-        .map_err(|e| format!("Token 请求失败: {}", e))?;
+        .map_err(|e| format!("Token 请求失败: {e}"))?;
 
     let status = token_res.status();
 
@@ -2174,7 +2174,7 @@ pub async fn poll_kiro_builder_id_auth() -> Result<KiroBuilderIdPollResponse, St
         let token_data: serde_json::Value = token_res
             .json()
             .await
-            .map_err(|e| format!("解析 Token 响应失败: {}", e))?;
+            .map_err(|e| format!("解析 Token 响应失败: {e}"))?;
 
         tracing::info!("[Kiro Builder ID] 授权成功！");
 
@@ -2220,7 +2220,7 @@ pub async fn poll_kiro_builder_id_auth() -> Result<KiroBuilderIdPollResponse, St
         let err_data: serde_json::Value = token_res
             .json()
             .await
-            .map_err(|e| format!("解析错误响应失败: {}", e))?;
+            .map_err(|e| format!("解析错误响应失败: {e}"))?;
 
         let error = err_data["error"].as_str().unwrap_or("unknown");
 
@@ -2282,7 +2282,7 @@ pub async fn poll_kiro_builder_id_auth() -> Result<KiroBuilderIdPollResponse, St
                     success: false,
                     completed: false,
                     status: None,
-                    error: Some(format!("授权错误: {}", error)),
+                    error: Some(format!("授权错误: {error}")),
                 })
             }
         }
@@ -2291,7 +2291,7 @@ pub async fn poll_kiro_builder_id_auth() -> Result<KiroBuilderIdPollResponse, St
             success: false,
             completed: false,
             status: None,
-            error: Some(format!("未知响应: {}", status)),
+            error: Some(format!("未知响应: {status}")),
         })
     }
 }
@@ -2332,7 +2332,7 @@ pub async fn add_kiro_from_builder_id_auth(
 
     // 将凭证 JSON 转换为字符串
     let json_content =
-        serde_json::to_string_pretty(&creds_json).map_err(|e| format!("序列化凭证失败: {}", e))?;
+        serde_json::to_string_pretty(&creds_json).map_err(|e| format!("序列化凭证失败: {e}"))?;
 
     // 使用现有的 create_kiro_credential_from_json 函数创建凭证文件
     let stored_file_path = create_kiro_credential_from_json(&json_content)?;
@@ -2449,7 +2449,7 @@ pub async fn start_kiro_social_auth_login(
                 success: false,
                 login_url: None,
                 state: None,
-                error: Some(format!("不支持的登录提供商: {}", provider)),
+                error: Some(format!("不支持的登录提供商: {provider}")),
             });
         }
     };
@@ -2558,12 +2558,12 @@ pub async fn exchange_kiro_social_auth_token(
     });
 
     let token_res = client
-        .post(format!("{}/oauth/token", KIRO_AUTH_ENDPOINT))
+        .post(format!("{KIRO_AUTH_ENDPOINT}/oauth/token"))
         .header("Content-Type", "application/json")
         .json(&token_body)
         .send()
         .await
-        .map_err(|e| format!("Token 交换请求失败: {}", e))?;
+        .map_err(|e| format!("Token 交换请求失败: {e}"))?;
 
     if !token_res.status().is_success() {
         let err_text = token_res.text().await.unwrap_or_default();
@@ -2574,14 +2574,14 @@ pub async fn exchange_kiro_social_auth_token(
         }
         return Ok(KiroSocialAuthTokenResponse {
             success: false,
-            error: Some(format!("Token 交换失败: {}", err_text)),
+            error: Some(format!("Token 交换失败: {err_text}")),
         });
     }
 
     let token_data: serde_json::Value = token_res
         .json()
         .await
-        .map_err(|e| format!("解析 Token 响应失败: {}", e))?;
+        .map_err(|e| format!("解析 Token 响应失败: {e}"))?;
 
     tracing::info!("[Kiro Social Auth] Token 交换成功!");
 
@@ -2917,7 +2917,7 @@ pub async fn install_playwright(app: tauri::AppHandle) -> Result<PlaywrightStatu
                 "找不到 Playwright 脚本目录。已检查路径:\n{}",
                 possible_paths
                     .iter()
-                    .map(|p| format!("  - {:?}", p))
+                    .map(|p| format!("  - {p:?}"))
                     .collect::<Vec<_>>()
                     .join("\n")
             );
@@ -2998,7 +2998,7 @@ pub async fn install_playwright(app: tauri::AppHandle) -> Result<PlaywrightStatu
                     return Err(error);
                 }
                 Err(e) => {
-                    let error = format!("npm install 执行失败: {}", e);
+                    let error = format!("npm install 执行失败: {e}");
                     tracing::error!("[Playwright] {}", error);
                     let _ = app.emit(
                         "playwright-install-progress",
@@ -3013,7 +3013,7 @@ pub async fn install_playwright(app: tauri::AppHandle) -> Result<PlaywrightStatu
             }
         }
         Err(e) => {
-            let error = format!("无法启动 npm: {}。请确保已安装 Node.js", e);
+            let error = format!("无法启动 npm: {e}。请确保已安装 Node.js");
             tracing::error!("[Playwright] {}", error);
             let _ = app.emit(
                 "playwright-install-progress",
@@ -3099,7 +3099,7 @@ pub async fn install_playwright(app: tauri::AppHandle) -> Result<PlaywrightStatu
                     } else {
                         format!("退出码: {:?}", s.code())
                     };
-                    let error = format!("Chromium 安装失败: {}", output);
+                    let error = format!("Chromium 安装失败: {output}");
                     tracing::error!("[Playwright] {}", error);
                     let _ = app.emit(
                         "playwright-install-progress",
@@ -3112,7 +3112,7 @@ pub async fn install_playwright(app: tauri::AppHandle) -> Result<PlaywrightStatu
                     return Err(error);
                 }
                 Err(e) => {
-                    let error = format!("Chromium 安装执行失败: {}", e);
+                    let error = format!("Chromium 安装执行失败: {e}");
                     tracing::error!("[Playwright] {}", error);
                     let _ = app.emit(
                         "playwright-install-progress",
@@ -3127,7 +3127,7 @@ pub async fn install_playwright(app: tauri::AppHandle) -> Result<PlaywrightStatu
             }
         }
         Err(e) => {
-            let error = format!("无法启动 npx: {}", e);
+            let error = format!("无法启动 npx: {e}");
             tracing::error!("[Playwright] {}", error);
             let _ = app.emit(
                 "playwright-install-progress",
@@ -3244,7 +3244,7 @@ pub async fn start_kiro_playwright_login(
         "github" => "Github",
         "builderid" => "BuilderId",
         _ => {
-            return Err(format!("不支持的登录提供商: {}", provider));
+            return Err(format!("不支持的登录提供商: {provider}"));
         }
     };
 
@@ -3279,7 +3279,7 @@ pub async fn start_kiro_playwright_login(
     // 获取脚本路径
     let script_path = get_playwright_script_path();
     if !script_path.exists() {
-        return Err(format!("Playwright 登录脚本不存在: {:?}", script_path));
+        return Err(format!("Playwright 登录脚本不存在: {script_path:?}"));
     }
 
     tracing::info!("[Playwright Login] 脚本路径: {:?}", script_path);
@@ -3292,7 +3292,7 @@ pub async fn start_kiro_playwright_login(
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|e| format!("启动 Playwright 进程失败: {}", e))?;
+        .map_err(|e| format!("启动 Playwright 进程失败: {e}"))?;
 
     let stdin = child.stdin.take().ok_or("无法获取 stdin")?;
     let stdout = child.stdout.take().ok_or("无法获取 stdout")?;
@@ -3311,10 +3311,10 @@ pub async fn start_kiro_playwright_login(
     reader
         .read_line(&mut line)
         .await
-        .map_err(|e| format!("读取就绪信号失败: {}", e))?;
+        .map_err(|e| format!("读取就绪信号失败: {e}"))?;
 
     let ready_response: serde_json::Value =
-        serde_json::from_str(&line.trim()).map_err(|e| format!("解析就绪信号失败: {}", e))?;
+        serde_json::from_str(line.trim()).map_err(|e| format!("解析就绪信号失败: {e}"))?;
 
     if ready_response.get("action").and_then(|v| v.as_str()) != Some("ready") {
         return Err("Playwright 脚本未就绪".to_string());
@@ -3331,20 +3331,20 @@ pub async fn start_kiro_playwright_login(
     });
 
     let request_str =
-        serde_json::to_string(&login_request).map_err(|e| format!("序列化请求失败: {}", e))?;
+        serde_json::to_string(&login_request).map_err(|e| format!("序列化请求失败: {e}"))?;
 
     stdin
         .write_all(request_str.as_bytes())
         .await
-        .map_err(|e| format!("发送请求失败: {}", e))?;
+        .map_err(|e| format!("发送请求失败: {e}"))?;
     stdin
         .write_all(b"\n")
         .await
-        .map_err(|e| format!("发送换行失败: {}", e))?;
+        .map_err(|e| format!("发送换行失败: {e}"))?;
     stdin
         .flush()
         .await
-        .map_err(|e| format!("刷新 stdin 失败: {}", e))?;
+        .map_err(|e| format!("刷新 stdin 失败: {e}"))?;
 
     tracing::info!("[Playwright Login] 已发送登录请求");
 
@@ -3418,7 +3418,7 @@ pub async fn start_kiro_playwright_login(
                                         *process_guard = None;
                                     }
 
-                                    return Err(format!("Playwright 登录失败: {}", error));
+                                    return Err(format!("Playwright 登录失败: {error}"));
                                 }
                                 break;
                             }
@@ -3435,7 +3435,7 @@ pub async fn start_kiro_playwright_login(
                                     *process_guard = None;
                                 }
 
-                                return Err(format!("Playwright 错误: {}", error));
+                                return Err(format!("Playwright 错误: {error}"));
                             }
                             _ => {}
                         }
@@ -3451,7 +3451,7 @@ pub async fn start_kiro_playwright_login(
                     let mut process_guard = PLAYWRIGHT_LOGIN_PROCESS.write().await;
                     *process_guard = None;
                 }
-                return Err(format!("读取响应失败: {}", e));
+                return Err(format!("读取响应失败: {e}"));
             }
         }
     }
@@ -3483,22 +3483,22 @@ pub async fn start_kiro_playwright_login(
     });
 
     let token_res = client
-        .post(format!("{}/oauth/token", KIRO_AUTH_ENDPOINT))
+        .post(format!("{KIRO_AUTH_ENDPOINT}/oauth/token"))
         .header("Content-Type", "application/json")
         .json(&token_body)
         .send()
         .await
-        .map_err(|e| format!("Token 交换请求失败: {}", e))?;
+        .map_err(|e| format!("Token 交换请求失败: {e}"))?;
 
     if !token_res.status().is_success() {
         let err_text = token_res.text().await.unwrap_or_default();
-        return Err(format!("Token 交换失败: {}", err_text));
+        return Err(format!("Token 交换失败: {err_text}"));
     }
 
     let token_data: serde_json::Value = token_res
         .json()
         .await
-        .map_err(|e| format!("解析 Token 响应失败: {}", e))?;
+        .map_err(|e| format!("解析 Token 响应失败: {e}"))?;
 
     tracing::info!("[Playwright Login] Token 交换成功!");
 
@@ -3524,7 +3524,7 @@ pub async fn start_kiro_playwright_login(
 
     // 将凭证 JSON 转换为字符串并创建凭证文件
     let json_content =
-        serde_json::to_string_pretty(&creds_json).map_err(|e| format!("序列化凭证失败: {}", e))?;
+        serde_json::to_string_pretty(&creds_json).map_err(|e| format!("序列化凭证失败: {e}"))?;
 
     let stored_file_path = create_kiro_credential_from_json(&json_content)?;
 
@@ -3598,7 +3598,7 @@ pub async fn start_kiro_social_auth_callback_server(app: tauri::AppHandle) -> Re
     // 尝试绑定端口
     let listener = TcpListener::bind("127.0.0.1:19823")
         .await
-        .map_err(|e| format!("无法启动回调服务器: {}", e))?;
+        .map_err(|e| format!("无法启动回调服务器: {e}"))?;
 
     tracing::info!("[Kiro Social Auth] 回调服务器已启动在 127.0.0.1:19823");
 
@@ -3717,16 +3717,14 @@ mod playwright_tests {
         // 路径应该包含 ms-playwright
         assert!(
             cache_dir.to_string_lossy().contains("ms-playwright"),
-            "缓存目录应包含 ms-playwright: {:?}",
-            cache_dir
+            "缓存目录应包含 ms-playwright: {cache_dir:?}"
         );
 
         // 路径应该是绝对路径或相对于 home 目录
         #[cfg(target_os = "macos")]
         assert!(
             cache_dir.to_string_lossy().contains("Library/Caches"),
-            "macOS 缓存目录应在 Library/Caches 下: {:?}",
-            cache_dir
+            "macOS 缓存目录应在 Library/Caches 下: {cache_dir:?}"
         );
 
         #[cfg(target_os = "windows")]
@@ -3762,8 +3760,7 @@ mod playwright_tests {
                     path.contains("chromium")
                         || path.contains("Chromium")
                         || path.contains("chrome"),
-                    "路径应包含 chromium/chrome: {}",
-                    path
+                    "路径应包含 chromium/chrome: {path}"
                 );
             }
             None => {

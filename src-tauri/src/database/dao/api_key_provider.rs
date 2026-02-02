@@ -69,7 +69,7 @@ impl std::str::FromStr for ApiProviderType {
             "ollama" => Ok(ApiProviderType::Ollama),
             "new-api" => Ok(ApiProviderType::NewApi),
             "gateway" => Ok(ApiProviderType::Gateway),
-            _ => Err(format!("Invalid provider type: {}", s)),
+            _ => Err(format!("Invalid provider type: {s}")),
         }
     }
 }
@@ -113,7 +113,7 @@ impl std::str::FromStr for ProviderGroup {
             "local" => Ok(ProviderGroup::Local),
             "specialized" => Ok(ProviderGroup::Specialized),
             "custom" => Ok(ProviderGroup::Custom),
-            _ => Err(format!("Invalid provider group: {}", s)),
+            _ => Err(format!("Invalid provider group: {s}")),
         }
     }
 }

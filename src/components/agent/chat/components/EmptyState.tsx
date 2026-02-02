@@ -653,6 +653,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
           ))}
         </TabsContainer>
 
+        {/* 输入卡片 */}
         <InputCard>
           <StyledTextarea
             value={input}

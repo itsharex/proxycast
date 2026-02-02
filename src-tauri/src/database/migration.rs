@@ -26,7 +26,7 @@ pub fn migrate_from_json(conn: &Connection) -> Result<(), String> {
         let backup_path = config_path.with_file_name("config.json.backup");
         if !backup_path.exists() {
             std::fs::copy(&config_path, &backup_path)
-                .map_err(|e| format!("备份旧配置失败: {}", e))?;
+                .map_err(|e| format!("备份旧配置失败: {e}"))?;
         }
 
         return Err(
@@ -80,7 +80,7 @@ pub fn migrate_api_keys_to_pool(conn: &Connection) -> Result<usize, String> {
              JOIN api_key_providers p ON k.provider_id = p.id
              ORDER BY k.created_at ASC",
         )
-        .map_err(|e| format!("准备查询语句失败: {}", e))?;
+        .map_err(|e| format!("准备查询语句失败: {e}"))?;
 
     let rows = stmt
         .query_map([], |row| {
@@ -99,13 +99,13 @@ pub fn migrate_api_keys_to_pool(conn: &Connection) -> Result<usize, String> {
                 provider_name: row.get(11)?,
             })
         })
-        .map_err(|e| format!("查询 API Keys 失败: {}", e))?;
+        .map_err(|e| format!("查询 API Keys 失败: {e}"))?;
 
     let mut migrated_count = 0;
     let now = chrono::Utc::now().timestamp();
 
     for row_result in rows {
-        let row = row_result.map_err(|e| format!("读取行数据失败: {}", e))?;
+        let row = row_result.map_err(|e| format!("读取行数据失败: {e}"))?;
 
         // 检查是否已存在相同的凭证（通过 api_key_encrypted 判断）
         let exists: bool = conn
@@ -228,7 +228,7 @@ pub fn migrate_api_keys_to_pool(conn: &Connection) -> Result<usize, String> {
                 Option::<String>::None,  // proxy_url
             ],
         )
-        .map_err(|e| format!("插入凭证失败: {}", e))?;
+        .map_err(|e| format!("插入凭证失败: {e}"))?;
 
         tracing::info!(
             "[迁移] 已迁移 API Key: {} -> {} (provider_type: {})",
@@ -245,7 +245,7 @@ pub fn migrate_api_keys_to_pool(conn: &Connection) -> Result<usize, String> {
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('migrated_api_keys_to_pool', 'true')",
         [],
     )
-    .map_err(|e| format!("标记迁移完成失败: {}", e))?;
+    .map_err(|e| format!("标记迁移完成失败: {e}"))?;
 
     tracing::info!("[迁移] API Keys 迁移完成，共迁移 {} 条记录", migrated_count);
 
@@ -349,7 +349,7 @@ pub fn migrate_provider_ids(conn: &Connection) -> Result<usize, String> {
                     "UPDATE api_keys SET provider_id = ?1 WHERE provider_id = ?2",
                     params![new_id, old_id],
                 )
-                .map_err(|e| format!("迁移 API Keys 失败: {}", e))?;
+                .map_err(|e| format!("迁移 API Keys 失败: {e}"))?;
 
                 tracing::info!("[迁移] 已将 {} 的 API Keys 迁移到 {}", old_id, new_id);
             } else {
@@ -358,13 +358,13 @@ pub fn migrate_provider_ids(conn: &Connection) -> Result<usize, String> {
                     "UPDATE api_key_providers SET id = ?1 WHERE id = ?2",
                     params![new_id, old_id],
                 )
-                .map_err(|e| format!("更新 Provider ID 失败: {}", e))?;
+                .map_err(|e| format!("更新 Provider ID 失败: {e}"))?;
 
                 conn.execute(
                     "UPDATE api_keys SET provider_id = ?1 WHERE provider_id = ?2",
                     params![new_id, old_id],
                 )
-                .map_err(|e| format!("更新 API Keys provider_id 失败: {}", e))?;
+                .map_err(|e| format!("更新 API Keys provider_id 失败: {e}"))?;
 
                 tracing::info!("[迁移] 已将 Provider {} 重命名为 {}", old_id, new_id);
                 migrated_count += 1;
@@ -377,7 +377,7 @@ pub fn migrate_provider_ids(conn: &Connection) -> Result<usize, String> {
             "DELETE FROM api_key_providers WHERE id = ?1",
             params![old_id],
         )
-        .map_err(|e| format!("删除旧 Provider 失败: {}", e))?;
+        .map_err(|e| format!("删除旧 Provider 失败: {e}"))?;
 
         tracing::info!("[迁移] 已删除旧 Provider: {}", old_id);
         migrated_count += 1;
@@ -388,7 +388,7 @@ pub fn migrate_provider_ids(conn: &Connection) -> Result<usize, String> {
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('migrated_provider_ids_v1', 'true')",
         [],
     )
-    .map_err(|e| format!("标记迁移完成失败: {}", e))?;
+    .map_err(|e| format!("标记迁移完成失败: {e}"))?;
 
     if migrated_count > 0 {
         tracing::info!(
@@ -440,7 +440,7 @@ pub fn cleanup_legacy_api_key_credentials(conn: &Connection) -> Result<usize, St
             "INSERT OR REPLACE INTO settings (key, value) VALUES ('cleaned_legacy_api_key_credentials', 'true')",
             [],
         )
-        .map_err(|e| format!("标记清理完成失败: {}", e))?;
+        .map_err(|e| format!("标记清理完成失败: {e}"))?;
         return Ok(0);
     }
 
@@ -452,7 +452,7 @@ pub fn cleanup_legacy_api_key_credentials(conn: &Connection) -> Result<usize, St
              WHERE credential_data LIKE '%\"type\":\"openai_key\"%'
                 OR credential_data LIKE '%\"type\":\"claude_key\"%'",
         )
-        .map_err(|e| format!("准备查询语句失败: {}", e))?;
+        .map_err(|e| format!("准备查询语句失败: {e}"))?;
 
     let rows = stmt
         .query_map([], |row| {
@@ -462,7 +462,7 @@ pub fn cleanup_legacy_api_key_credentials(conn: &Connection) -> Result<usize, St
                 row.get::<_, String>(2)?,
             ))
         })
-        .map_err(|e| format!("查询旧凭证失败: {}", e))?;
+        .map_err(|e| format!("查询旧凭证失败: {e}"))?;
 
     for row_result in rows {
         if let Ok((uuid, name, provider_type)) = row_result {
@@ -483,14 +483,14 @@ pub fn cleanup_legacy_api_key_credentials(conn: &Connection) -> Result<usize, St
                 OR credential_data LIKE '%\"type\":\"claude_key\"%'",
             [],
         )
-        .map_err(|e| format!("删除旧凭证失败: {}", e))?;
+        .map_err(|e| format!("删除旧凭证失败: {e}"))?;
 
     // 标记清理完成
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('cleaned_legacy_api_key_credentials', 'true')",
         [],
     )
-    .map_err(|e| format!("标记清理完成失败: {}", e))?;
+    .map_err(|e| format!("标记清理完成失败: {e}"))?;
 
     tracing::info!("[清理] 旧 API Key 凭证清理完成，共删除 {} 条记录", deleted);
 
@@ -594,7 +594,7 @@ pub fn migrate_general_chat_to_unified(conn: &Connection) -> Result<usize, Strin
             "INSERT OR REPLACE INTO settings (key, value) VALUES ('migrated_general_chat_to_unified', 'true')",
             [],
         )
-        .map_err(|e| format!("标记迁移完成失败: {}", e))?;
+        .map_err(|e| format!("标记迁移完成失败: {e}"))?;
         return Ok(0);
     }
 
@@ -616,7 +616,7 @@ pub fn migrate_general_chat_to_unified(conn: &Connection) -> Result<usize, Strin
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('migrated_general_chat_to_unified', 'true')",
         [],
     )
-    .map_err(|e| format!("标记迁移完成失败: {}", e))?;
+    .map_err(|e| format!("标记迁移完成失败: {e}"))?;
 
     tracing::info!("[迁移] General Chat 数据迁移完成！");
     Ok(migrated_sessions + migrated_messages)
@@ -629,7 +629,7 @@ fn migrate_general_sessions(conn: &Connection) -> Result<usize, String> {
             "SELECT id, name, created_at, updated_at, metadata 
              FROM general_chat_sessions",
         )
-        .map_err(|e| format!("准备查询语句失败: {}", e))?;
+        .map_err(|e| format!("准备查询语句失败: {e}"))?;
 
     let sessions: Vec<(String, String, i64, i64, Option<String>)> = stmt
         .query_map([], |row| {
@@ -641,7 +641,7 @@ fn migrate_general_sessions(conn: &Connection) -> Result<usize, String> {
                 row.get(4)?,
             ))
         })
-        .map_err(|e| format!("查询会话失败: {}", e))?
+        .map_err(|e| format!("查询会话失败: {e}"))?
         .filter_map(|r| r.ok())
         .collect();
 
@@ -678,7 +678,7 @@ fn migrate_general_sessions(conn: &Connection) -> Result<usize, String> {
                 updated_str,
             ],
         )
-        .map_err(|e| format!("插入会话失败: {}", e))?;
+        .map_err(|e| format!("插入会话失败: {e}"))?;
 
         count += 1;
     }
@@ -693,7 +693,7 @@ fn migrate_general_messages(conn: &Connection) -> Result<usize, String> {
             "SELECT id, session_id, role, content, blocks, status, created_at, metadata
              FROM general_chat_messages",
         )
-        .map_err(|e| format!("准备查询语句失败: {}", e))?;
+        .map_err(|e| format!("准备查询语句失败: {e}"))?;
 
     #[allow(clippy::type_complexity)]
     let messages: Vec<(
@@ -718,7 +718,7 @@ fn migrate_general_messages(conn: &Connection) -> Result<usize, String> {
                 row.get(7)?,
             ))
         })
-        .map_err(|e| format!("查询消息失败: {}", e))?
+        .map_err(|e| format!("查询消息失败: {e}"))?
         .filter_map(|r| r.ok())
         .collect();
 
@@ -755,7 +755,7 @@ fn migrate_general_messages(conn: &Connection) -> Result<usize, String> {
                 Option::<String>::None,
             ],
         )
-        .map_err(|e| format!("插入消息失败: {}", e))?;
+        .map_err(|e| format!("插入消息失败: {e}"))?;
 
         count += 1;
     }

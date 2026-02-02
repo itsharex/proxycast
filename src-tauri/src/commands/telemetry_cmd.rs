@@ -29,8 +29,8 @@ pub struct TelemetryState {
 impl TelemetryState {
     /// 创建独立的遥测状态（使用自己的实例）
     pub fn new() -> Result<Self, String> {
-        let logger = RequestLogger::with_defaults()
-            .map_err(|e| format!("Failed to create logger: {}", e))?;
+        let logger =
+            RequestLogger::with_defaults().map_err(|e| format!("Failed to create logger: {e}"))?;
 
         Ok(Self {
             logger: Arc::new(logger),
@@ -52,7 +52,7 @@ impl TelemetryState {
             Some(l) => l,
             None => Arc::new(
                 RequestLogger::with_defaults()
-                    .map_err(|e| format!("Failed to create logger: {}", e))?,
+                    .map_err(|e| format!("Failed to create logger: {e}"))?,
             ),
         };
 
@@ -102,7 +102,7 @@ pub async fn get_request_logs(
             "timeout" => RequestStatus::Timeout,
             "retrying" => RequestStatus::Retrying,
             "cancelled" => RequestStatus::Cancelled,
-            _ => return Err(format!("Invalid status: {}", s)),
+            _ => return Err(format!("Invalid status: {s}")),
         };
         logs.retain(|l| l.status == req_status);
     }
@@ -155,7 +155,7 @@ impl TimeRangeParam {
                 "24h" => TimeRange::last_hours(24),
                 "7d" => TimeRange::last_days(7),
                 "30d" => TimeRange::last_days(30),
-                _ => return Err(format!("Invalid preset: {}", preset)),
+                _ => return Err(format!("Invalid preset: {preset}")),
             };
             return Ok(Some(range));
         }
@@ -163,10 +163,10 @@ impl TimeRangeParam {
         match (&self.start, &self.end) {
             (Some(s), Some(e)) => {
                 let start = DateTime::parse_from_rfc3339(s)
-                    .map_err(|e| format!("Invalid start time: {}", e))?
+                    .map_err(|e| format!("Invalid start time: {e}"))?
                     .with_timezone(&Utc);
                 let end = DateTime::parse_from_rfc3339(e)
-                    .map_err(|e| format!("Invalid end time: {}", e))?
+                    .map_err(|e| format!("Invalid end time: {e}"))?
                     .with_timezone(&Utc);
                 Ok(Some(TimeRange::new(start, end)))
             }

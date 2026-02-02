@@ -407,26 +407,26 @@ mod tests {
         RelayInfo {
             id: id.to_string(),
             name: name.to_string(),
-            description: format!("{} 描述", name),
+            description: format!("{name} 描述"),
             branding: RelayBranding {
-                logo: format!("https://example.com/{}/logo.png", id),
+                logo: format!("https://example.com/{id}/logo.png"),
                 color: "#6366f1".to_string(),
             },
             links: RelayLinks {
-                homepage: format!("https://{}.example.com", id),
-                register: Some(format!("https://{}.example.com/register", id)),
+                homepage: format!("https://{id}.example.com"),
+                register: Some(format!("https://{id}.example.com/register")),
                 recharge: None,
-                docs: Some(format!("https://docs.{}.example.com", id)),
+                docs: Some(format!("https://docs.{id}.example.com")),
                 status: None,
             },
             api: RelayApi {
-                base_url: format!("https://api.{}.example.com/v1", id),
+                base_url: format!("https://api.{id}.example.com/v1"),
                 protocol: "openai".to_string(),
                 auth_header: "Authorization".to_string(),
                 auth_prefix: "Bearer".to_string(),
             },
             contact: RelayContact {
-                email: Some(format!("support@{}.example.com", id)),
+                email: Some(format!("support@{id}.example.com")),
                 discord: None,
                 telegram: None,
                 twitter: None,
@@ -610,20 +610,20 @@ mod property_tests {
         (arb_relay_id(), arb_relay_name()).prop_map(|(id, name)| RelayInfo {
             id: id.clone(),
             name: name.clone(),
-            description: format!("{} 描述", name),
+            description: format!("{name} 描述"),
             branding: RelayBranding {
-                logo: format!("https://example.com/{}/logo.png", id),
+                logo: format!("https://example.com/{id}/logo.png"),
                 color: "#6366f1".to_string(),
             },
             links: RelayLinks {
-                homepage: format!("https://{}.example.com", id),
+                homepage: format!("https://{id}.example.com"),
                 register: None,
                 recharge: None,
                 docs: None,
                 status: None,
             },
             api: RelayApi {
-                base_url: format!("https://api.{}.example.com/v1", id),
+                base_url: format!("https://api.{id}.example.com/v1"),
                 protocol: "openai".to_string(),
                 auth_header: "Authorization".to_string(),
                 auth_prefix: "Bearer".to_string(),

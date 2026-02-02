@@ -21,13 +21,13 @@ impl SessionFileStorage {
     /// 默认使用 ~/.proxycast/sessions 目录
     pub fn new() -> Result<Self, String> {
         let base_dir = Self::get_default_base_dir()?;
-        fs::create_dir_all(&base_dir).map_err(|e| format!("创建会话存储目录失败: {}", e))?;
+        fs::create_dir_all(&base_dir).map_err(|e| format!("创建会话存储目录失败: {e}"))?;
         Ok(Self { base_dir })
     }
 
     /// 使用指定目录创建存储服务
     pub fn with_base_dir(base_dir: PathBuf) -> Result<Self, String> {
-        fs::create_dir_all(&base_dir).map_err(|e| format!("创建会话存储目录失败: {}", e))?;
+        fs::create_dir_all(&base_dir).map_err(|e| format!("创建会话存储目录失败: {e}"))?;
         Ok(Self { base_dir })
     }
 
@@ -62,7 +62,7 @@ impl SessionFileStorage {
         let files_dir = self.get_files_dir(session_id);
 
         // 创建目录
-        fs::create_dir_all(&files_dir).map_err(|e| format!("创建会话目录失败: {}", e))?;
+        fs::create_dir_all(&files_dir).map_err(|e| format!("创建会话目录失败: {e}"))?;
 
         // 创建元数据
         let meta = SessionMeta::new(session_id.to_string());
@@ -90,7 +90,7 @@ impl SessionFileStorage {
     pub fn delete_session(&self, session_id: &str) -> Result<(), String> {
         let session_dir = self.get_session_dir(session_id);
         if session_dir.exists() {
-            fs::remove_dir_all(&session_dir).map_err(|e| format!("删除会话目录失败: {}", e))?;
+            fs::remove_dir_all(&session_dir).map_err(|e| format!("删除会话目录失败: {e}"))?;
             tracing::info!("[SessionFileStorage] 删除会话目录: {:?}", session_dir);
         }
         Ok(())
@@ -104,8 +104,7 @@ impl SessionFileStorage {
             return Ok(sessions);
         }
 
-        let entries =
-            fs::read_dir(&self.base_dir).map_err(|e| format!("读取会话目录失败: {}", e))?;
+        let entries = fs::read_dir(&self.base_dir).map_err(|e| format!("读取会话目录失败: {e}"))?;
 
         for entry in entries.flatten() {
             if entry.path().is_dir() {
@@ -140,17 +139,16 @@ impl SessionFileStorage {
     /// 读取会话元数据
     pub fn get_meta(&self, session_id: &str) -> Result<SessionMeta, String> {
         let meta_path = self.get_meta_path(session_id);
-        let content =
-            fs::read_to_string(&meta_path).map_err(|e| format!("读取元数据失败: {}", e))?;
-        serde_json::from_str(&content).map_err(|e| format!("解析元数据失败: {}", e))
+        let content = fs::read_to_string(&meta_path).map_err(|e| format!("读取元数据失败: {e}"))?;
+        serde_json::from_str(&content).map_err(|e| format!("解析元数据失败: {e}"))
     }
 
     /// 保存会话元数据
     pub fn save_meta(&self, session_id: &str, meta: &SessionMeta) -> Result<(), String> {
         let meta_path = self.get_meta_path(session_id);
         let content =
-            serde_json::to_string_pretty(meta).map_err(|e| format!("序列化元数据失败: {}", e))?;
-        fs::write(&meta_path, content).map_err(|e| format!("写入元数据失败: {}", e))
+            serde_json::to_string_pretty(meta).map_err(|e| format!("序列化元数据失败: {e}"))?;
+        fs::write(&meta_path, content).map_err(|e| format!("写入元数据失败: {e}"))
     }
 
     /// 更新会话元数据
@@ -196,7 +194,7 @@ impl SessionFileStorage {
         let file_path = files_dir.join(file_name);
 
         // 写入文件
-        fs::write(&file_path, content).map_err(|e| format!("写入文件失败: {}", e))?;
+        fs::write(&file_path, content).map_err(|e| format!("写入文件失败: {e}"))?;
 
         let now = Utc::now().timestamp_millis();
         let size = content.len() as u64;
@@ -222,14 +220,14 @@ impl SessionFileStorage {
     /// 读取会话文件内容
     pub fn read_file(&self, session_id: &str, file_name: &str) -> Result<String, String> {
         let file_path = self.get_files_dir(session_id).join(file_name);
-        fs::read_to_string(&file_path).map_err(|e| format!("读取文件失败: {}", e))
+        fs::read_to_string(&file_path).map_err(|e| format!("读取文件失败: {e}"))
     }
 
     /// 删除会话文件
     pub fn delete_file(&self, session_id: &str, file_name: &str) -> Result<(), String> {
         let file_path = self.get_files_dir(session_id).join(file_name);
         if file_path.exists() {
-            fs::remove_file(&file_path).map_err(|e| format!("删除文件失败: {}", e))?;
+            fs::remove_file(&file_path).map_err(|e| format!("删除文件失败: {e}"))?;
             self.refresh_meta_stats(session_id)?;
         }
         Ok(())
@@ -244,7 +242,7 @@ impl SessionFileStorage {
             return Ok(files);
         }
 
-        let entries = fs::read_dir(&files_dir).map_err(|e| format!("读取文件目录失败: {}", e))?;
+        let entries = fs::read_dir(&files_dir).map_err(|e| format!("读取文件目录失败: {e}"))?;
 
         for entry in entries.flatten() {
             if entry.path().is_file() {
@@ -306,11 +304,9 @@ impl SessionFileStorage {
 
         let sessions = self.list_sessions()?;
         for session in sessions {
-            if session.updated_at < cutoff {
-                if self.delete_session(&session.session_id).is_ok() {
-                    cleaned += 1;
-                    tracing::info!("[SessionFileStorage] 清理过期会话: {}", session.session_id);
-                }
+            if session.updated_at < cutoff && self.delete_session(&session.session_id).is_ok() {
+                cleaned += 1;
+                tracing::info!("[SessionFileStorage] 清理过期会话: {}", session.session_id);
             }
         }
 
@@ -323,10 +319,8 @@ impl SessionFileStorage {
 
         let sessions = self.list_sessions()?;
         for session in sessions {
-            if session.file_count == 0 {
-                if self.delete_session(&session.session_id).is_ok() {
-                    cleaned += 1;
-                }
+            if session.file_count == 0 && self.delete_session(&session.session_id).is_ok() {
+                cleaned += 1;
             }
         }
 

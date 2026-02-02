@@ -94,12 +94,12 @@ impl DevBridgeServer {
         let listener = match tokio::net::TcpListener::bind(&addr).await {
             Ok(l) => l,
             Err(e) => {
-                eprintln!("[DevBridge] 绑定失败: {} (地址: {})", e, addr);
+                eprintln!("[DevBridge] 绑定失败: {e} (地址: {addr})");
                 return Err(e.into());
             }
         };
 
-        eprintln!("[DevBridge] 正在监听: http://{}", addr);
+        eprintln!("[DevBridge] 正在监听: http://{addr}");
 
         // 直接运行服务器（不使用 graceful_shutdown）
         // 服务器将持续运行直到应用退出

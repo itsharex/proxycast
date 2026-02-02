@@ -92,21 +92,13 @@ impl std::fmt::Display for TimeoutError {
                 timeout_ms,
                 elapsed_ms,
             } => {
-                write!(
-                    f,
-                    "请求超时: 配置 {}ms, 已耗时 {}ms",
-                    timeout_ms, elapsed_ms
-                )
+                write!(f, "请求超时: 配置 {timeout_ms}ms, 已耗时 {elapsed_ms}ms")
             }
             TimeoutError::StreamIdleTimeout {
                 timeout_ms,
                 idle_ms,
             } => {
-                write!(
-                    f,
-                    "流式响应空闲超时: 配置 {}ms, 空闲 {}ms",
-                    timeout_ms, idle_ms
-                )
+                write!(f, "流式响应空闲超时: 配置 {timeout_ms}ms, 空闲 {idle_ms}ms")
             }
             TimeoutError::Cancelled => {
                 write!(f, "操作已取消")

@@ -180,7 +180,7 @@ impl TranslateError {
     pub fn missing_field(field: &str) -> Self {
         Self::new(
             TranslateErrorKind::MissingField,
-            format!("Missing required field: {}", field),
+            format!("Missing required field: {field}"),
         )
     }
 }
@@ -192,7 +192,7 @@ mod tests {
     #[test]
     fn test_translate_error_display() {
         let err = TranslateError::new(TranslateErrorKind::InvalidRequest, "test error");
-        assert_eq!(format!("{}", err), "InvalidRequest: test error");
+        assert_eq!(format!("{err}"), "InvalidRequest: test error");
     }
 
     #[test]

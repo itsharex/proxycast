@@ -163,10 +163,10 @@ mod tests {
     #[test]
     fn test_backend_error_display() {
         let err = BackendError::new(BackendErrorKind::NetworkError, "connection refused");
-        assert_eq!(format!("{}", err), "NetworkError: connection refused");
+        assert_eq!(format!("{err}"), "NetworkError: connection refused");
 
         let err = BackendError::with_status(BackendErrorKind::ServerError, "internal error", 500);
-        assert_eq!(format!("{}", err), "ServerError (500): internal error");
+        assert_eq!(format!("{err}"), "ServerError (500): internal error");
     }
 
     #[test]

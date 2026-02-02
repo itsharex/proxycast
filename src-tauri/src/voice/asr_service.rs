@@ -102,8 +102,7 @@ impl AsrService {
                         tracing::error!("本地 Whisper 回退也失败: {}", whisper_error);
                         // 返回原始云端错误，因为那是用户选择的服务
                         Err(format!(
-                            "云端服务失败: {}；本地 Whisper 回退也失败: {}",
-                            cloud_error, whisper_error
+                            "云端服务失败: {cloud_error}；本地 Whisper 回退也失败: {whisper_error}"
                         ))
                     }
                 }
@@ -111,15 +110,13 @@ impl AsrService {
             Ok(None) => {
                 tracing::warn!("未找到本地 Whisper 凭证，无法回退");
                 Err(format!(
-                    "云端服务失败: {}；未配置本地 Whisper，无法回退",
-                    cloud_error
+                    "云端服务失败: {cloud_error}；未配置本地 Whisper，无法回退"
                 ))
             }
             Err(e) => {
                 tracing::error!("获取本地 Whisper 凭证失败: {}", e);
                 Err(format!(
-                    "云端服务失败: {}；获取本地 Whisper 凭证失败: {}",
-                    cloud_error, e
+                    "云端服务失败: {cloud_error}；获取本地 Whisper 凭证失败: {e}"
                 ))
             }
         }
@@ -175,12 +172,12 @@ impl AsrService {
         // 创建 Whisper 识别器
         let transcriber =
             voice_core::WhisperTranscriber::new(model_path, model, &credential.language)
-                .map_err(|e| format!("Whisper 模型加载失败: {}", e))?;
+                .map_err(|e| format!("Whisper 模型加载失败: {e}"))?;
 
         // 执行识别
         let result = transcriber
             .transcribe(&audio)
-            .map_err(|e| format!("Whisper 识别失败: {}", e))?;
+            .map_err(|e| format!("Whisper 识别失败: {e}"))?;
 
         Ok(result.text)
     }
@@ -244,7 +241,7 @@ impl AsrService {
         let mut body = Vec::new();
 
         // 添加 file 字段
-        body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
         body.extend_from_slice(
             b"Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n",
         );
@@ -253,25 +250,25 @@ impl AsrService {
         body.extend_from_slice(b"\r\n");
 
         // 添加 model 字段
-        body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
         body.extend_from_slice(b"Content-Disposition: form-data; name=\"model\"\r\n\r\n");
         body.extend_from_slice(b"whisper-1\r\n");
 
         // 添加 language 字段
-        body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
         body.extend_from_slice(b"Content-Disposition: form-data; name=\"language\"\r\n\r\n");
         body.extend_from_slice(credential.language.as_bytes());
         body.extend_from_slice(b"\r\n");
 
         // 结束边界
-        body.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
+        body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
 
         // 构建请求
         let base_url = config
             .base_url
             .as_deref()
             .unwrap_or("https://api.openai.com");
-        let url = format!("{}/v1/audio/transcriptions", base_url);
+        let url = format!("{base_url}/v1/audio/transcriptions");
 
         let client = reqwest::Client::new();
         let response = client
@@ -279,17 +276,17 @@ impl AsrService {
             .header("Authorization", format!("Bearer {}", config.api_key))
             .header(
                 "Content-Type",
-                format!("multipart/form-data; boundary={}", boundary),
+                format!("multipart/form-data; boundary={boundary}"),
             )
             .body(body)
             .send()
             .await
-            .map_err(|e| format!("请求失败: {}", e))?;
+            .map_err(|e| format!("请求失败: {e}"))?;
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(format!("OpenAI API 错误: {} - {}", status, body));
+            return Err(format!("OpenAI API 错误: {status} - {body}"));
         }
 
         #[derive(serde::Deserialize)]
@@ -300,7 +297,7 @@ impl AsrService {
         let result: WhisperResponse = response
             .json()
             .await
-            .map_err(|e| format!("解析响应失败: {}", e))?;
+            .map_err(|e| format!("解析响应失败: {e}"))?;
 
         Ok(result.text)
     }
@@ -324,7 +321,7 @@ impl AsrService {
             .post(&token_url)
             .send()
             .await
-            .map_err(|e| format!("获取 Token 失败: {}", e))?;
+            .map_err(|e| format!("获取 Token 失败: {e}"))?;
 
         #[derive(serde::Deserialize)]
         struct TokenResponse {
@@ -334,7 +331,7 @@ impl AsrService {
         let token: TokenResponse = token_resp
             .json()
             .await
-            .map_err(|e| format!("解析 Token 失败: {}", e))?;
+            .map_err(|e| format!("解析 Token 失败: {e}"))?;
 
         // 构建 WAV 并 Base64 编码
         let wav_data = Self::build_wav(audio_data, sample_rate, 1)?;
@@ -366,7 +363,7 @@ impl AsrService {
             .json(&request)
             .send()
             .await
-            .map_err(|e| format!("请求失败: {}", e))?;
+            .map_err(|e| format!("请求失败: {e}"))?;
 
         #[derive(serde::Deserialize)]
         struct AsrResponse {
@@ -379,7 +376,7 @@ impl AsrService {
         let result: AsrResponse = response
             .json()
             .await
-            .map_err(|e| format!("解析响应失败: {}", e))?;
+            .map_err(|e| format!("解析响应失败: {e}"))?;
 
         if result.err_no != 0 {
             return Err(format!(
@@ -430,7 +427,7 @@ impl AsrService {
         let result = client
             .transcribe(&audio)
             .await
-            .map_err(|e| format!("讯飞识别失败: {}", e))?;
+            .map_err(|e| format!("讯飞识别失败: {e}"))?;
 
         Ok(result.text)
     }

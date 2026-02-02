@@ -122,7 +122,7 @@ impl ContextMemoryService {
     /// 创建新的上下文记忆服务
     pub fn new(config: ContextMemoryConfig) -> Result<Self, String> {
         // 确保目录存在
-        fs::create_dir_all(&config.memory_dir).map_err(|e| format!("创建记忆目录失败: {}", e))?;
+        fs::create_dir_all(&config.memory_dir).map_err(|e| format!("创建记忆目录失败: {e}"))?;
 
         let service = Self {
             config,
@@ -156,7 +156,7 @@ impl ContextMemoryService {
     pub fn save_memory_entry(&self, entry: &MemoryEntry) -> Result<(), String> {
         // 确保会话目录存在
         let session_dir = self.get_session_memory_dir(&entry.session_id);
-        fs::create_dir_all(&session_dir).map_err(|e| format!("创建会话目录失败: {}", e))?;
+        fs::create_dir_all(&session_dir).map_err(|e| format!("创建会话目录失败: {e}"))?;
 
         // 更新缓存
         {
@@ -213,15 +213,15 @@ impl ContextMemoryService {
                 let empty_error_vec = Vec::new();
                 let error_entries = error_cache.get(session_id).unwrap_or(&empty_error_vec);
                 let json_data = serde_json::to_string_pretty(error_entries)
-                    .map_err(|e| format!("序列化错误日志失败: {}", e))?;
+                    .map_err(|e| format!("序列化错误日志失败: {e}"))?;
                 fs::write(&file_path, json_data)
-                    .map_err(|e| format!("写入错误日志文件失败: {}", e))?;
+                    .map_err(|e| format!("写入错误日志文件失败: {e}"))?;
             }
             _ => {
                 // 其他文件保存为 Markdown
                 let markdown_content = self.generate_markdown_content(&filtered_entries, file_type);
                 fs::write(&file_path, markdown_content)
-                    .map_err(|e| format!("写入记忆文件失败: {}", e))?;
+                    .map_err(|e| format!("写入记忆文件失败: {e}"))?;
             }
         }
 
@@ -296,7 +296,7 @@ impl ContextMemoryService {
 
         let filtered_entries: Vec<_> = entries
             .iter()
-            .filter(|e| !e.archived && file_type.map_or(true, |ft| e.file_type == ft))
+            .filter(|e| !e.archived && file_type.is_none_or(|ft| e.file_type == ft))
             .cloned()
             .collect();
 
@@ -469,7 +469,7 @@ impl ContextMemoryService {
                         .unwrap_or(&"无解决方案".to_string())
                 ));
             }
-            context.push_str("\n");
+            context.push('\n');
         }
 
         // 已解决的错误（最近的几个）
@@ -497,11 +497,11 @@ impl ContextMemoryService {
             return Ok(());
         }
 
-        let entries = fs::read_dir(&self.config.memory_dir)
-            .map_err(|e| format!("读取记忆目录失败: {}", e))?;
+        let entries =
+            fs::read_dir(&self.config.memory_dir).map_err(|e| format!("读取记忆目录失败: {e}"))?;
 
         for entry in entries {
-            let entry = entry.map_err(|e| format!("读取目录条目失败: {}", e))?;
+            let entry = entry.map_err(|e| format!("读取目录条目失败: {e}"))?;
             let path = entry.path();
 
             if path.is_dir() {

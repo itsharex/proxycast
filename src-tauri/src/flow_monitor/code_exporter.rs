@@ -15,8 +15,10 @@ use super::models::{LLMFlow, LLMRequest};
 /// 代码导出格式
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum CodeFormat {
     /// curl 命令
+    #[default]
     Curl,
     /// Python 代码
     Python,
@@ -24,12 +26,6 @@ pub enum CodeFormat {
     TypeScript,
     /// JavaScript 代码
     JavaScript,
-}
-
-impl Default for CodeFormat {
-    fn default() -> Self {
-        CodeFormat::Curl
-    }
 }
 
 // ============================================================================
@@ -90,7 +86,7 @@ impl CodeExporter {
         } else {
             format!("http://localhost{}", request.path)
         };
-        parts.push(format!("'{}'", url));
+        parts.push(format!("'{url}'"));
 
         // 添加请求头
         for (key, value) in &request.headers {
@@ -102,7 +98,7 @@ impl CodeExporter {
             } else {
                 escape_shell_string(value)
             };
-            parts.push(format!("-H '{}: {}'", key, header_value));
+            parts.push(format!("-H '{key}: {header_value}'"));
         }
 
         // 确保有 Content-Type 头
@@ -153,7 +149,7 @@ impl CodeExporter {
         } else {
             format!("http://localhost{}", request.path)
         };
-        code.push_str(&format!("url = \"{}\"\n\n", url));
+        code.push_str(&format!("url = \"{url}\"\n\n"));
 
         // 请求头
         code.push_str("headers = {\n");
@@ -171,9 +167,9 @@ impl CodeExporter {
             };
 
             if key.to_lowercase() == "authorization" || key.to_lowercase() == "x-api-key" {
-                code.push_str(&format!("    \"{}\": {},\n", key, header_value));
+                code.push_str(&format!("    \"{key}\": {header_value},\n"));
             } else {
-                code.push_str(&format!("    \"{}\": {},\n", key, header_value));
+                code.push_str(&format!("    \"{key}\": {header_value},\n"));
             }
         }
         if !has_content_type {
@@ -184,7 +180,7 @@ impl CodeExporter {
         // 请求体
         if !request.body.is_null() {
             let body_str = serde_json::to_string_pretty(&request.body).unwrap_or_default();
-            code.push_str(&format!("data = {}\n\n", body_str));
+            code.push_str(&format!("data = {body_str}\n\n"));
         } else {
             code.push_str("data = {}\n\n");
         }
@@ -250,7 +246,7 @@ impl CodeExporter {
             } else {
                 format!("'{}'", escape_js_string(value))
             };
-            code.push_str(&format!("  '{}': {},\n", key, header_value));
+            code.push_str(&format!("  '{key}': {header_value},\n"));
         }
         if !has_content_type {
             code.push_str("  'Content-Type': 'application/json',\n");
@@ -330,7 +326,7 @@ impl CodeExporter {
             } else {
                 format!("'{}'", escape_js_string(value))
             };
-            code.push_str(&format!("  '{}': {},\n", key, header_value));
+            code.push_str(&format!("  '{key}': {header_value},\n"));
         }
         if !has_content_type {
             code.push_str("  'Content-Type': 'application/json',\n");

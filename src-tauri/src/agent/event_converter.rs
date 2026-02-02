@@ -205,7 +205,7 @@ fn convert_message(message: Message) -> Vec<TauriAgentEvent> {
                 }
                 Err(e) => {
                     events.push(TauriAgentEvent::Error {
-                        message: format!("Invalid tool call: {}", e),
+                        message: format!("Invalid tool call: {e}"),
                     });
                 }
             },
@@ -302,7 +302,7 @@ fn convert_message(message: Message) -> Vec<TauriAgentEvent> {
                 }
                 Err(e) => {
                     events.push(TauriAgentEvent::Error {
-                        message: format!("Invalid frontend tool call: {}", e),
+                        message: format!("Invalid frontend tool call: {e}"),
                     });
                 }
             },
@@ -320,7 +320,7 @@ pub fn convert_to_tauri_message(message: &Message) -> TauriMessage {
     let content = message
         .content
         .iter()
-        .filter_map(|c| convert_message_content(c))
+        .filter_map(convert_message_content)
         .collect();
 
     TauriMessage {

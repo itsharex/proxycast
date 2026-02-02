@@ -125,7 +125,7 @@ impl RateLimitTracker {
 
         // 根据是否有模型信息决定存储位置
         if let Some(m) = model {
-            let key = format!("{}:{}", account_id, m);
+            let key = format!("{account_id}:{m}");
             self.model_limits.insert(key, record.clone());
         } else {
             self.account_limits
@@ -160,7 +160,7 @@ impl RateLimitTracker {
 
     /// 检查特定模型是否被限流
     pub fn is_model_rate_limited(&self, account_id: &str, model: &str) -> bool {
-        let key = format!("{}:{}", account_id, model);
+        let key = format!("{account_id}:{model}");
         if let Some(record) = self.model_limits.get(&key) {
             return Utc::now() < record.reset_at;
         }
@@ -180,7 +180,7 @@ impl RateLimitTracker {
 
     /// 获取模型的剩余等待时间（秒）
     pub fn get_model_remaining_wait(&self, account_id: &str, model: &str) -> i64 {
-        let key = format!("{}:{}", account_id, model);
+        let key = format!("{account_id}:{model}");
         if let Some(record) = self.model_limits.get(&key) {
             let remaining = (record.reset_at - Utc::now()).num_seconds();
             if remaining > 0 {
@@ -201,7 +201,7 @@ impl RateLimitTracker {
 
     /// 清除模型的限流状态
     pub fn clear_model_rate_limit(&self, account_id: &str, model: &str) {
-        let key = format!("{}:{}", account_id, model);
+        let key = format!("{account_id}:{model}");
         self.model_limits.remove(&key);
     }
 

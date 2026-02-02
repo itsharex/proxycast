@@ -145,7 +145,7 @@ pub async fn transcribe_audio(
     // 获取凭证
     let credential = if let Some(id) = credential_id {
         tracing::info!("[语音识别] 使用指定凭证: {}", id);
-        AsrService::get_credential(&id)?.ok_or_else(|| format!("凭证不存在: {}", id))?
+        AsrService::get_credential(&id)?.ok_or_else(|| format!("凭证不存在: {id}"))?
     } else {
         tracing::info!("[语音识别] 获取默认凭证...");
         match AsrService::get_default_credential() {
@@ -178,7 +178,7 @@ pub async fn transcribe_audio(
             }
             Err(e) => {
                 tracing::error!("[语音识别] 获取默认凭证失败: {}", e);
-                return Err(format!("获取凭证失败: {}", e));
+                return Err(format!("获取凭证失败: {e}"));
             }
         }
     };
@@ -226,7 +226,7 @@ pub async fn polish_voice_text(
         .instructions
         .iter()
         .find(|i| i.id == instruction_id)
-        .ok_or_else(|| format!("指令不存在: {}", instruction_id))?;
+        .ok_or_else(|| format!("指令不存在: {instruction_id}"))?;
 
     // 如果是原始输出，直接返回
     if instruction_id == "raw" {
@@ -268,7 +268,7 @@ pub async fn output_voice_text(text: String, mode: Option<String>) -> Result<(),
             let config = config::load_voice_config()?;
             config.output.mode
         }
-        Some(other) => return Err(format!("未知的输出模式: {}", other)),
+        Some(other) => return Err(format!("未知的输出模式: {other}")),
     };
 
     // 执行输出

@@ -379,7 +379,7 @@ impl AwsEventStreamParser {
     /// 解析 JSON 事件
     fn parse_json_event(&mut self, json_str: &str) -> Result<Vec<AwsEvent>, String> {
         let value: serde_json::Value =
-            serde_json::from_str(json_str).map_err(|e| format!("JSON 解析错误: {}", e))?;
+            serde_json::from_str(json_str).map_err(|e| format!("JSON 解析错误: {e}"))?;
 
         let mut events = Vec::new();
 
@@ -1634,8 +1634,8 @@ mod property_tests {
             let mut parser = AwsEventStreamParser::new();
 
             // 构造数据：无效 JSON + 有效 JSON
-            let valid_json = format!(r#"{{"content":"{}"}}"#, valid_text);
-            let data = format!("{}{}", invalid_prefix, valid_json);
+            let valid_json = format!(r#"{{"content":"{valid_text}"}}"#);
+            let data = format!("{invalid_prefix}{valid_json}");
 
             // 解析
             let events = parser.process(data.as_bytes());
@@ -1651,7 +1651,7 @@ mod property_tests {
                 .collect();
 
             prop_assert!(
-                parse_errors.len() >= 1,
+                !parse_errors.is_empty(),
                 "应该至少有一个解析错误"
             );
             prop_assert_eq!(
@@ -1680,9 +1680,9 @@ mod property_tests {
             let mut data = String::new();
             for (i, text) in valid_texts.iter().enumerate() {
                 // 添加无效 JSON
-                data.push_str(&format!("{{invalid{}}}", i));
+                data.push_str(&format!("{{invalid{i}}}"));
                 // 添加有效 JSON
-                data.push_str(&format!(r#"{{"content":"{}"}}"#, text));
+                data.push_str(&format!(r#"{{"content":"{text}"}}"#));
             }
 
             // 解析
@@ -1725,7 +1725,7 @@ mod property_tests {
 
             // 发送多个无效 JSON
             for i in 0..num_invalid {
-                parser.process(format!("{{invalid{}}}", i).as_bytes());
+                parser.process(format!("{{invalid{i}}}").as_bytes());
             }
 
             // 验证错误计数
@@ -1736,7 +1736,7 @@ mod property_tests {
             );
 
             // 发送有效 JSON
-            let valid_json = format!(r#"{{"content":"{}"}}"#, valid_text);
+            let valid_json = format!(r#"{{"content":"{valid_text}"}}"#);
             let events = parser.process(valid_json.as_bytes());
 
             // 验证：有效 JSON 不应增加错误计数
@@ -1767,7 +1767,7 @@ mod property_tests {
 
             // 构造数据：二进制垃圾 + 有效 JSON
             let mut data = vec![0xFF; garbage_len];
-            let valid_json = format!(r#"{{"content":"{}"}}"#, valid_text);
+            let valid_json = format!(r#"{{"content":"{valid_text}"}}"#);
             data.extend_from_slice(valid_json.as_bytes());
 
             // 解析

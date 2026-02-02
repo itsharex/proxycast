@@ -145,18 +145,18 @@ pub fn open_update_window(
         let _ = window.set_position(LogicalPosition::new(x, y));
 
         // 使用 JavaScript 导航到新的 URL
-        let js = format!("window.location.href = '{}';", url);
+        let js = format!("window.location.href = '{url}';");
         window
             .eval(&js)
-            .map_err(|e| UpdateWindowError::OperationFailed(format!("导航失败: {}", e)))?;
+            .map_err(|e| UpdateWindowError::OperationFailed(format!("导航失败: {e}")))?;
 
         window
             .show()
-            .map_err(|e| UpdateWindowError::OperationFailed(format!("显示窗口失败: {}", e)))?;
+            .map_err(|e| UpdateWindowError::OperationFailed(format!("显示窗口失败: {e}")))?;
 
         window
             .set_focus()
-            .map_err(|e| UpdateWindowError::OperationFailed(format!("聚焦窗口失败: {}", e)))?;
+            .map_err(|e| UpdateWindowError::OperationFailed(format!("聚焦窗口失败: {e}")))?;
 
         return Ok(());
     }
@@ -178,7 +178,7 @@ pub fn open_update_window(
         .transparent(true)
         .resizable(false)
         .build()
-        .map_err(|e| UpdateWindowError::CreateFailed(format!("{}", e)))?;
+        .map_err(|e| UpdateWindowError::CreateFailed(format!("{e}")))?;
 
     // macOS: 设置窗口背景透明
     #[cfg(target_os = "macos")]
@@ -208,7 +208,7 @@ pub fn close_update_window(app: &AppHandle) -> Result<(), UpdateWindowError> {
     if let Some(window) = app.get_webview_window(UPDATE_WINDOW_LABEL) {
         window
             .close()
-            .map_err(|e| UpdateWindowError::OperationFailed(format!("关闭窗口失败: {}", e)))?;
+            .map_err(|e| UpdateWindowError::OperationFailed(format!("关闭窗口失败: {e}")))?;
         info!("更新提醒窗口已关闭");
     } else {
         debug!("更新提醒窗口不存在，无需关闭");

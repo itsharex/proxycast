@@ -525,7 +525,7 @@ impl std::fmt::Display for TokenEstimatorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TokenEstimatorError::InitializationError(msg) => {
-                write!(f, "Token 估算器初始化失败: {}", msg)
+                write!(f, "Token 估算器初始化失败: {msg}")
             }
         }
     }

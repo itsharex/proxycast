@@ -550,7 +550,7 @@ impl GeminiApiKeyCredential {
             if pattern.contains('*') {
                 // Simple wildcard matching
                 let pattern = pattern.replace('*', ".*");
-                regex::Regex::new(&format!("^{}$", pattern))
+                regex::Regex::new(&format!("^{pattern}$"))
                     .map(|re| re.is_match(model))
                     .unwrap_or(false)
             } else {
@@ -826,7 +826,7 @@ pub fn generate_gemini_auth_url(state: &str, code_challenge: &str) -> String {
         .collect::<Vec<_>>()
         .join("&");
 
-    format!("https://accounts.google.com/o/oauth2/v2/auth?{}", query)
+    format!("https://accounts.google.com/o/oauth2/v2/auth?{query}")
 }
 
 /// Gemini OAuth 会话信息（用于存储 PKCE code_verifier）
@@ -951,7 +951,7 @@ pub async fn exchange_gemini_code_for_token(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Token 交换失败: {} - {}", status, body).into());
+        return Err(format!("Token 交换失败: {status} - {body}").into());
     }
 
     let data: serde_json::Value = resp.json().await?;
@@ -965,7 +965,7 @@ pub async fn fetch_gemini_user_email(
 ) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
     let resp = client
         .get("https://www.googleapis.com/oauth2/v2/userinfo")
-        .header("Authorization", format!("Bearer {}", access_token))
+        .header("Authorization", format!("Bearer {access_token}"))
         .send()
         .await?;
 
@@ -986,10 +986,9 @@ pub async fn fetch_gemini_project_id(
 
     let resp = client
         .post(format!(
-            "{}/{CODE_ASSIST_API_VERSION}:loadCodeAssist",
-            CODE_ASSIST_ENDPOINT
+            "{CODE_ASSIST_ENDPOINT}/{CODE_ASSIST_API_VERSION}:loadCodeAssist"
         ))
-        .header("Authorization", format!("Bearer {}", access_token))
+        .header("Authorization", format!("Bearer {access_token}"))
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({
             "cloudaicompanionProject": "",
@@ -1142,7 +1141,7 @@ pub async fn start_gemini_oauth_server_and_get_url() -> Result<
     let mut bound_port = 0;
 
     for port in ports_to_try {
-        match TcpListener::bind(format!("127.0.0.1:{}", port)).await {
+        match TcpListener::bind(format!("127.0.0.1:{port}")).await {
             Ok(l) => {
                 bound_port = l.local_addr()?.port();
                 listener = Some(l);
@@ -1187,7 +1186,7 @@ pub async fn start_gemini_oauth_server_and_get_url() -> Result<
                         .get("error_description")
                         .map(|s| s.as_str())
                         .unwrap_or("未知错误");
-                    let error_msg = format!("{}: {}", err, error_desc);
+                    let error_msg = format!("{err}: {error_desc}");
                     tracing::error!("[Gemini OAuth] 授权失败: {}", error_msg);
 
                     if let Some(tx) = tx.lock().await.take() {
@@ -1289,18 +1288,18 @@ pub async fn start_gemini_oauth_server_and_get_url() -> Result<
 
                                 let email_display = email.unwrap_or_else(|| "未知邮箱".to_string());
                                 let project_display = project_id
-                                    .map(|p| format!("<p>Project ID: {}</p>", p))
+                                    .map(|p| format!("<p>Project ID: {p}</p>"))
                                     .unwrap_or_default();
                                 let html = GEMINI_OAUTH_SUCCESS_HTML
                                     .replace("EMAIL_PLACEHOLDER", &email_display)
                                     .replace(
                                         "</div>\n</body>",
-                                        &format!("{}</div>\n</body>", project_display),
+                                        &format!("{project_display}</div>\n</body>"),
                                     );
                                 Html(html)
                             }
                             Err(e) => {
-                                let error_msg = format!("保存凭证失败: {}", e);
+                                let error_msg = format!("保存凭证失败: {e}");
                                 tracing::error!("[Gemini OAuth] {}", error_msg);
 
                                 if let Some(tx) = tx.lock().await.take() {
@@ -1314,7 +1313,7 @@ pub async fn start_gemini_oauth_server_and_get_url() -> Result<
                         }
                     }
                     Err(e) => {
-                        let error_msg = format!("Token 交换失败: {}", e);
+                        let error_msg = format!("Token 交换失败: {e}");
                         tracing::error!("[Gemini OAuth] {}", error_msg);
 
                         if let Some(tx) = tx.lock().await.take() {
@@ -1333,7 +1332,7 @@ pub async fn start_gemini_oauth_server_and_get_url() -> Result<
     let server_future = async move {
         axum::serve(listener, app)
             .await
-            .map_err(|e| format!("服务器错误: {}", e))
+            .map_err(|e| format!("服务器错误: {e}"))
     };
 
     // 启动服务器任务

@@ -133,14 +133,14 @@ pub async fn plugin_rpc_connect(
     let plugin = plugins
         .iter()
         .find(|p| p.id == plugin_id)
-        .ok_or_else(|| format!("插件 {} 未安装", plugin_id))?;
+        .ok_or_else(|| format!("插件 {plugin_id} 未安装"))?;
 
     // 读取插件 manifest
     let manifest_path = plugin.install_path.join("plugin.json");
-    let manifest_content = std::fs::read_to_string(&manifest_path)
-        .map_err(|e| format!("读取 manifest 失败: {}", e))?;
-    let manifest: Value = serde_json::from_str(&manifest_content)
-        .map_err(|e| format!("解析 manifest 失败: {}", e))?;
+    let manifest_content =
+        std::fs::read_to_string(&manifest_path).map_err(|e| format!("读取 manifest 失败: {e}"))?;
+    let manifest: Value =
+        serde_json::from_str(&manifest_content).map_err(|e| format!("解析 manifest 失败: {e}"))?;
 
     // 获取二进制文件路径
     let _binary_name = manifest["binary"]["binary_name"]
@@ -159,11 +159,11 @@ pub async fn plugin_rpc_connect(
 
     let binary_filename = manifest["binary"]["platform_binaries"][platform_key]
         .as_str()
-        .ok_or_else(|| format!("manifest 中缺少 {} 平台的二进制文件", platform_key))?;
+        .ok_or_else(|| format!("manifest 中缺少 {platform_key} 平台的二进制文件"))?;
 
     let binary_path = plugin.install_path.join(binary_filename);
     if !binary_path.exists() {
-        return Err(format!("二进制文件不存在: {:?}", binary_path));
+        return Err(format!("二进制文件不存在: {binary_path:?}"));
     }
 
     // 启动进程（使用 tokio::process::Command）
@@ -172,7 +172,7 @@ pub async fn plugin_rpc_connect(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("启动插件进程失败: {}", e))?;
+        .map_err(|e| format!("启动插件进程失败: {e}"))?;
 
     tracing::info!("插件 {} 进程已启动, PID: {:?}", plugin_id, child.id());
 
@@ -322,7 +322,7 @@ pub async fn plugin_rpc_call(
     let processes = rpc_state.processes.read().await;
     let process_arc = processes
         .get(&plugin_id)
-        .ok_or_else(|| format!("插件 {} 未连接", plugin_id))?
+        .ok_or_else(|| format!("插件 {plugin_id} 未连接"))?
         .clone();
     drop(processes);
 
@@ -338,7 +338,7 @@ pub async fn plugin_rpc_call(
     };
 
     let request_json =
-        serde_json::to_string(&request).map_err(|e| format!("序列化请求失败: {}", e))?;
+        serde_json::to_string(&request).map_err(|e| format!("序列化请求失败: {e}"))?;
 
     // 创建响应 channel
     let (response_tx, response_rx) = oneshot::channel();
@@ -355,15 +355,15 @@ pub async fn plugin_rpc_call(
         stdin
             .write_all(request_json.as_bytes())
             .await
-            .map_err(|e| format!("发送请求失败: {}", e))?;
+            .map_err(|e| format!("发送请求失败: {e}"))?;
         stdin
             .write_all(b"\n")
             .await
-            .map_err(|e| format!("发送换行失败: {}", e))?;
+            .map_err(|e| format!("发送换行失败: {e}"))?;
         stdin
             .flush()
             .await
-            .map_err(|e| format!("刷新 stdin 失败: {}", e))?;
+            .map_err(|e| format!("刷新 stdin 失败: {e}"))?;
     }
 
     // 释放 process lock，让 stdout 读取任务可以处理响应
@@ -378,7 +378,7 @@ pub async fn plugin_rpc_call(
             let process = process_arc.lock().await;
             let mut pending = process.pending_requests.lock().await;
             pending.remove(&request_id);
-            Err(format!("RPC 调用 {} 超时", method))
+            Err(format!("RPC 调用 {method} 超时"))
         }
     }
 }

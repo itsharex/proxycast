@@ -36,11 +36,11 @@ pub enum HotReloadError {
 impl std::fmt::Display for HotReloadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            HotReloadError::WatchError(msg) => write!(f, "文件监控错误: {}", msg),
-            HotReloadError::LoadError(msg) => write!(f, "配置加载错误: {}", msg),
-            HotReloadError::ValidationError(msg) => write!(f, "配置验证错误: {}", msg),
-            HotReloadError::RollbackError(msg) => write!(f, "回滚错误: {}", msg),
-            HotReloadError::ChannelError(msg) => write!(f, "通道错误: {}", msg),
+            HotReloadError::WatchError(msg) => write!(f, "文件监控错误: {msg}"),
+            HotReloadError::LoadError(msg) => write!(f, "配置加载错误: {msg}"),
+            HotReloadError::ValidationError(msg) => write!(f, "配置验证错误: {msg}"),
+            HotReloadError::RollbackError(msg) => write!(f, "回滚错误: {msg}"),
+            HotReloadError::ChannelError(msg) => write!(f, "通道错误: {msg}"),
         }
     }
 }

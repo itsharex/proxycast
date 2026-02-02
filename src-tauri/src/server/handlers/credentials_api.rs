@@ -227,7 +227,7 @@ async fn try_select_api_key_credential(
     // 获取 Provider 信息以确定 base_url
     let conn = db.lock().map_err(|e| CredentialApiError {
         error: "database_lock_error".to_string(),
-        message: format!("数据库锁定失败: {}", e),
+        message: format!("数据库锁定失败: {e}"),
         status_code: 500,
     })?;
 
@@ -317,7 +317,7 @@ fn build_api_key_headers(
             headers.insert("api-key".to_string(), api_key.to_string());
         }
         _ => {
-            headers.insert("Authorization".to_string(), format!("Bearer {}", api_key));
+            headers.insert("Authorization".to_string(), format!("Bearer {api_key}"));
         }
     }
 
@@ -355,7 +355,7 @@ pub async fn credentials_get_token(
     // 未找到凭证
     Err(CredentialApiError {
         error: "credential_not_found".to_string(),
-        message: format!("未找到 UUID 为 {} 的凭证", uuid),
+        message: format!("未找到 UUID 为 {uuid} 的凭证"),
         status_code: 404,
     })
 }
@@ -370,7 +370,7 @@ async fn try_get_oauth_token(
     let credential = {
         let conn = db.lock().map_err(|e| CredentialApiError {
             error: "database_lock_error".to_string(),
-            message: format!("数据库锁定失败: {}", e),
+            message: format!("数据库锁定失败: {e}"),
             status_code: 500,
         })?;
 
@@ -431,7 +431,7 @@ async fn try_get_oauth_token(
     let updated_credential = {
         let conn = db.lock().map_err(|e| CredentialApiError {
             error: "database_lock_error".to_string(),
-            message: format!("数据库锁定失败: {}", e),
+            message: format!("数据库锁定失败: {e}"),
             status_code: 500,
         })?;
 
@@ -473,7 +473,7 @@ async fn try_get_api_key_token(
 ) -> Result<Option<CredentialResponse>, CredentialApiError> {
     let conn = db.lock().map_err(|e| CredentialApiError {
         error: "database_lock_error".to_string(),
-        message: format!("数据库锁定失败: {}", e),
+        message: format!("数据库锁定失败: {e}"),
         status_code: 500,
     })?;
 
@@ -498,7 +498,7 @@ async fn try_get_api_key_token(
         .decrypt_api_key(&api_key_entry.api_key_encrypted)
         .map_err(|e| CredentialApiError {
             error: "decryption_error".to_string(),
-            message: format!("API Key 解密失败: {}", e),
+            message: format!("API Key 解密失败: {e}"),
             status_code: 500,
         })?;
 

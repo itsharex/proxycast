@@ -49,7 +49,7 @@ pub fn list_audio_devices() -> Result<Vec<AudioDeviceInfo>, String> {
 
     let devices: Vec<AudioDeviceInfo> = host
         .input_devices()
-        .map_err(|e| format!("无法枚举音频设备: {}", e))?
+        .map_err(|e| format!("无法枚举音频设备: {e}"))?
         .filter_map(|device| {
             let name = device.name().ok()?;
             let is_default = default_name.as_ref().map(|n| n == &name).unwrap_or(false);
@@ -151,7 +151,7 @@ impl RecordingService {
         let rx = self.response_rx.as_ref().ok_or("录音线程未启动")?;
 
         tx.send(RecordingCommand::Start(device_id))
-            .map_err(|e| format!("发送命令失败: {}", e))?;
+            .map_err(|e| format!("发送命令失败: {e}"))?;
 
         match rx.recv() {
             Ok(RecordingResponse::Ok) => {
@@ -160,7 +160,7 @@ impl RecordingService {
             }
             Ok(RecordingResponse::Error(e)) => Err(e),
             Ok(_) => Err("意外的响应".to_string()),
-            Err(e) => Err(format!("接收响应失败: {}", e)),
+            Err(e) => Err(format!("接收响应失败: {e}")),
         }
     }
 
@@ -170,7 +170,7 @@ impl RecordingService {
         let rx = self.response_rx.as_ref().ok_or("录音线程未启动")?;
 
         tx.send(RecordingCommand::Stop)
-            .map_err(|e| format!("发送命令失败: {}", e))?;
+            .map_err(|e| format!("发送命令失败: {e}"))?;
 
         match rx.recv() {
             Ok(RecordingResponse::AudioData(audio)) => {
@@ -179,7 +179,7 @@ impl RecordingService {
             }
             Ok(RecordingResponse::Error(e)) => Err(e),
             Ok(_) => Err("意外的响应".to_string()),
-            Err(e) => Err(format!("接收响应失败: {}", e)),
+            Err(e) => Err(format!("接收响应失败: {e}")),
         }
     }
 
@@ -319,7 +319,7 @@ fn recording_thread_main(
                     Ok(c) => c,
                     Err(e) => {
                         let _ = resp_tx
-                            .send(RecordingResponse::Error(format!("获取音频配置失败: {}", e)));
+                            .send(RecordingResponse::Error(format!("获取音频配置失败: {e}")));
                         continue;
                     }
                 };
@@ -405,15 +405,15 @@ fn recording_thread_main(
                 ) {
                     Ok(s) => s,
                     Err(e) => {
-                        let _ = resp_tx
-                            .send(RecordingResponse::Error(format!("创建音频流失败: {}", e)));
+                        let _ =
+                            resp_tx.send(RecordingResponse::Error(format!("创建音频流失败: {e}")));
                         continue;
                     }
                 };
 
                 // 开始播放（录音）
                 if let Err(e) = stream.play() {
-                    let _ = resp_tx.send(RecordingResponse::Error(format!("启动录音失败: {}", e)));
+                    let _ = resp_tx.send(RecordingResponse::Error(format!("启动录音失败: {e}")));
                     continue;
                 }
 

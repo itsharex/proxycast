@@ -260,7 +260,7 @@ impl OAuthServer {
         match result {
             Ok(Ok(callback_result)) => {
                 if let Some(ref error) = callback_result.error {
-                    Err(format!("OAuth error: {}", error).into())
+                    Err(format!("OAuth error: {error}").into())
                 } else {
                     Ok(callback_result)
                 }
@@ -465,19 +465,19 @@ impl CodexProvider {
         // - 如果 base_url 只有域名（path 为空或 /）：拼 /v1/responses（OpenAI 标准）
         // - 如果 base_url 已包含路径前缀（如 https://yunyi.cfd/codex）：认为前缀已包含路由信息，拼 /responses
         if base.ends_with("/v1") {
-            return format!("{}/responses", base);
+            return format!("{base}/responses");
         }
 
         if let Ok(parsed) = url::Url::parse(base) {
             let path = parsed.path().trim_end_matches('/');
             if path.is_empty() || path == "/" {
-                return format!("{}/v1/responses", base);
+                return format!("{base}/v1/responses");
             }
-            return format!("{}/responses", base);
+            return format!("{base}/responses");
         }
 
         // 兜底：保持旧行为
-        format!("{}/v1/responses", base)
+        format!("{base}/v1/responses")
     }
 
     /// Load credentials from the default path
@@ -505,7 +505,7 @@ impl CodexProvider {
             // 尝试解析凭证文件
             let creds: CodexCredentials = serde_json::from_str(&content).map_err(|e| {
                 tracing::error!("[CODEX] 凭证文件解析失败: {}. 文件路径: {:?}", e, path);
-                format!("凭证文件格式错误: {}", e)
+                format!("凭证文件格式错误: {e}")
             })?;
 
             // 检查关键字段
@@ -539,7 +539,7 @@ impl CodexProvider {
             self.creds_path = Some(path.clone());
         } else {
             tracing::warn!("[CODEX] 凭证文件不存在: {:?}", path);
-            return Err(format!("凭证文件不存在: {:?}", path).into());
+            return Err(format!("凭证文件不存在: {path:?}").into());
         }
         Ok(())
     }
@@ -609,7 +609,7 @@ impl CodexProvider {
         ];
 
         let query = serde_urlencoded::to_string(params)?;
-        Ok(format!("{}?{}", OPENAI_AUTH_URL, query))
+        Ok(format!("{OPENAI_AUTH_URL}?{query}"))
     }
 
     /// Generate a random state string for CSRF protection
@@ -648,7 +648,7 @@ impl CodexProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(format!("Token exchange failed: {} - {}", status, body).into());
+            return Err(format!("Token exchange failed: {status} - {body}").into());
         }
 
         let data: serde_json::Value = resp.json().await?;
@@ -972,10 +972,7 @@ impl CodexProvider {
                 "[CODEX] Failed to open browser: {}. Please open the URL manually.",
                 e
             );
-            println!(
-                "Please open the following URL in your browser:\n{}",
-                auth_url
-            );
+            println!("Please open the following URL in your browser:\n{auth_url}");
         }
 
         // Wait for callback (5 minute timeout)
@@ -1094,7 +1091,7 @@ impl CodexProvider {
 
                 Self::build_responses_url(base_url)
             }
-            AuthMode::OAuth => format!("{}/responses", CODEX_API_BASE_URL),
+            AuthMode::OAuth => format!("{CODEX_API_BASE_URL}/responses"),
         };
 
         // Transform OpenAI chat completion request to Codex format
@@ -1103,7 +1100,7 @@ impl CodexProvider {
         let mut req = self
             .client
             .post(&url)
-            .header("Authorization", format!("Bearer {}", token))
+            .header("Authorization", format!("Bearer {token}"))
             .header("Content-Type", "application/json")
             .header("Accept", "text/event-stream")
             .header("Connection", "Keep-Alive")
@@ -1800,7 +1797,7 @@ mod tests {
 
         let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256","typ":"JWT"}"#);
         let payload = URL_SAFE_NO_PAD.encode(r#"{"email":"test@example.com","sub":"user123","https://api.openai.com/auth":{"chatgpt_account_id":"chatgpt_acc_123","user_id":"uid_456"}}"#);
-        let mock_jwt = format!("{}.{}.signature", header, payload);
+        let mock_jwt = format!("{header}.{payload}.signature");
 
         let (account_id, email) = parse_jwt_claims(&mock_jwt);
         assert_eq!(email, Some("test@example.com".to_string()));
@@ -1816,7 +1813,7 @@ mod tests {
 
         let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256","typ":"JWT"}"#);
         let payload = URL_SAFE_NO_PAD.encode(r#"{"email":"test@example.com","sub":"user123","https://api.openai.com/auth":{"user_id":"uid_456"}}"#);
-        let mock_jwt = format!("{}.{}.signature", header, payload);
+        let mock_jwt = format!("{header}.{payload}.signature");
 
         let (account_id, email) = parse_jwt_claims(&mock_jwt);
         assert_eq!(email, Some("test@example.com".to_string()));
@@ -2057,10 +2054,8 @@ const OPENAI_OAUTH_CALLBACK_PATH: &str = "/auth/callback";
 /// 注意：OpenAI OAuth 要求 redirect_uri 必须是预先注册的固定地址
 /// Codex CLI 的 client_id 只注册了 http://localhost:1455/auth/callback
 pub fn generate_codex_auth_url(state: &str, code_challenge: &str) -> String {
-    let redirect_uri = format!(
-        "http://localhost:{}{}",
-        OPENAI_OAUTH_CALLBACK_PORT, OPENAI_OAUTH_CALLBACK_PATH
-    );
+    let redirect_uri =
+        format!("http://localhost:{OPENAI_OAUTH_CALLBACK_PORT}{OPENAI_OAUTH_CALLBACK_PATH}");
 
     let params = [
         ("client_id", OPENAI_CLIENT_ID),
@@ -2082,7 +2077,7 @@ pub fn generate_codex_auth_url(state: &str, code_challenge: &str) -> String {
         .collect::<Vec<_>>()
         .join("&");
 
-    format!("{}?{}", OPENAI_AUTH_URL, query)
+    format!("{OPENAI_AUTH_URL}?{query}")
 }
 
 /// 用授权码交换 Token
@@ -2111,7 +2106,7 @@ pub async fn exchange_codex_code_for_token(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Token 交换失败: {} - {}", status, body).into());
+        return Err(format!("Token 交换失败: {status} - {body}").into());
     }
 
     let data: serde_json::Value = resp.json().await?;
@@ -2211,21 +2206,18 @@ pub async fn start_codex_oauth_server_and_get_url() -> Result<
 
     // 使用固定端口 1455（OpenAI OAuth 要求）
     let port = OPENAI_OAUTH_CALLBACK_PORT;
-    let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await.map_err(|e| {
+    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).await.map_err(|e| {
         if e.kind() == std::io::ErrorKind::AddrInUse {
             format!(
-                "端口 {} 已被占用。OpenAI OAuth 要求使用固定端口 1455，请关闭占用该端口的应用后重试。",
-                port
+                "端口 {port} 已被占用。OpenAI OAuth 要求使用固定端口 1455，请关闭占用该端口的应用后重试。"
             )
         } else {
-            format!("绑定端口 {} 失败: {}", port, e)
+            format!("绑定端口 {port} 失败: {e}")
         }
     })?;
 
-    let redirect_uri = format!(
-        "http://localhost:{}{}",
-        OPENAI_OAUTH_CALLBACK_PORT, OPENAI_OAUTH_CALLBACK_PATH
-    );
+    let redirect_uri =
+        format!("http://localhost:{OPENAI_OAUTH_CALLBACK_PORT}{OPENAI_OAUTH_CALLBACK_PATH}");
     let redirect_uri_clone = redirect_uri.clone();
 
     // 生成授权 URL（不再传入 port 参数）
@@ -2256,7 +2248,7 @@ pub async fn start_codex_oauth_server_and_get_url() -> Result<
                 if let Some(err) = error {
                     let html = CODEX_OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", err);
                     if let Some(sender) = tx.lock().await.take() {
-                        let _ = sender.send(Err(format!("OAuth 错误: {}", err)));
+                        let _ = sender.send(Err(format!("OAuth 错误: {err}")));
                     }
                     return Html(html);
                 }
@@ -2337,9 +2329,9 @@ pub async fn start_codex_oauth_server_and_get_url() -> Result<
 
                 if let Err(e) = std::fs::create_dir_all(&creds_dir) {
                     let html = CODEX_OAUTH_ERROR_HTML
-                        .replace("ERROR_PLACEHOLDER", &format!("创建目录失败: {}", e));
+                        .replace("ERROR_PLACEHOLDER", &format!("创建目录失败: {e}"));
                     if let Some(sender) = tx.lock().await.take() {
-                        let _ = sender.send(Err(format!("创建目录失败: {}", e)));
+                        let _ = sender.send(Err(format!("创建目录失败: {e}")));
                     }
                     return Html(html);
                 }
@@ -2358,9 +2350,9 @@ pub async fn start_codex_oauth_server_and_get_url() -> Result<
                     Ok(json) => json,
                     Err(e) => {
                         let html = CODEX_OAUTH_ERROR_HTML
-                            .replace("ERROR_PLACEHOLDER", &format!("序列化凭证失败: {}", e));
+                            .replace("ERROR_PLACEHOLDER", &format!("序列化凭证失败: {e}"));
                         if let Some(sender) = tx.lock().await.take() {
-                            let _ = sender.send(Err(format!("序列化凭证失败: {}", e)));
+                            let _ = sender.send(Err(format!("序列化凭证失败: {e}")));
                         }
                         return Html(html);
                     }
@@ -2368,9 +2360,9 @@ pub async fn start_codex_oauth_server_and_get_url() -> Result<
 
                 if let Err(e) = std::fs::write(&creds_file_path, &creds_json) {
                     let html = CODEX_OAUTH_ERROR_HTML
-                        .replace("ERROR_PLACEHOLDER", &format!("保存凭证失败: {}", e));
+                        .replace("ERROR_PLACEHOLDER", &format!("保存凭证失败: {e}"));
                     if let Some(sender) = tx.lock().await.take() {
-                        let _ = sender.send(Err(format!("保存凭证失败: {}", e)));
+                        let _ = sender.send(Err(format!("保存凭证失败: {e}")));
                     }
                     return Html(html);
                 }

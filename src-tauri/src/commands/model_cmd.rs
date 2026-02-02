@@ -40,7 +40,7 @@ pub async fn refresh_credential_models(
         let conn = db.lock().map_err(|e| e.to_string())?;
         ProviderPoolDao::get_by_uuid(&conn, &credential_uuid)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("凭证不存在: {}", credential_uuid))?
+            .ok_or_else(|| format!("凭证不存在: {credential_uuid}"))?
     };
 
     tracing::info!(
@@ -127,7 +127,7 @@ pub async fn refresh_all_credential_models(
                     model_service.update_credential_models(&db, &credential.uuid, models.clone())
                 {
                     tracing::error!("[REFRESH_ALL] 更新数据库失败: {}", e);
-                    Err(format!("更新数据库失败: {}", e))
+                    Err(format!("更新数据库失败: {e}"))
                 } else {
                     tracing::info!("[REFRESH_ALL] 成功刷新 {} 个模型", models.len());
                     Ok(models)

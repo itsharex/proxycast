@@ -248,7 +248,7 @@ impl Default for ThresholdConfig {
 /// 阈值检测结果
 ///
 /// 表示 Flow 是否超过了配置的阈值。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ThresholdCheckResult {
     /// 是否超过延迟阈值
     pub latency_exceeded: bool,
@@ -275,21 +275,6 @@ impl ThresholdCheckResult {
             || self.token_exceeded
             || self.input_token_exceeded
             || self.output_token_exceeded
-    }
-}
-
-impl Default for ThresholdCheckResult {
-    fn default() -> Self {
-        Self {
-            latency_exceeded: false,
-            token_exceeded: false,
-            input_token_exceeded: false,
-            output_token_exceeded: false,
-            actual_latency_ms: 0,
-            actual_tokens: 0,
-            actual_input_tokens: 0,
-            actual_output_tokens: 0,
-        }
     }
 }
 
@@ -337,7 +322,7 @@ pub struct NotificationConfig {
 }
 
 /// 通知设置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NotificationSettings {
     /// 是否启用
     pub enabled: bool,
@@ -377,17 +362,6 @@ fn default_token_warning() -> NotificationSettings {
         desktop: false,
         sound: false,
         sound_file: None,
-    }
-}
-
-impl Default for NotificationSettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            desktop: false,
-            sound: false,
-            sound_file: None,
-        }
     }
 }
 
@@ -434,7 +408,7 @@ impl NotificationEvent {
         Self {
             notification_type: NotificationType::NewFlow,
             title: "新的 LLM 请求".to_string(),
-            message: format!("模型: {}", model),
+            message: format!("模型: {model}"),
             flow_id,
             timestamp: Utc::now(),
             desktop: settings.desktop,
@@ -453,7 +427,7 @@ impl NotificationEvent {
         Self {
             notification_type: NotificationType::ErrorFlow,
             title: "LLM 请求失败".to_string(),
-            message: format!("模型: {}, 错误: {}", model, error),
+            message: format!("模型: {model}, 错误: {error}"),
             flow_id,
             timestamp: Utc::now(),
             desktop: settings.desktop,
@@ -473,10 +447,7 @@ impl NotificationEvent {
         Self {
             notification_type: NotificationType::LatencyWarning,
             title: "延迟警告".to_string(),
-            message: format!(
-                "模型: {}, 延迟: {}ms (阈值: {}ms)",
-                model, actual_ms, threshold_ms
-            ),
+            message: format!("模型: {model}, 延迟: {actual_ms}ms (阈值: {threshold_ms}ms)"),
             flow_id,
             timestamp: Utc::now(),
             desktop: settings.desktop,
@@ -496,10 +467,7 @@ impl NotificationEvent {
         Self {
             notification_type: NotificationType::TokenWarning,
             title: "Token 使用警告".to_string(),
-            message: format!(
-                "模型: {}, Token: {} (阈值: {})",
-                model, actual_tokens, threshold_tokens
-            ),
+            message: format!("模型: {model}, Token: {actual_tokens} (阈值: {threshold_tokens})"),
             flow_id,
             timestamp: Utc::now(),
             desktop: settings.desktop,
@@ -673,11 +641,8 @@ impl From<&LLMFlow> for FlowSummary {
             has_tool_calls: flow
                 .response
                 .as_ref()
-                .map_or(false, |r| !r.tool_calls.is_empty()),
-            has_thinking: flow
-                .response
-                .as_ref()
-                .map_or(false, |r| r.thinking.is_some()),
+                .is_some_and(|r| !r.tool_calls.is_empty()),
+            has_thinking: flow.response.as_ref().is_some_and(|r| r.thinking.is_some()),
         }
     }
 }
@@ -1230,9 +1195,9 @@ impl FlowMonitor {
             if let Some(ref file_store) = self.file_store {
                 if let Err(e) = file_store.write(&active_flow.flow) {
                     tracing::error!("保存 Flow 到文件失败: {}", e);
-                    eprintln!("[FLOW_MONITOR] 保存到文件失败: id={}, error={}", flow_id, e);
+                    eprintln!("[FLOW_MONITOR] 保存到文件失败: id={flow_id}, error={e}");
                 } else {
-                    eprintln!("[FLOW_MONITOR] 已保存到文件存储: id={}", flow_id);
+                    eprintln!("[FLOW_MONITOR] 已保存到文件存储: id={flow_id}");
                 }
             } else {
                 eprintln!("[FLOW_MONITOR] 文件存储未启用");
@@ -1257,9 +1222,9 @@ impl FlowMonitor {
                     .await;
             }
 
-            eprintln!("[FLOW_MONITOR] Flow 完成处理完毕: id={}", flow_id);
+            eprintln!("[FLOW_MONITOR] Flow 完成处理完毕: id={flow_id}");
         } else {
-            eprintln!("[FLOW_MONITOR] 警告: 未找到活跃 Flow: id={}", flow_id);
+            eprintln!("[FLOW_MONITOR] 警告: 未找到活跃 Flow: id={flow_id}");
         }
     }
 
@@ -1480,10 +1445,10 @@ impl FlowMonitor {
         let token_exceeded = actual_tokens > config.token_threshold;
         let input_token_exceeded = config
             .input_token_threshold
-            .map_or(false, |threshold| actual_input_tokens > threshold);
+            .is_some_and(|threshold| actual_input_tokens > threshold);
         let output_token_exceeded = config
             .output_token_threshold
-            .map_or(false, |threshold| actual_output_tokens > threshold);
+            .is_some_and(|threshold| actual_output_tokens > threshold);
 
         ThresholdCheckResult {
             latency_exceeded,
@@ -2121,7 +2086,7 @@ mod property_tests {
 
                 // 测试排除模型配置
                 if let Some(ref excluded) = excluded_model {
-                    let excluded_model_name = format!("{}-test", excluded);
+                    let excluded_model_name = format!("{excluded}-test");
                     let request = LLMRequest {
                         method: "POST".to_string(),
                         path: "/v1/chat/completions".to_string(),
@@ -2279,7 +2244,7 @@ mod property_tests {
 
             // 验证输入 Token 阈值检测
             let expected_input_exceeded = input_token_threshold
-                .map_or(false, |threshold| actual_input_tokens > threshold);
+                .is_some_and(|threshold| actual_input_tokens > threshold);
             prop_assert_eq!(
                 result.input_token_exceeded,
                 expected_input_exceeded,
@@ -2288,7 +2253,7 @@ mod property_tests {
 
             // 验证输出 Token 阈值检测
             let expected_output_exceeded = output_token_threshold
-                .map_or(false, |threshold| actual_output_tokens > threshold);
+                .is_some_and(|threshold| actual_output_tokens > threshold);
             prop_assert_eq!(
                 result.output_token_exceeded,
                 expected_output_exceeded,

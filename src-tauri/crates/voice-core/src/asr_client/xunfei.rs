@@ -104,7 +104,7 @@ impl XunfeiClient {
         tracing::debug!("讯飞鉴权 - api_secret 长度: {}", self.api_secret.len());
 
         // 构建签名原文
-        let signature_origin = format!("host: {}\ndate: {}\nGET {} HTTP/1.1", host, date, path);
+        let signature_origin = format!("host: {host}\ndate: {date}\nGET {path} HTTP/1.1");
         tracing::debug!("讯飞鉴权 - signature_origin:\n{}", signature_origin);
 
         // HMAC-SHA256 签名
@@ -292,7 +292,7 @@ impl AsrClient for XunfeiClient {
         tracing::info!("正在连接讯飞 WebSocket...");
         let (ws_stream, response) = connect_async(&url).await.map_err(|e| {
             tracing::error!("讯飞 WebSocket 连接失败: {:?}", e);
-            VoiceError::NetworkError(format!("WebSocket 连接失败: {}", e))
+            VoiceError::NetworkError(format!("WebSocket 连接失败: {e}"))
         })?;
 
         tracing::info!(
@@ -406,7 +406,7 @@ impl AsrClient for XunfeiClient {
             let json = match serde_json::to_string(&request) {
                 Ok(j) => j,
                 Err(e) => {
-                    send_error = Some(VoiceError::AsrError(format!("序列化请求失败: {}", e)));
+                    send_error = Some(VoiceError::AsrError(format!("序列化请求失败: {e}")));
                     break;
                 }
             };
@@ -422,7 +422,7 @@ impl AsrClient for XunfeiClient {
                 }
                 Err(e) => {
                     tracing::error!("发送第 {} 帧失败: {}", i, e);
-                    send_error = Some(VoiceError::NetworkError(format!("发送数据失败: {}", e)));
+                    send_error = Some(VoiceError::NetworkError(format!("发送数据失败: {e}")));
                     break;
                 }
             }
@@ -440,7 +440,7 @@ impl AsrClient for XunfeiClient {
             match tokio::time::timeout(tokio::time::Duration::from_secs(30), receive_task).await {
                 Ok(Ok(responses)) => responses,
                 Ok(Err(e)) => {
-                    return Err(VoiceError::AsrError(format!("接收任务失败: {}", e)));
+                    return Err(VoiceError::AsrError(format!("接收任务失败: {e}")));
                 }
                 Err(_) => {
                     return Err(VoiceError::AsrError("等待识别结果超时".to_string()));

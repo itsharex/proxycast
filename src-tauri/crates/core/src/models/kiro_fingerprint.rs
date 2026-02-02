@@ -38,8 +38,7 @@ impl KiroFingerprintStore {
             .join("proxycast");
 
         if !app_data_dir.exists() {
-            fs::create_dir_all(&app_data_dir)
-                .map_err(|e| format!("创建应用数据目录失败: {}", e))?;
+            fs::create_dir_all(&app_data_dir).map_err(|e| format!("创建应用数据目录失败: {e}"))?;
         }
 
         Ok(app_data_dir.join("kiro_fingerprints.json"))
@@ -54,18 +53,18 @@ impl KiroFingerprintStore {
         }
 
         let content =
-            fs::read_to_string(&path).map_err(|e| format!("读取指纹存储文件失败: {}", e))?;
+            fs::read_to_string(&path).map_err(|e| format!("读取指纹存储文件失败: {e}"))?;
 
-        serde_json::from_str(&content).map_err(|e| format!("解析指纹存储文件失败: {}", e))
+        serde_json::from_str(&content).map_err(|e| format!("解析指纹存储文件失败: {e}"))
     }
 
     /// 保存到文件
     pub fn save(&self) -> Result<(), String> {
         let path = Self::get_storage_path()?;
         let content =
-            serde_json::to_string_pretty(self).map_err(|e| format!("序列化指纹存储失败: {}", e))?;
+            serde_json::to_string_pretty(self).map_err(|e| format!("序列化指纹存储失败: {e}"))?;
 
-        fs::write(&path, content).map_err(|e| format!("写入指纹存储文件失败: {}", e))
+        fs::write(&path, content).map_err(|e| format!("写入指纹存储文件失败: {e}"))
     }
 
     /// 获取凭证的指纹绑定
@@ -132,7 +131,7 @@ fn generate_stable_machine_id(
     hasher.update(seed.as_bytes());
     let result = hasher.finalize();
 
-    let hex = format!("{:x}", result);
+    let hex = format!("{result:x}");
     format!(
         "{}-{}-{}-{}-{}",
         &hex[0..8],

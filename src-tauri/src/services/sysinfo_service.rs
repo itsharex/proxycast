@@ -82,7 +82,7 @@ impl SysinfoService {
         // 各核心 CPU 使用率
         let mut cpu_cores = std::collections::HashMap::new();
         for (i, cpu) in system.cpus().iter().enumerate() {
-            cpu_cores.insert(format!("cpu:{}", i), cpu.cpu_usage());
+            cpu_cores.insert(format!("cpu:{i}"), cpu.cpu_usage());
         }
 
         SysinfoData {

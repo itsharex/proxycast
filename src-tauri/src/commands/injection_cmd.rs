@@ -140,7 +140,7 @@ pub async fn remove_injection_rule(
         .rules
         .iter()
         .position(|r| r.id == id)
-        .ok_or_else(|| format!("规则 ID '{}' 不存在", id))?;
+        .ok_or_else(|| format!("规则 ID '{id}' 不存在"))?;
 
     s.config.injection.rules.remove(pos);
     save_config(&s.config).map_err(|e| e.to_string())?;
@@ -162,7 +162,7 @@ pub async fn update_injection_rule(
         .rules
         .iter()
         .position(|r| r.id == id)
-        .ok_or_else(|| format!("规则 ID '{}' 不存在", id))?;
+        .ok_or_else(|| format!("规则 ID '{id}' 不存在"))?;
 
     s.config.injection.rules[pos] = InjectionRuleConfig {
         id: rule.id,

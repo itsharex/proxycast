@@ -40,6 +40,8 @@ interface InputbarCoreProps {
   isFullscreen?: boolean;
   /** 画布是否打开 */
   isCanvasOpen?: boolean;
+  /** Textarea ref（用于 CharacterMention） */
+  textareaRef?: React.RefObject<HTMLTextAreaElement>;
 }
 
 export const InputbarCore: React.FC<InputbarCoreProps> = ({
@@ -56,8 +58,10 @@ export const InputbarCore: React.FC<InputbarCoreProps> = ({
   onPaste,
   isFullscreen = false,
   isCanvasOpen = false,
+  textareaRef: externalTextareaRef,
 }) => {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const internalTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = externalTextareaRef || internalTextareaRef;
   const hasContent = text.trim().length > 0 || pendingImages.length > 0;
 
   // Auto-resize textarea
@@ -70,7 +74,7 @@ export const InputbarCore: React.FC<InputbarCoreProps> = ({
         textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 300)}px`;
       }
     }
-  }, [text, isFullscreen]);
+  }, [text, isFullscreen, textareaRef]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {

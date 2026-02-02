@@ -99,7 +99,7 @@ impl SelectionStrategy for CostOptimizedStrategy {
 
         Ok(ModelSelection {
             model: selected,
-            reason: format!("成本优先选择 (估算成本: {:.2})", cost),
+            reason: format!("成本优先选择 (估算成本: {cost:.2})"),
             confidence: 90,
             alternatives: available,
         })

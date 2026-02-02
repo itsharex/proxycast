@@ -78,7 +78,7 @@ impl SelectionStrategy for RoundRobinStrategy {
 
         Ok(ModelSelection {
             model: selected,
-            reason: format!("轮询选择 (索引 {})", idx),
+            reason: format!("轮询选择 (索引 {idx})"),
             confidence: 80,
             alternatives,
         })

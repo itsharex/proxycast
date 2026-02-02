@@ -59,19 +59,19 @@ impl BlockFile {
     ///
     /// _Requirements: 3.1, 3.3_
     pub fn new(block_id: &str, base_dir: &PathBuf, max_size: usize) -> Result<Self, TerminalError> {
-        let file_path = base_dir.join(format!("{}.block", block_id));
+        let file_path = base_dir.join(format!("{block_id}.block"));
 
         // 确保目录存在
         if let Some(parent) = file_path.parent() {
             fs::create_dir_all(parent).map_err(|e| {
-                TerminalError::BlockFileError(format!("无法创建目录 {:?}: {}", parent, e))
+                TerminalError::BlockFileError(format!("无法创建目录 {parent:?}: {e}"))
             })?;
         }
 
         // 检查文件是否已存在，获取当前大小
         let (current_size, is_wrapped) = if file_path.exists() {
             let metadata = fs::metadata(&file_path)
-                .map_err(|e| TerminalError::BlockFileError(format!("无法读取文件元数据: {}", e)))?;
+                .map_err(|e| TerminalError::BlockFileError(format!("无法读取文件元数据: {e}")))?;
             let size = metadata.len() as usize;
             // 如果文件大小已经达到最大值，说明已经循环过
             (size, size >= max_size)
@@ -85,7 +85,7 @@ impl BlockFile {
             .read(true)
             .write(true)
             .open(&file_path)
-            .map_err(|e| TerminalError::BlockFileError(format!("无法打开文件: {}", e)))?;
+            .map_err(|e| TerminalError::BlockFileError(format!("无法打开文件: {e}")))?;
 
         tracing::debug!(
             "[BlockFile] 创建块文件: {} (max_size: {}, current_size: {})",
@@ -178,11 +178,11 @@ impl BlockFile {
         if new_total <= self.max_size {
             // 文件未满，直接追加
             file.seek(SeekFrom::End(0))
-                .map_err(|e| TerminalError::BlockFileError(format!("Seek 失败: {}", e)))?;
+                .map_err(|e| TerminalError::BlockFileError(format!("Seek 失败: {e}")))?;
             file.write_all(data_to_write)
-                .map_err(|e| TerminalError::BlockFileError(format!("写入失败: {}", e)))?;
+                .map_err(|e| TerminalError::BlockFileError(format!("写入失败: {e}")))?;
             file.flush()
-                .map_err(|e| TerminalError::BlockFileError(format!("Flush 失败: {}", e)))?;
+                .map_err(|e| TerminalError::BlockFileError(format!("Flush 失败: {e}")))?;
             self.current_size.store(new_total, Ordering::Relaxed);
             self.write_pos.store(new_total, Ordering::Relaxed);
         } else {
@@ -201,12 +201,12 @@ impl BlockFile {
     fn apply_circular_buffer(&self, file: &mut File, new_data: &[u8]) -> Result<(), TerminalError> {
         // 读取现有数据
         file.seek(SeekFrom::Start(0))
-            .map_err(|e| TerminalError::BlockFileError(format!("Seek 失败: {}", e)))?;
+            .map_err(|e| TerminalError::BlockFileError(format!("Seek 失败: {e}")))?;
 
         let current_size = self.current_size.load(Ordering::Relaxed);
         let mut existing_data = vec![0u8; current_size];
         file.read_exact(&mut existing_data)
-            .map_err(|e| TerminalError::BlockFileError(format!("读取失败: {}", e)))?;
+            .map_err(|e| TerminalError::BlockFileError(format!("读取失败: {e}")))?;
 
         // 合并数据
         let mut combined = existing_data;
@@ -221,13 +221,13 @@ impl BlockFile {
 
         // 重写文件
         file.seek(SeekFrom::Start(0))
-            .map_err(|e| TerminalError::BlockFileError(format!("Seek 失败: {}", e)))?;
+            .map_err(|e| TerminalError::BlockFileError(format!("Seek 失败: {e}")))?;
         file.write_all(final_data)
-            .map_err(|e| TerminalError::BlockFileError(format!("写入失败: {}", e)))?;
+            .map_err(|e| TerminalError::BlockFileError(format!("写入失败: {e}")))?;
         file.set_len(final_data.len() as u64)
-            .map_err(|e| TerminalError::BlockFileError(format!("截断失败: {}", e)))?;
+            .map_err(|e| TerminalError::BlockFileError(format!("截断失败: {e}")))?;
         file.flush()
-            .map_err(|e| TerminalError::BlockFileError(format!("Flush 失败: {}", e)))?;
+            .map_err(|e| TerminalError::BlockFileError(format!("Flush 失败: {e}")))?;
 
         self.current_size.store(final_data.len(), Ordering::Relaxed);
         self.write_pos.store(final_data.len(), Ordering::Relaxed);
@@ -255,11 +255,11 @@ impl BlockFile {
         }
 
         file.seek(SeekFrom::Start(0))
-            .map_err(|e| TerminalError::BlockFileError(format!("Seek 失败: {}", e)))?;
+            .map_err(|e| TerminalError::BlockFileError(format!("Seek 失败: {e}")))?;
 
         let mut data = vec![0u8; current_size];
         file.read_exact(&mut data)
-            .map_err(|e| TerminalError::BlockFileError(format!("读取失败: {}", e)))?;
+            .map_err(|e| TerminalError::BlockFileError(format!("读取失败: {e}")))?;
 
         Ok(data)
     }
@@ -278,11 +278,11 @@ impl BlockFile {
             .ok_or_else(|| TerminalError::BlockFileError("文件已关闭".to_string()))?;
 
         file.set_len(0)
-            .map_err(|e| TerminalError::BlockFileError(format!("截断失败: {}", e)))?;
+            .map_err(|e| TerminalError::BlockFileError(format!("截断失败: {e}")))?;
         file.seek(SeekFrom::Start(0))
-            .map_err(|e| TerminalError::BlockFileError(format!("Seek 失败: {}", e)))?;
+            .map_err(|e| TerminalError::BlockFileError(format!("Seek 失败: {e}")))?;
         file.flush()
-            .map_err(|e| TerminalError::BlockFileError(format!("Flush 失败: {}", e)))?;
+            .map_err(|e| TerminalError::BlockFileError(format!("Flush 失败: {e}")))?;
 
         self.current_size.store(0, Ordering::Relaxed);
         self.write_pos.store(0, Ordering::Relaxed);
@@ -305,7 +305,7 @@ impl BlockFile {
         // 删除文件
         if self.file_path.exists() {
             fs::remove_file(&self.file_path)
-                .map_err(|e| TerminalError::BlockFileError(format!("删除文件失败: {}", e)))?;
+                .map_err(|e| TerminalError::BlockFileError(format!("删除文件失败: {e}")))?;
         }
 
         tracing::debug!("[BlockFile] 删除块文件: {}", self.block_id);

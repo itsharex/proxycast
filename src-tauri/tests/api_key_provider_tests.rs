@@ -91,7 +91,7 @@ impl TestContext {
         let now = chrono::Utc::now();
         let provider = ApiKeyProvider {
             id: id.to_string(),
-            name: format!("Test Provider {}", id),
+            name: format!("Test Provider {id}"),
             provider_type: ApiProviderType::Openai,
             api_host: "https://api.test.com".to_string(),
             is_system: false,
@@ -149,7 +149,7 @@ proptest! {
         // 添加 N 个 API Keys
         let mut expected_keys = Vec::new();
         for i in 0..num_keys {
-            let api_key = format!("sk-test-key-{}-{}", provider_id, i);
+            let api_key = format!("sk-test-key-{provider_id}-{i}");
             ctx.add_test_api_key(&provider_id, &api_key).expect("Failed to add API key");
             expected_keys.push(api_key);
         }
@@ -201,7 +201,7 @@ proptest! {
 
         // 添加 N 个 API Keys
         for i in 0..num_keys {
-            let api_key = format!("sk-cycle-key-{}-{}", provider_id, i);
+            let api_key = format!("sk-cycle-key-{provider_id}-{i}");
             ctx.add_test_api_key(&provider_id, &api_key).expect("Failed to add API key");
         }
 
@@ -254,7 +254,7 @@ proptest! {
         ctx.create_test_provider(&provider_id).expect("Failed to create provider");
 
         // 添加 API Key
-        let api_key = format!("sk-usage-test-{}", provider_id);
+        let api_key = format!("sk-usage-test-{provider_id}");
         let entry = ctx.add_test_api_key(&provider_id, &api_key)
             .expect("Failed to add API key");
 
@@ -302,7 +302,7 @@ proptest! {
         ctx.create_test_provider(&provider_id).expect("Failed to create provider");
 
         // 添加 API Key
-        let api_key = format!("sk-error-test-{}", provider_id);
+        let api_key = format!("sk-error-test-{provider_id}");
         let entry = ctx.add_test_api_key(&provider_id, &api_key)
             .expect("Failed to add API key");
 
@@ -347,7 +347,7 @@ proptest! {
         ctx.create_test_provider(&provider_id).expect("Failed to create provider");
 
         // 添加 API Key
-        let api_key = format!("sk-mixed-test-{}", provider_id);
+        let api_key = format!("sk-mixed-test-{provider_id}");
         let entry = ctx.add_test_api_key(&provider_id, &api_key)
             .expect("Failed to add API key");
 
@@ -476,9 +476,9 @@ proptest! {
             let provider = ctx.service
                 .add_custom_provider(
                     &ctx.db,
-                    format!("Provider {}", i),
+                    format!("Provider {i}"),
                     ApiProviderType::Openai,
-                    format!("https://api{}.test.com", i),
+                    format!("https://api{i}.test.com"),
                     None,
                     None,
                     None,

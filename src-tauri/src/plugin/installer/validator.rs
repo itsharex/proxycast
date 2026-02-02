@@ -69,7 +69,7 @@ impl PackageValidator {
 
         reader
             .read_exact(&mut magic)
-            .map_err(|e| InstallError::InvalidPackage(format!("无法读取文件头: {}", e)))?;
+            .map_err(|e| InstallError::InvalidPackage(format!("无法读取文件头: {e}")))?;
 
         match format {
             PackageFormat::Zip => {
@@ -111,24 +111,23 @@ impl PackageValidator {
     fn validate_zip_integrity(&self, path: &Path) -> Result<(), InstallError> {
         let file = File::open(path)?;
         let mut archive = zip::ZipArchive::new(file)
-            .map_err(|e| InstallError::InvalidPackage(format!("无法读取 ZIP 文件: {}", e)))?;
+            .map_err(|e| InstallError::InvalidPackage(format!("无法读取 ZIP 文件: {e}")))?;
 
         // 检查是否为空压缩包
-        if archive.len() == 0 {
+        if archive.is_empty() {
             return Err(InstallError::InvalidPackage("ZIP 压缩包为空".to_string()));
         }
 
         // 尝试读取每个文件的元数据以验证完整性
         for i in 0..archive.len() {
             let file = archive.by_index(i).map_err(|e| {
-                InstallError::InvalidPackage(format!("ZIP 文件损坏，无法读取条目 {}: {}", i, e))
+                InstallError::InvalidPackage(format!("ZIP 文件损坏，无法读取条目 {i}: {e}"))
             })?;
 
             // 验证文件名有效
             if file.name().is_empty() {
                 return Err(InstallError::InvalidPackage(format!(
-                    "ZIP 条目 {} 的文件名无效",
-                    i
+                    "ZIP 条目 {i} 的文件名无效"
                 )));
             }
         }
@@ -145,15 +144,15 @@ impl PackageValidator {
         let mut entry_count = 0;
         for entry in archive
             .entries()
-            .map_err(|e| InstallError::InvalidPackage(format!("无法读取 tar.gz 文件: {}", e)))?
+            .map_err(|e| InstallError::InvalidPackage(format!("无法读取 tar.gz 文件: {e}")))?
         {
-            let entry = entry
-                .map_err(|e| InstallError::InvalidPackage(format!("tar.gz 文件损坏: {}", e)))?;
+            let entry =
+                entry.map_err(|e| InstallError::InvalidPackage(format!("tar.gz 文件损坏: {e}")))?;
 
             // 验证路径有效
             let path = entry
                 .path()
-                .map_err(|e| InstallError::InvalidPackage(format!("tar.gz 条目路径无效: {}", e)))?;
+                .map_err(|e| InstallError::InvalidPackage(format!("tar.gz 条目路径无效: {e}")))?;
 
             if path.to_string_lossy().is_empty() {
                 return Err(InstallError::InvalidPackage(
@@ -227,8 +226,7 @@ impl PackageValidator {
         for hook in &manifest.hooks {
             if !Self::is_valid_hook_name(hook) {
                 return Err(InstallError::InvalidManifest(format!(
-                    "无效的钩子名称: {}",
-                    hook
+                    "无效的钩子名称: {hook}"
                 )));
             }
         }
@@ -323,7 +321,7 @@ impl PackageValidator {
         };
 
         let manifest: PluginManifest = serde_json::from_str(&manifest_content)
-            .map_err(|e| InstallError::InvalidManifest(format!("plugin.json 解析失败: {}", e)))?;
+            .map_err(|e| InstallError::InvalidManifest(format!("plugin.json 解析失败: {e}")))?;
 
         self.validate_manifest(&manifest)?;
 
@@ -334,19 +332,19 @@ impl PackageValidator {
     fn extract_manifest_from_zip(&self, path: &Path) -> Result<String, InstallError> {
         let file = File::open(path)?;
         let mut archive = zip::ZipArchive::new(file)
-            .map_err(|e| InstallError::InvalidPackage(format!("无法读取 ZIP 文件: {}", e)))?;
+            .map_err(|e| InstallError::InvalidPackage(format!("无法读取 ZIP 文件: {e}")))?;
 
         // 查找 plugin.json（可能在根目录或子目录中）
         for i in 0..archive.len() {
             let mut file = archive
                 .by_index(i)
-                .map_err(|e| InstallError::InvalidPackage(format!("无法读取 ZIP 条目: {}", e)))?;
+                .map_err(|e| InstallError::InvalidPackage(format!("无法读取 ZIP 条目: {e}")))?;
 
             let name = file.name().to_string();
             if name.ends_with("plugin.json") && !name.contains("__MACOSX") {
                 let mut content = String::new();
                 file.read_to_string(&mut content).map_err(|e| {
-                    InstallError::InvalidManifest(format!("无法读取 plugin.json: {}", e))
+                    InstallError::InvalidManifest(format!("无法读取 plugin.json: {e}"))
                 })?;
                 return Ok(content);
             }
@@ -365,19 +363,19 @@ impl PackageValidator {
 
         for entry in archive
             .entries()
-            .map_err(|e| InstallError::InvalidPackage(format!("无法读取 tar.gz 文件: {}", e)))?
+            .map_err(|e| InstallError::InvalidPackage(format!("无法读取 tar.gz 文件: {e}")))?
         {
             let mut entry = entry
-                .map_err(|e| InstallError::InvalidPackage(format!("tar.gz 条目读取失败: {}", e)))?;
+                .map_err(|e| InstallError::InvalidPackage(format!("tar.gz 条目读取失败: {e}")))?;
 
             let entry_path = entry
                 .path()
-                .map_err(|e| InstallError::InvalidPackage(format!("tar.gz 条目路径无效: {}", e)))?;
+                .map_err(|e| InstallError::InvalidPackage(format!("tar.gz 条目路径无效: {e}")))?;
 
             if entry_path.ends_with("plugin.json") {
                 let mut content = String::new();
                 entry.read_to_string(&mut content).map_err(|e| {
-                    InstallError::InvalidManifest(format!("无法读取 plugin.json: {}", e))
+                    InstallError::InvalidManifest(format!("无法读取 plugin.json: {e}"))
                 })?;
                 return Ok(content);
             }
@@ -472,8 +470,7 @@ mod tests {
             let manifest = create_test_manifest("test-plugin", version);
             assert!(
                 validator.validate_manifest(&manifest).is_ok(),
-                "Version {} should be valid",
-                version
+                "Version {version} should be valid"
             );
         }
     }
@@ -626,7 +623,7 @@ mod tests {
 
         let validator = PackageValidator::new();
         let result = validator.validate_format(&file_path);
-        assert!(result.is_ok(), "Expected Ok, got: {:?}", result);
+        assert!(result.is_ok(), "Expected Ok, got: {result:?}");
         assert_eq!(result.unwrap(), PackageFormat::TarGz);
     }
 
@@ -690,7 +687,7 @@ mod tests {
 
         let validator = PackageValidator::new();
         let result = validator.extract_and_validate_manifest(&file_path, PackageFormat::TarGz);
-        assert!(result.is_ok(), "Expected Ok, got: {:?}", result);
+        assert!(result.is_ok(), "Expected Ok, got: {result:?}");
         let manifest = result.unwrap();
         assert_eq!(manifest.name, "test-plugin");
         assert_eq!(manifest.version, "1.0.0");
@@ -777,7 +774,7 @@ mod property_tests {
     /// 生成有效的版本号
     fn arb_valid_version() -> impl Strategy<Value = String> {
         (1u32..100, 0u32..100, 0u32..100)
-            .prop_map(|(major, minor, patch)| format!("{}.{}.{}", major, minor, patch))
+            .prop_map(|(major, minor, patch)| format!("{major}.{minor}.{patch}"))
     }
 
     /// 生成有效的插件类型
@@ -802,20 +799,19 @@ mod property_tests {
             .prop_map(|(name, version, plugin_type, hooks, description)| {
                 let hooks_json = hooks
                     .iter()
-                    .map(|h| format!("\"{}\"", h))
+                    .map(|h| format!("\"{h}\""))
                     .collect::<Vec<_>>()
                     .join(", ");
                 let desc = description.unwrap_or_else(|| "Test plugin".to_string());
                 format!(
                     r#"{{
-                    "name": "{}",
-                    "version": "{}",
-                    "description": "{}",
+                    "name": "{name}",
+                    "version": "{version}",
+                    "description": "{desc}",
                     "entry": "config.json",
-                    "plugin_type": "{}",
-                    "hooks": [{}]
-                }}"#,
-                    name, version, desc, plugin_type, hooks_json
+                    "plugin_type": "{plugin_type}",
+                    "hooks": [{hooks_json}]
+                }}"#
                 )
             })
     }

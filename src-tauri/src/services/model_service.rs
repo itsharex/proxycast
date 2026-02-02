@@ -130,13 +130,13 @@ impl ModelService {
         let response = self
             .client
             .get(&url)
-            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Authorization", format!("Bearer {api_key}"))
             .timeout(self.timeout)
             .send()
             .await
             .map_err(|e| {
                 tracing::error!("[MODEL_SERVICE] OpenAI 请求失败: {}", e);
-                format!("请求失败: {}", e)
+                format!("请求失败: {e}")
             })?;
 
         let status = response.status();
@@ -149,12 +149,12 @@ impl ModelService {
                 status,
                 error_body
             );
-            return Err(format!("HTTP 错误: {}", status));
+            return Err(format!("HTTP 错误: {status}"));
         }
 
         let response_text = response.text().await.map_err(|e| {
             tracing::error!("[MODEL_SERVICE] 读取 OpenAI 响应体失败: {}", e);
-            format!("读取响应体失败: {}", e)
+            format!("读取响应体失败: {e}")
         })?;
 
         tracing::debug!("[MODEL_SERVICE] OpenAI 响应体: {}", response_text);
@@ -166,7 +166,7 @@ impl ModelService {
                     e,
                     response_text
                 );
-                format!("解析响应失败: {}", e)
+                format!("解析响应失败: {e}")
             })?;
 
         let model_ids: Vec<String> = models_response.data.into_iter().map(|m| m.id).collect();
@@ -213,7 +213,7 @@ impl ModelService {
             .await
             .map_err(|e| {
                 tracing::error!("[MODEL_SERVICE] Anthropic 请求失败: {}", e);
-                format!("请求失败: {}", e)
+                format!("请求失败: {e}")
             })?;
 
         let status = response.status();
@@ -226,12 +226,12 @@ impl ModelService {
                 status,
                 error_body
             );
-            return Err(format!("HTTP 错误: {}", status));
+            return Err(format!("HTTP 错误: {status}"));
         }
 
         let response_text = response.text().await.map_err(|e| {
             tracing::error!("[MODEL_SERVICE] 读取 Anthropic 响应体失败: {}", e);
-            format!("读取响应体失败: {}", e)
+            format!("读取响应体失败: {e}")
         })?;
 
         tracing::debug!("[MODEL_SERVICE] Anthropic 响应体: {}", response_text);
@@ -243,7 +243,7 @@ impl ModelService {
                     e,
                     response_text
                 );
-                format!("解析响应失败: {}", e)
+                format!("解析响应失败: {e}")
             })?;
 
         let model_ids: Vec<String> = models_response.data.into_iter().map(|m| m.id).collect();
@@ -278,7 +278,7 @@ impl ModelService {
             .await
             .map_err(|e| {
                 tracing::error!("[MODEL_SERVICE] Gemini 请求失败: {}", e);
-                format!("请求失败: {}", e)
+                format!("请求失败: {e}")
             })?;
 
         let status = response.status();
@@ -291,12 +291,12 @@ impl ModelService {
                 status,
                 error_body
             );
-            return Err(format!("HTTP 错误: {}", status));
+            return Err(format!("HTTP 错误: {status}"));
         }
 
         let response_text = response.text().await.map_err(|e| {
             tracing::error!("[MODEL_SERVICE] 读取 Gemini 响应体失败: {}", e);
-            format!("读取响应体失败: {}", e)
+            format!("读取响应体失败: {e}")
         })?;
 
         tracing::debug!("[MODEL_SERVICE] Gemini 响应体: {}", response_text);
@@ -309,7 +309,7 @@ impl ModelService {
                     e,
                     response_text
                 );
-                format!("解析响应失败: {}", e)
+                format!("解析响应失败: {e}")
             })?;
 
         let models = response_json

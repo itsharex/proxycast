@@ -166,20 +166,19 @@ pub fn build_request_headers(
     let mut headers = HeaderMap::new();
 
     // Authorization header
-    let auth_value = format!("Bearer {}", access_token);
+    let auth_value = format!("Bearer {access_token}");
     headers.insert("Authorization", HeaderValue::from_str(&auth_value)?);
 
     // User-Agent header
     // 格式: aws-sdk-js/1.0.0 ua/2.1 os/{os} lang/rust api/codewhispererruntime#1.0.0 m/N,E KiroIDE-{version}-{machineId}
     let os_name = std::env::consts::OS;
     let user_agent = format!(
-        "aws-sdk-js/1.0.0 ua/2.1 os/{} lang/rust api/codewhispererruntime#1.0.0 m/N,E KiroIDE-{}-{}",
-        os_name, kiro_version, machine_id
+        "aws-sdk-js/1.0.0 ua/2.1 os/{os_name} lang/rust api/codewhispererruntime#1.0.0 m/N,E KiroIDE-{kiro_version}-{machine_id}"
     );
     headers.insert(USER_AGENT, HeaderValue::from_str(&user_agent)?);
 
     // x-amz-user-agent header
-    let x_amz_user_agent = format!("aws-sdk-js/1.0.0 KiroIDE-{}-{}", kiro_version, machine_id);
+    let x_amz_user_agent = format!("aws-sdk-js/1.0.0 KiroIDE-{kiro_version}-{machine_id}");
     headers.insert(
         "x-amz-user-agent",
         HeaderValue::from_str(&x_amz_user_agent)?,
@@ -208,15 +207,14 @@ pub fn build_request_headers(
 pub fn build_user_agent(kiro_version: &str, machine_id: &str) -> String {
     let os_name = std::env::consts::OS;
     format!(
-        "aws-sdk-js/1.0.0 ua/2.1 os/{} lang/rust api/codewhispererruntime#1.0.0 m/N,E KiroIDE-{}-{}",
-        os_name, kiro_version, machine_id
+        "aws-sdk-js/1.0.0 ua/2.1 os/{os_name} lang/rust api/codewhispererruntime#1.0.0 m/N,E KiroIDE-{kiro_version}-{machine_id}"
     )
 }
 
 /// 构造 x-amz-user-agent 字符串（用于测试）
 #[cfg(test)]
 pub fn build_x_amz_user_agent(kiro_version: &str, machine_id: &str) -> String {
-    format!("aws-sdk-js/1.0.0 KiroIDE-{}-{}", kiro_version, machine_id)
+    format!("aws-sdk-js/1.0.0 KiroIDE-{kiro_version}-{machine_id}")
 }
 
 // ============================================================================
@@ -271,7 +269,7 @@ pub async fn get_usage_limits(
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("API request failed with status {}: {}", status, body).into());
+        return Err(format!("API request failed with status {status}: {body}").into());
     }
 
     // 解析响应
@@ -615,7 +613,7 @@ mod tests {
 
     /// 生成有效的 profileArn
     fn arb_profile_arn() -> impl Strategy<Value = String> {
-        "[a-zA-Z0-9:/-]{10,50}".prop_map(|s| format!("arn:aws:iam::{}", s))
+        "[a-zA-Z0-9:/-]{10,50}".prop_map(|s| format!("arn:aws:iam::{s}"))
     }
 
     proptest! {
@@ -891,7 +889,7 @@ mod tests {
                 "User-Agent should contain 'm/N,E', got: {}", user_agent);
 
             // 验证包含 KiroIDE-{version}-{machineId}
-            let kiro_suffix = format!("KiroIDE-{}-{}", kiro_version, machine_id);
+            let kiro_suffix = format!("KiroIDE-{kiro_version}-{machine_id}");
             prop_assert!(user_agent.ends_with(&kiro_suffix),
                 "User-Agent should end with '{}', got: {}", kiro_suffix, user_agent);
         }
@@ -909,7 +907,7 @@ mod tests {
             let x_amz_user_agent = build_x_amz_user_agent(&kiro_version, &machine_id);
 
             // 验证格式
-            let expected = format!("aws-sdk-js/1.0.0 KiroIDE-{}-{}", kiro_version, machine_id);
+            let expected = format!("aws-sdk-js/1.0.0 KiroIDE-{kiro_version}-{machine_id}");
             prop_assert_eq!(x_amz_user_agent, expected,
                 "x-amz-user-agent format mismatch");
         }

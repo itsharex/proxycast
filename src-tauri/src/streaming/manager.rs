@@ -1602,7 +1602,7 @@ mod property_tests {
                 // 将事件序列化为字节流
                 let chunks: Vec<Result<Bytes, StreamError>> = events
                     .iter()
-                    .filter_map(|event| serialize_event(event))
+                    .filter_map(serialize_event)
                     .map(|json| Ok(Bytes::from(json)))
                     .collect();
 
@@ -1647,8 +1647,7 @@ mod property_tests {
                 // 验证内容一致
                 if original_content != converted_content {
                     return Err(format!(
-                        "Flow Monitor 捕获的内容应该与原始内容一致: original={}, converted={}",
-                        original_content, converted_content
+                        "Flow Monitor 捕获的内容应该与原始内容一致: original={original_content}, converted={converted_content}"
                     ));
                 }
 
@@ -1676,7 +1675,7 @@ mod property_tests {
                 // 将事件序列化为字节流
                 let chunks: Vec<Result<Bytes, StreamError>> = events
                     .iter()
-                    .filter_map(|event| serialize_event(event))
+                    .filter_map(serialize_event)
                     .map(|json| Ok(Bytes::from(json)))
                     .collect();
 
@@ -1739,7 +1738,7 @@ mod property_tests {
                 // 将事件序列化为字节流
                 let chunks: Vec<Result<Bytes, StreamError>> = events
                     .iter()
-                    .filter_map(|event| serialize_event(event))
+                    .filter_map(serialize_event)
                     .map(|json| Ok(Bytes::from(json)))
                     .collect();
 
@@ -1819,7 +1818,7 @@ mod property_tests {
                 // 创建包含有效事件和错误的流
                 let mut chunks: Vec<Result<Bytes, StreamError>> = valid_events
                     .iter()
-                    .filter_map(|event| serialize_event(event))
+                    .filter_map(serialize_event)
                     .map(|json| Ok(Bytes::from(json)))
                     .collect();
 

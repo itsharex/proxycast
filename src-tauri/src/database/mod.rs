@@ -9,12 +9,23 @@ use std::sync::{Arc, Mutex};
 
 pub type DbConnection = Arc<Mutex<Connection>>;
 
+/// 获取数据库连接锁（自动处理 poisoned lock）
+pub fn lock_db(db: &DbConnection) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
+    match db.lock() {
+        Ok(guard) => Ok(guard),
+        Err(poisoned) => {
+            tracing::warn!("[数据库] 检测到数据库锁被污染，尝试恢复: {}", poisoned);
+            db.clear_poison();
+            Ok(poisoned.into_inner())
+        }
+    }
+}
+
 /// 获取数据库文件路径
 pub fn get_db_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "无法获取主目录".to_string())?;
     let db_dir = home.join(".proxycast");
-    std::fs::create_dir_all(&db_dir)
-        .map_err(|e| format!("无法创建数据库目录 {:?}: {}", db_dir, e))?;
+    std::fs::create_dir_all(&db_dir).map_err(|e| format!("无法创建数据库目录 {db_dir:?}: {e}"))?;
     Ok(db_dir.join("proxycast.db"))
 }
 
@@ -25,7 +36,7 @@ pub fn init_database() -> Result<DbConnection, String> {
 
     // 设置 busy_timeout 为 5 秒，避免 "database is locked" 错误
     conn.busy_timeout(std::time::Duration::from_secs(5))
-        .map_err(|e| format!("设置 busy_timeout 失败: {}", e))?;
+        .map_err(|e| format!("设置 busy_timeout 失败: {e}"))?;
 
     // 创建表结构
     schema::create_tables(&conn).map_err(|e| e.to_string())?;

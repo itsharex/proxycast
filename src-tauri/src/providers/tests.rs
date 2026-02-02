@@ -215,7 +215,7 @@ proptest! {
         model_suffix in "[a-z0-9\\-]{1,10}",
     ) {
         // GPT models should be supported by Codex
-        let gpt_model = format!("gpt-{}", model_suffix);
+        let gpt_model = format!("gpt-{model_suffix}");
         prop_assert!(
             CodexProvider::supports_model(&gpt_model),
             "Codex should support GPT model: {}",
@@ -239,7 +239,7 @@ proptest! {
         o_variant in prop_oneof![Just("o1"), Just("o3"), Just("o4")],
         suffix in prop_oneof![Just(""), Just("-preview"), Just("-mini")],
     ) {
-        let model = format!("{}{}", o_variant, suffix);
+        let model = format!("{o_variant}{suffix}");
         prop_assert!(
             CodexProvider::supports_model(&model),
             "Codex should support O-series model: {}",
@@ -255,7 +255,7 @@ proptest! {
         prefix in "[a-z]{0,5}",
         suffix in "[a-z0-9\\-]{0,5}",
     ) {
-        let model = format!("{}codex{}", prefix, suffix);
+        let model = format!("{prefix}codex{suffix}");
         prop_assert!(
             CodexProvider::supports_model(&model),
             "Codex should support model containing 'codex': {}",
@@ -278,7 +278,7 @@ proptest! {
         ],
     ) {
         prop_assert!(
-            !CodexProvider::supports_model(&model),
+            !CodexProvider::supports_model(model),
             "Codex should NOT support non-GPT model: {}",
             model
         );
@@ -297,7 +297,7 @@ proptest! {
         ],
     ) {
         let provider = VertexProvider::with_config("test-api-key".to_string(), None)
-            .with_model_alias(&alias, &upstream_model);
+            .with_model_alias(&alias, upstream_model);
 
         // Alias should resolve to upstream model
         let resolved = provider.resolve_model_alias(&alias);
@@ -310,7 +310,7 @@ proptest! {
         );
 
         // Non-alias should return as-is
-        let non_alias = format!("non-alias-{}", alias);
+        let non_alias = format!("non-alias-{alias}");
         let non_alias_clone = non_alias.clone();
         let resolved_non_alias = provider.resolve_model_alias(&non_alias);
         prop_assert_eq!(
@@ -340,7 +340,7 @@ proptest! {
         );
 
         // Non-configured model should not be an alias
-        let non_alias = format!("not-{}", alias);
+        let non_alias = format!("not-{alias}");
         prop_assert!(
             !provider.is_alias(&non_alias),
             "'{}' should NOT be recognized as an alias",
@@ -458,7 +458,7 @@ proptest! {
         );
 
         // A different model should be supported
-        let different_model = format!("{}-different", model);
+        let different_model = format!("{model}-different");
         prop_assert!(
             cred.supports_model(&different_model),
             "Model '{}' should be supported (not matching exact pattern '{}')",
@@ -475,8 +475,8 @@ proptest! {
         prefix in "[a-z]{3,8}-[0-9]\\.[0-9]-",
         suffix in "[a-z]{3,8}",
     ) {
-        let pattern = format!("{}*", prefix);
-        let matching_model = format!("{}{}", prefix, suffix);
+        let pattern = format!("{prefix}*");
+        let matching_model = format!("{prefix}{suffix}");
 
         let cred = GeminiApiKeyCredential::new("test-id".to_string(), "test-key".to_string())
             .with_excluded_models(vec![pattern.clone()]);
@@ -490,7 +490,7 @@ proptest! {
         );
 
         // Model not matching prefix should be supported
-        let non_matching_model = format!("other-{}", suffix);
+        let non_matching_model = format!("other-{suffix}");
         prop_assert!(
             cred.supports_model(&non_matching_model),
             "Model '{}' should be supported (not matching prefix pattern '{}')",
@@ -507,8 +507,8 @@ proptest! {
         prefix in "[a-z]{3,8}",
         suffix in "-[a-z]{3,8}",
     ) {
-        let pattern = format!("*{}", suffix);
-        let matching_model = format!("{}{}", prefix, suffix);
+        let pattern = format!("*{suffix}");
+        let matching_model = format!("{prefix}{suffix}");
 
         let cred = GeminiApiKeyCredential::new("test-id".to_string(), "test-key".to_string())
             .with_excluded_models(vec![pattern.clone()]);
@@ -522,7 +522,7 @@ proptest! {
         );
 
         // Model not matching suffix should be supported
-        let non_matching_model = format!("{}-other", prefix);
+        let non_matching_model = format!("{prefix}-other");
         prop_assert!(
             cred.supports_model(&non_matching_model),
             "Model '{}' should be supported (not matching suffix pattern '{}')",
@@ -538,8 +538,8 @@ proptest! {
     fn test_model_exclusion_contains_wildcard(
         middle in "[a-z]{3,6}",
     ) {
-        let pattern = format!("*{}*", middle);
-        let matching_model = format!("prefix-{}-suffix", middle);
+        let pattern = format!("*{middle}*");
+        let matching_model = format!("prefix-{middle}-suffix");
 
         let cred = GeminiApiKeyCredential::new("test-id".to_string(), "test-key".to_string())
             .with_excluded_models(vec![pattern.clone()]);
@@ -610,7 +610,7 @@ proptest! {
         );
 
         // Prefix match should be excluded
-        let prefix_model = format!("{}test", prefix);
+        let prefix_model = format!("{prefix}test");
         prop_assert!(
             !cred.supports_model(&prefix_model),
             "Model '{}' should be excluded by prefix pattern",
@@ -618,7 +618,7 @@ proptest! {
         );
 
         // Suffix match should be excluded
-        let suffix_model = format!("test{}", suffix);
+        let suffix_model = format!("test{suffix}");
         prop_assert!(
             !cred.supports_model(&suffix_model),
             "Model '{}' should be excluded by suffix pattern",
@@ -677,7 +677,7 @@ proptest! {
         model in "[a-z]{3,8}-[0-9]\\.[0-9]-[a-z]{3,6}",
         action in prop_oneof![Just("generateContent"), Just("streamGenerateContent"), Just("countTokens")],
     ) {
-        let custom_base_url = format!("https://{}.example.{}", custom_host, custom_domain);
+        let custom_base_url = format!("https://{custom_host}.example.{custom_domain}");
 
         // Create credential with custom base URL
         let cred_with_custom = GeminiApiKeyCredential::new("test-id".to_string(), "test-key".to_string())
@@ -692,8 +692,8 @@ proptest! {
         );
 
         // build_api_url() should use the custom base URL
-        let api_url = cred_with_custom.build_api_url(&model, &action);
-        let expected_url = format!("{}/v1beta/models/{}:{}", custom_base_url, model, action);
+        let api_url = cred_with_custom.build_api_url(&model, action);
+        let expected_url = format!("{custom_base_url}/v1beta/models/{model}:{action}");
 
         // Verify the URL starts with the custom base URL
         prop_assert!(
@@ -731,8 +731,8 @@ proptest! {
         );
 
         // build_api_url() should use the default base URL
-        let api_url = cred_default.build_api_url(&model, &action);
-        let expected_url = format!("{}/v1beta/models/{}:{}", GEMINI_API_BASE_URL, model, action);
+        let api_url = cred_default.build_api_url(&model, action);
+        let expected_url = format!("{GEMINI_API_BASE_URL}/v1beta/models/{model}:{action}");
 
         // Verify the URL starts with the default base URL
         prop_assert!(
@@ -771,7 +771,7 @@ proptest! {
         );
 
         // build_api_url() should use the default base URL
-        let api_url = cred.build_api_url(&model, &action);
+        let api_url = cred.build_api_url(&model, action);
         prop_assert!(
             api_url.starts_with(GEMINI_API_BASE_URL),
             "API URL should start with default base URL when base_url is None"
@@ -788,7 +788,7 @@ proptest! {
     ) {
         // Note: The current implementation does NOT strip trailing slashes,
         // so we test the actual behavior (URL will have double slash if trailing slash provided)
-        let custom_base_url_no_slash = format!("https://{}.example.com", custom_host);
+        let custom_base_url_no_slash = format!("https://{custom_host}.example.com");
 
         let cred = GeminiApiKeyCredential::new("test-id".to_string(), "test-key".to_string())
             .with_base_url(Some(custom_base_url_no_slash.clone()));
@@ -796,7 +796,7 @@ proptest! {
         let api_url = cred.build_api_url(&model, "generateContent");
 
         // URL should be properly formed with the custom base URL
-        let expected_url = format!("{}/v1beta/models/{}:generateContent", custom_base_url_no_slash, model);
+        let expected_url = format!("{custom_base_url_no_slash}/v1beta/models/{model}:generateContent");
         prop_assert_eq!(
             api_url,
             expected_url,
@@ -813,8 +813,8 @@ proptest! {
         host2 in "[a-z]{3,8}",
         model in "[a-z]{3,8}-[0-9]\\.[0-9]-[a-z]{3,6}",
     ) {
-        let base_url_1 = format!("https://{}.api.com", host1);
-        let base_url_2 = format!("https://{}.api.io", host2);
+        let base_url_1 = format!("https://{host1}.api.com");
+        let base_url_2 = format!("https://{host2}.api.io");
 
         let cred1 = GeminiApiKeyCredential::new("cred-1".to_string(), "key-1".to_string())
             .with_base_url(Some(base_url_1.clone()));

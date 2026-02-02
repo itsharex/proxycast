@@ -87,7 +87,7 @@ impl SessionMetadataStore {
         let conn = self
             .db
             .lock()
-            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {e}")))?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS terminal_sessions (
@@ -103,26 +103,26 @@ impl SessionMetadataStore {
             )",
             [],
         )
-        .map_err(|e| TerminalError::DatabaseError(format!("创建表失败: {}", e)))?;
+        .map_err(|e| TerminalError::DatabaseError(format!("创建表失败: {e}")))?;
 
         // 创建索引
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_terminal_sessions_block_id ON terminal_sessions(block_id)",
             [],
         )
-        .map_err(|e| TerminalError::DatabaseError(format!("创建索引失败: {}", e)))?;
+        .map_err(|e| TerminalError::DatabaseError(format!("创建索引失败: {e}")))?;
 
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_terminal_sessions_tab_id ON terminal_sessions(tab_id)",
             [],
         )
-        .map_err(|e| TerminalError::DatabaseError(format!("创建索引失败: {}", e)))?;
+        .map_err(|e| TerminalError::DatabaseError(format!("创建索引失败: {e}")))?;
 
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_terminal_sessions_status ON terminal_sessions(status)",
             [],
         )
-        .map_err(|e| TerminalError::DatabaseError(format!("创建索引失败: {}", e)))?;
+        .map_err(|e| TerminalError::DatabaseError(format!("创建索引失败: {e}")))?;
 
         tracing::debug!("[SessionStore] 数据库表初始化完成");
         Ok(())
@@ -137,7 +137,7 @@ impl SessionMetadataStore {
         let conn = self
             .db
             .lock()
-            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {e}")))?;
 
         conn.execute(
             "INSERT OR REPLACE INTO terminal_sessions 
@@ -155,7 +155,7 @@ impl SessionMetadataStore {
                 record.exit_code,
             ],
         )
-        .map_err(|e| TerminalError::DatabaseError(format!("保存会话失败: {}", e)))?;
+        .map_err(|e| TerminalError::DatabaseError(format!("保存会话失败: {e}")))?;
 
         tracing::debug!("[SessionStore] 保存会话: {}", record.id);
         Ok(())
@@ -166,7 +166,7 @@ impl SessionMetadataStore {
         let conn = self
             .db
             .lock()
-            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {e}")))?;
 
         let result = conn
             .query_row(
@@ -188,7 +188,7 @@ impl SessionMetadataStore {
                 },
             )
             .optional()
-            .map_err(|e| TerminalError::DatabaseError(format!("查询会话失败: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("查询会话失败: {e}")))?;
 
         Ok(result)
     }
@@ -198,7 +198,7 @@ impl SessionMetadataStore {
         let conn = self
             .db
             .lock()
-            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {e}")))?;
 
         let result = conn
             .query_row(
@@ -220,7 +220,7 @@ impl SessionMetadataStore {
                 },
             )
             .optional()
-            .map_err(|e| TerminalError::DatabaseError(format!("查询会话失败: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("查询会话失败: {e}")))?;
 
         Ok(result)
     }
@@ -230,14 +230,14 @@ impl SessionMetadataStore {
         let conn = self
             .db
             .lock()
-            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {e}")))?;
 
         let mut stmt = conn
             .prepare(
                 "SELECT id, block_id, tab_id, controller_type, connection, status, created_at, updated_at, exit_code
                  FROM terminal_sessions ORDER BY created_at DESC",
             )
-            .map_err(|e| TerminalError::DatabaseError(format!("准备查询失败: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("准备查询失败: {e}")))?;
 
         let records = stmt
             .query_map([], |row| {
@@ -253,9 +253,9 @@ impl SessionMetadataStore {
                     exit_code: row.get(8)?,
                 })
             })
-            .map_err(|e| TerminalError::DatabaseError(format!("查询会话失败: {}", e)))?
+            .map_err(|e| TerminalError::DatabaseError(format!("查询会话失败: {e}")))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| TerminalError::DatabaseError(format!("读取会话失败: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("读取会话失败: {e}")))?;
 
         Ok(records)
     }
@@ -265,14 +265,14 @@ impl SessionMetadataStore {
         let conn = self
             .db
             .lock()
-            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {e}")))?;
 
         let mut stmt = conn
             .prepare(
                 "SELECT id, block_id, tab_id, controller_type, connection, status, created_at, updated_at, exit_code
                  FROM terminal_sessions WHERE status = ?1 ORDER BY created_at DESC",
             )
-            .map_err(|e| TerminalError::DatabaseError(format!("准备查询失败: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("准备查询失败: {e}")))?;
 
         let records = stmt
             .query_map(params![status], |row| {
@@ -288,9 +288,9 @@ impl SessionMetadataStore {
                     exit_code: row.get(8)?,
                 })
             })
-            .map_err(|e| TerminalError::DatabaseError(format!("查询会话失败: {}", e)))?
+            .map_err(|e| TerminalError::DatabaseError(format!("查询会话失败: {e}")))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| TerminalError::DatabaseError(format!("读取会话失败: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("读取会话失败: {e}")))?;
 
         Ok(records)
     }
@@ -300,14 +300,14 @@ impl SessionMetadataStore {
         let conn = self
             .db
             .lock()
-            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {e}")))?;
 
         let mut stmt = conn
             .prepare(
                 "SELECT id, block_id, tab_id, controller_type, connection, status, created_at, updated_at, exit_code
                  FROM terminal_sessions WHERE tab_id = ?1 ORDER BY created_at DESC",
             )
-            .map_err(|e| TerminalError::DatabaseError(format!("准备查询失败: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("准备查询失败: {e}")))?;
 
         let records = stmt
             .query_map(params![tab_id], |row| {
@@ -323,9 +323,9 @@ impl SessionMetadataStore {
                     exit_code: row.get(8)?,
                 })
             })
-            .map_err(|e| TerminalError::DatabaseError(format!("查询会话失败: {}", e)))?
+            .map_err(|e| TerminalError::DatabaseError(format!("查询会话失败: {e}")))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| TerminalError::DatabaseError(format!("读取会话失败: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("读取会话失败: {e}")))?;
 
         Ok(records)
     }
@@ -342,7 +342,7 @@ impl SessionMetadataStore {
         let conn = self
             .db
             .lock()
-            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {e}")))?;
 
         let now = Utc::now().timestamp_millis();
 
@@ -350,7 +350,7 @@ impl SessionMetadataStore {
             "UPDATE terminal_sessions SET status = ?1, exit_code = ?2, updated_at = ?3 WHERE id = ?4",
             params![status, exit_code, now, id],
         )
-        .map_err(|e| TerminalError::DatabaseError(format!("更新会话状态失败: {}", e)))?;
+        .map_err(|e| TerminalError::DatabaseError(format!("更新会话状态失败: {e}")))?;
 
         tracing::debug!("[SessionStore] 更新会话状态: {} -> {}", id, status);
         Ok(())
@@ -361,10 +361,10 @@ impl SessionMetadataStore {
         let conn = self
             .db
             .lock()
-            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {e}")))?;
 
         conn.execute("DELETE FROM terminal_sessions WHERE id = ?1", params![id])
-            .map_err(|e| TerminalError::DatabaseError(format!("删除会话失败: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("删除会话失败: {e}")))?;
 
         tracing::debug!("[SessionStore] 删除会话: {}", id);
         Ok(())
@@ -375,14 +375,14 @@ impl SessionMetadataStore {
         let conn = self
             .db
             .lock()
-            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {e}")))?;
 
         let count = conn
             .execute(
                 "DELETE FROM terminal_sessions WHERE tab_id = ?1",
                 params![tab_id],
             )
-            .map_err(|e| TerminalError::DatabaseError(format!("删除会话失败: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("删除会话失败: {e}")))?;
 
         tracing::debug!("[SessionStore] 删除标签页 {} 的 {} 个会话", tab_id, count);
         Ok(count)
@@ -395,14 +395,14 @@ impl SessionMetadataStore {
         let conn = self
             .db
             .lock()
-            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {e}")))?;
 
         let count = conn
             .execute(
                 "DELETE FROM terminal_sessions WHERE status = 'done' AND created_at < ?1",
                 params![before_timestamp],
             )
-            .map_err(|e| TerminalError::DatabaseError(format!("清理会话失败: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("清理会话失败: {e}")))?;
 
         if count > 0 {
             tracing::info!("[SessionStore] 清理了 {} 个旧会话", count);
@@ -415,13 +415,13 @@ impl SessionMetadataStore {
         let conn = self
             .db
             .lock()
-            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("无法获取数据库锁: {e}")))?;
 
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM terminal_sessions", [], |row| {
                 row.get(0)
             })
-            .map_err(|e| TerminalError::DatabaseError(format!("查询会话数量失败: {}", e)))?;
+            .map_err(|e| TerminalError::DatabaseError(format!("查询会话数量失败: {e}")))?;
 
         Ok(count as usize)
     }

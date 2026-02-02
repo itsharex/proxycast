@@ -53,12 +53,12 @@ impl BinaryDownloader {
     /// 获取当前平台的二进制文件名
     pub fn get_platform_binary_name(base_name: &str) -> String {
         match (std::env::consts::ARCH, std::env::consts::OS) {
-            ("aarch64", "macos") => format!("{}-aarch64-apple-darwin", base_name),
-            ("x86_64", "macos") => format!("{}-x86_64-apple-darwin", base_name),
-            ("x86_64", "linux") => format!("{}-x86_64-unknown-linux-gnu", base_name),
-            ("aarch64", "linux") => format!("{}-aarch64-unknown-linux-gnu", base_name),
-            ("x86_64", "windows") => format!("{}-x86_64-pc-windows-msvc.exe", base_name),
-            _ => format!("{}-unknown", base_name),
+            ("aarch64", "macos") => format!("{base_name}-aarch64-apple-darwin"),
+            ("x86_64", "macos") => format!("{base_name}-x86_64-apple-darwin"),
+            ("x86_64", "linux") => format!("{base_name}-x86_64-unknown-linux-gnu"),
+            ("aarch64", "linux") => format!("{base_name}-aarch64-unknown-linux-gnu"),
+            ("x86_64", "windows") => format!("{base_name}-x86_64-pc-windows-msvc.exe"),
+            _ => format!("{base_name}-unknown"),
         }
     }
 
@@ -68,10 +68,8 @@ impl BinaryDownloader {
         github_owner: &str,
         github_repo: &str,
     ) -> Result<(String, Vec<ReleaseAsset>), String> {
-        let api_url = format!(
-            "https://api.github.com/repos/{}/{}/releases/latest",
-            github_owner, github_repo
-        );
+        let api_url =
+            format!("https://api.github.com/repos/{github_owner}/{github_repo}/releases/latest");
 
         info!("获取最新版本: {}", api_url);
 
@@ -81,18 +79,18 @@ impl BinaryDownloader {
             .header("Accept", "application/vnd.github.v3+json")
             .send()
             .await
-            .map_err(|e| format!("请求 GitHub API 失败: {}", e))?;
+            .map_err(|e| format!("请求 GitHub API 失败: {e}"))?;
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(format!("GitHub API 请求失败: {} - {}", status, body));
+            return Err(format!("GitHub API 请求失败: {status} - {body}"));
         }
 
         let data: serde_json::Value = response
             .json()
             .await
-            .map_err(|e| format!("解析响应失败: {}", e))?;
+            .map_err(|e| format!("解析响应失败: {e}"))?;
 
         let version = data["tag_name"]
             .as_str()
@@ -139,7 +137,7 @@ impl BinaryDownloader {
             .get(download_url)
             .send()
             .await
-            .map_err(|e| format!("下载请求失败: {}", e))?;
+            .map_err(|e| format!("下载请求失败: {e}"))?;
 
         if !response.status().is_success() {
             return Err(format!("下载失败: HTTP {}", response.status()));
@@ -152,29 +150,29 @@ impl BinaryDownloader {
         if let Some(parent) = target_path.parent() {
             fs::create_dir_all(parent)
                 .await
-                .map_err(|e| format!("创建目录失败: {}", e))?;
+                .map_err(|e| format!("创建目录失败: {e}"))?;
         }
 
         let mut file = fs::File::create(target_path)
             .await
-            .map_err(|e| format!("创建文件失败: {}", e))?;
+            .map_err(|e| format!("创建文件失败: {e}"))?;
 
         let mut downloaded: u64 = 0;
         let mut stream = response.bytes_stream();
 
         use futures::StreamExt;
         while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| format!("读取数据失败: {}", e))?;
+            let chunk = chunk.map_err(|e| format!("读取数据失败: {e}"))?;
             file.write_all(&chunk)
                 .await
-                .map_err(|e| format!("写入文件失败: {}", e))?;
+                .map_err(|e| format!("写入文件失败: {e}"))?;
             downloaded += chunk.len() as u64;
             progress_callback(downloaded, total_size);
         }
 
         file.flush()
             .await
-            .map_err(|e| format!("刷新文件失败: {}", e))?;
+            .map_err(|e| format!("刷新文件失败: {e}"))?;
 
         // 设置可执行权限 (Unix)
         #[cfg(unix)]
@@ -182,12 +180,12 @@ impl BinaryDownloader {
             use std::os::unix::fs::PermissionsExt;
             let metadata = fs::metadata(target_path)
                 .await
-                .map_err(|e| format!("获取文件权限失败: {}", e))?;
+                .map_err(|e| format!("获取文件权限失败: {e}"))?;
             let mut perms = metadata.permissions();
             perms.set_mode(0o755);
             fs::set_permissions(target_path, perms)
                 .await
-                .map_err(|e| format!("设置可执行权限失败: {}", e))?;
+                .map_err(|e| format!("设置可执行权限失败: {e}"))?;
         }
 
         info!("下载完成: {:?}", target_path);
@@ -202,7 +200,7 @@ impl BinaryDownloader {
     ) -> Result<bool, String> {
         let content = fs::read(file_path)
             .await
-            .map_err(|e| format!("读取文件失败: {}", e))?;
+            .map_err(|e| format!("读取文件失败: {e}"))?;
 
         let mut hasher = Sha256::new();
         hasher.update(&content);
@@ -225,14 +223,14 @@ impl BinaryDownloader {
         let checksum_asset = assets
             .iter()
             .find(|a| a.name == checksum_filename)
-            .ok_or_else(|| format!("未找到校验文件: {}", checksum_filename))?;
+            .ok_or_else(|| format!("未找到校验文件: {checksum_filename}"))?;
 
         let response = self
             .client
             .get(&checksum_asset.download_url)
             .send()
             .await
-            .map_err(|e| format!("下载校验文件失败: {}", e))?;
+            .map_err(|e| format!("下载校验文件失败: {e}"))?;
 
         if !response.status().is_success() {
             return Err(format!("下载校验文件失败: HTTP {}", response.status()));
@@ -241,7 +239,7 @@ impl BinaryDownloader {
         let content = response
             .text()
             .await
-            .map_err(|e| format!("读取校验文件失败: {}", e))?;
+            .map_err(|e| format!("读取校验文件失败: {e}"))?;
 
         let mut checksums = HashMap::new();
         for line in content.lines() {

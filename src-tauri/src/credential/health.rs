@@ -253,7 +253,7 @@ mod health_tests {
             id.to_string(),
             ProviderType::Kiro,
             CredentialData::ApiKey {
-                key: format!("key-{}", id),
+                key: format!("key-{id}"),
                 base_url: None,
             },
         )

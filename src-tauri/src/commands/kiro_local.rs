@@ -47,8 +47,7 @@ fn get_aws_sso_cache_dir() -> Result<PathBuf, String> {
 
     // 确保目录存在
     if !cache_dir.exists() {
-        fs::create_dir_all(&cache_dir)
-            .map_err(|e| format!("创建 AWS SSO cache 目录失败: {}", e))?;
+        fs::create_dir_all(&cache_dir).map_err(|e| format!("创建 AWS SSO cache 目录失败: {e}"))?;
     }
 
     Ok(cache_dir)
@@ -57,14 +56,14 @@ fn get_aws_sso_cache_dir() -> Result<PathBuf, String> {
 /// 计算 clientIdHash（备用方案，使用 SHA256 的前 40 位模拟 SHA1 格式）
 fn calculate_client_id_hash() -> String {
     let start_url = "https://view.awsapps.com/start";
-    let json_str = format!("{{\"startUrl\":\"{}\"}}", start_url);
+    let json_str = format!("{{\"startUrl\":\"{start_url}\"}}");
 
     let mut hasher = Sha256::new();
     hasher.update(json_str.as_bytes());
     let result = hasher.finalize();
 
     // SHA1 是 40 位十六进制，取 SHA256 的前 20 字节（40 位十六进制）
-    format!("{:x}", result)[..40].to_string()
+    format!("{result:x}")[..40].to_string()
 }
 
 /// 切换 Kiro 凭证到本地
@@ -85,8 +84,8 @@ pub async fn switch_kiro_to_local(
     let credential = pool_service
         .0
         .get_by_uuid(&db, &uuid)
-        .map_err(|e| format!("获取凭证失败: {}", e))?
-        .ok_or_else(|| format!("找不到凭证: {}", uuid))?;
+        .map_err(|e| format!("获取凭证失败: {e}"))?
+        .ok_or_else(|| format!("找不到凭证: {uuid}"))?;
 
     // 检查是否为 Kiro 凭证
     let creds_file_path = match &credential.credential {
@@ -96,32 +95,32 @@ pub async fn switch_kiro_to_local(
 
     // 2. 读取凭证文件
     let creds_content =
-        fs::read_to_string(&creds_file_path).map_err(|e| format!("读取凭证文件失败: {}", e))?;
+        fs::read_to_string(&creds_file_path).map_err(|e| format!("读取凭证文件失败: {e}"))?;
     let creds: serde_json::Value =
-        serde_json::from_str(&creds_content).map_err(|e| format!("解析凭证文件失败: {}", e))?;
+        serde_json::from_str(&creds_content).map_err(|e| format!("解析凭证文件失败: {e}"))?;
 
     // 3. 获取/生成绑定的 Machine ID
     let mut fingerprint_store =
-        KiroFingerprintStore::load().map_err(|e| format!("加载指纹存储失败: {}", e))?;
+        KiroFingerprintStore::load().map_err(|e| format!("加载指纹存储失败: {e}"))?;
 
     let profile_arn = creds.get("profileArn").and_then(|v| v.as_str());
     let client_id = creds.get("clientId").and_then(|v| v.as_str());
 
     let binding = fingerprint_store
         .get_or_create_binding(&uuid, profile_arn, client_id)
-        .map_err(|e| format!("获取指纹绑定失败: {}", e))?;
+        .map_err(|e| format!("获取指纹绑定失败: {e}"))?;
 
     let machine_id = binding.machine_id.clone();
     tracing::info!("[KIRO_LOCAL] 使用 Machine ID: {}", &machine_id[..8]);
 
     // 4. 切换系统机器码
     let machine_service =
-        MachineIdService::new().map_err(|e| format!("初始化机器码服务失败: {}", e))?;
+        MachineIdService::new().map_err(|e| format!("初始化机器码服务失败: {e}"))?;
 
     let machine_result = machine_service
         .set_machine_id(&machine_id)
         .await
-        .map_err(|e| format!("切换机器码失败: {}", e))?;
+        .map_err(|e| format!("切换机器码失败: {e}"))?;
 
     if !machine_result.success {
         if machine_result.requires_admin {
@@ -196,10 +195,10 @@ pub async fn switch_kiro_to_local(
     };
 
     let auth_token_json = serde_json::to_string_pretty(&auth_token)
-        .map_err(|e| format!("序列化 auth token 失败: {}", e))?;
+        .map_err(|e| format!("序列化 auth token 失败: {e}"))?;
 
     fs::write(&auth_token_path, &auth_token_json)
-        .map_err(|e| format!("写入 kiro-auth-token.json 失败: {}", e))?;
+        .map_err(|e| format!("写入 kiro-auth-token.json 失败: {e}"))?;
 
     tracing::info!("[KIRO_LOCAL] 已写入 kiro-auth-token.json");
 
@@ -220,12 +219,12 @@ pub async fn switch_kiro_to_local(
                 ],
             };
 
-            let registration_path = cache_dir.join(format!("{}.json", client_id_hash));
+            let registration_path = cache_dir.join(format!("{client_id_hash}.json"));
             let registration_json = serde_json::to_string_pretty(&registration)
-                .map_err(|e| format!("序列化客户端注册信息失败: {}", e))?;
+                .map_err(|e| format!("序列化客户端注册信息失败: {e}"))?;
 
             fs::write(&registration_path, &registration_json)
-                .map_err(|e| format!("写入客户端注册文件失败: {}", e))?;
+                .map_err(|e| format!("写入客户端注册文件失败: {e}"))?;
 
             tracing::info!(
                 "[KIRO_LOCAL] 已写入客户端注册文件: {}.json",
@@ -237,7 +236,7 @@ pub async fn switch_kiro_to_local(
     // 8. 更新最后切换时间
     fingerprint_store
         .update_last_switched(&uuid)
-        .map_err(|e| format!("更新切换时间失败: {}", e))?;
+        .map_err(|e| format!("更新切换时间失败: {e}"))?;
 
     let credential_name = credential
         .name
@@ -265,8 +264,8 @@ pub async fn get_kiro_fingerprint_info(
     let credential = pool_service
         .0
         .get_by_uuid(&db, &uuid)
-        .map_err(|e| format!("获取凭证失败: {}", e))?
-        .ok_or_else(|| format!("找不到凭证: {}", uuid))?;
+        .map_err(|e| format!("获取凭证失败: {e}"))?
+        .ok_or_else(|| format!("找不到凭证: {uuid}"))?;
 
     // 检查是否为 Kiro 凭证
     let creds_file_path = match &credential.credential {
@@ -276,20 +275,20 @@ pub async fn get_kiro_fingerprint_info(
 
     // 读取凭证文件
     let creds_content =
-        fs::read_to_string(&creds_file_path).map_err(|e| format!("读取凭证文件失败: {}", e))?;
+        fs::read_to_string(&creds_file_path).map_err(|e| format!("读取凭证文件失败: {e}"))?;
     let creds: serde_json::Value =
-        serde_json::from_str(&creds_content).map_err(|e| format!("解析凭证文件失败: {}", e))?;
+        serde_json::from_str(&creds_content).map_err(|e| format!("解析凭证文件失败: {e}"))?;
 
     // 获取指纹绑定
     let mut fingerprint_store =
-        KiroFingerprintStore::load().map_err(|e| format!("加载指纹存储失败: {}", e))?;
+        KiroFingerprintStore::load().map_err(|e| format!("加载指纹存储失败: {e}"))?;
 
     let profile_arn = creds.get("profileArn").and_then(|v| v.as_str());
     let client_id = creds.get("clientId").and_then(|v| v.as_str());
 
     let binding = fingerprint_store
         .get_or_create_binding(&uuid, profile_arn, client_id)
-        .map_err(|e| format!("获取指纹绑定失败: {}", e))?;
+        .map_err(|e| format!("获取指纹绑定失败: {e}"))?;
 
     let auth_method = creds
         .get("authMethod")
@@ -331,9 +330,9 @@ pub async fn get_local_kiro_credential_uuid(
     }
 
     let local_content =
-        fs::read_to_string(&auth_token_path).map_err(|e| format!("读取本地凭证文件失败: {}", e))?;
+        fs::read_to_string(&auth_token_path).map_err(|e| format!("读取本地凭证文件失败: {e}"))?;
     let local_creds: serde_json::Value =
-        serde_json::from_str(&local_content).map_err(|e| format!("解析本地凭证文件失败: {}", e))?;
+        serde_json::from_str(&local_content).map_err(|e| format!("解析本地凭证文件失败: {e}"))?;
 
     let local_access_token = local_creds.get("accessToken").and_then(|v| v.as_str());
     let local_refresh_token = local_creds.get("refreshToken").and_then(|v| v.as_str());
@@ -344,9 +343,7 @@ pub async fn get_local_kiro_credential_uuid(
 
     // 获取所有 Kiro 凭证
     let overview = pool_service.0.get_overview(&db)?;
-    let kiro_pool = overview
-        .iter()
-        .find(|p| p.provider_type.to_string() == "kiro");
+    let kiro_pool = overview.iter().find(|p| p.provider_type == "kiro");
 
     if let Some(pool) = kiro_pool {
         for cred_display in &pool.credentials {

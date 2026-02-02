@@ -32,7 +32,7 @@ impl StateManager {
     pub fn get_state(&self) -> Result<InterceptorState> {
         self.state
             .read()
-            .map_err(|e| BrowserInterceptorError::StateError(format!("读取状态失败: {}", e)))
+            .map_err(|e| BrowserInterceptorError::StateError(format!("读取状态失败: {e}")))
             .map(|state| state.clone())
     }
 
@@ -46,7 +46,7 @@ impl StateManager {
             let mut state = self
                 .state
                 .write()
-                .map_err(|e| BrowserInterceptorError::StateError(format!("写入状态失败: {}", e)))?;
+                .map_err(|e| BrowserInterceptorError::StateError(format!("写入状态失败: {e}")))?;
 
             state.enabled = true;
             state.can_restore = true;
@@ -63,7 +63,7 @@ impl StateManager {
             let mut state = self
                 .state
                 .write()
-                .map_err(|e| BrowserInterceptorError::StateError(format!("写入状态失败: {}", e)))?;
+                .map_err(|e| BrowserInterceptorError::StateError(format!("写入状态失败: {e}")))?;
 
             state.enabled = false;
             state.active_hooks.clear();
@@ -80,9 +80,10 @@ impl StateManager {
 
         // 设置定时器
         {
-            let mut timer = self.temporary_disable_timer.write().map_err(|e| {
-                BrowserInterceptorError::StateError(format!("设置定时器失败: {}", e))
-            })?;
+            let mut timer = self
+                .temporary_disable_timer
+                .write()
+                .map_err(|e| BrowserInterceptorError::StateError(format!("设置定时器失败: {e}")))?;
             *timer = Some(Instant::now() + Duration::from_secs(duration_seconds));
         }
 
@@ -113,7 +114,7 @@ impl StateManager {
             let mut state = self
                 .state
                 .write()
-                .map_err(|e| BrowserInterceptorError::StateError(format!("写入状态失败: {}", e)))?;
+                .map_err(|e| BrowserInterceptorError::StateError(format!("写入状态失败: {e}")))?;
             state.can_restore = false;
         }
 
@@ -126,7 +127,7 @@ impl StateManager {
         let mut state = self
             .state
             .write()
-            .map_err(|e| BrowserInterceptorError::StateError(format!("写入状态失败: {}", e)))?;
+            .map_err(|e| BrowserInterceptorError::StateError(format!("写入状态失败: {e}")))?;
 
         state.intercepted_count += 1;
         state.last_activity = Some(Utc::now());
@@ -139,7 +140,7 @@ impl StateManager {
         let mut state = self
             .state
             .write()
-            .map_err(|e| BrowserInterceptorError::StateError(format!("写入状态失败: {}", e)))?;
+            .map_err(|e| BrowserInterceptorError::StateError(format!("写入状态失败: {e}")))?;
 
         if !state.active_hooks.contains(&hook_name) {
             state.active_hooks.push(hook_name);
@@ -153,7 +154,7 @@ impl StateManager {
         let mut state = self
             .state
             .write()
-            .map_err(|e| BrowserInterceptorError::StateError(format!("写入状态失败: {}", e)))?;
+            .map_err(|e| BrowserInterceptorError::StateError(format!("写入状态失败: {e}")))?;
 
         state.active_hooks.retain(|h| h != hook_name);
 
@@ -171,7 +172,7 @@ impl StateManager {
 
         {
             let mut backup = self.original_system_state.write().map_err(|e| {
-                BrowserInterceptorError::StateError(format!("备份系统状态失败: {}", e))
+                BrowserInterceptorError::StateError(format!("备份系统状态失败: {e}"))
             })?;
             *backup = Some(system_state);
         }
@@ -184,7 +185,7 @@ impl StateManager {
     async fn restore_system_state(&self) -> Result<()> {
         let backup = {
             let backup_guard = self.original_system_state.read().map_err(|e| {
-                BrowserInterceptorError::StateError(format!("读取备份状态失败: {}", e))
+                BrowserInterceptorError::StateError(format!("读取备份状态失败: {e}"))
             })?;
             backup_guard.clone()
         };

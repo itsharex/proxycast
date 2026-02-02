@@ -55,9 +55,9 @@ impl PluginLoader {
         let manifest_path = plugin_dir.join("manifest.json");
         let content = fs::read_to_string(&manifest_path)
             .await
-            .map_err(|e| PluginError::LoadError(format!("无法读取清单文件: {}", e)))?;
+            .map_err(|e| PluginError::LoadError(format!("无法读取清单文件: {e}")))?;
         let manifest: PluginManifest = serde_json::from_str(&content)
-            .map_err(|e| PluginError::InvalidManifest(format!("解析失败: {}", e)))?;
+            .map_err(|e| PluginError::InvalidManifest(format!("解析失败: {e}")))?;
         manifest.validate()?;
         Ok(manifest)
     }
@@ -87,7 +87,7 @@ impl PluginLoader {
         let plugin_settings = if config_path.exists() {
             let content = fs::read_to_string(&config_path)
                 .await
-                .map_err(|e| PluginError::LoadError(format!("无法读取配置文件: {}", e)))?;
+                .map_err(|e| PluginError::LoadError(format!("无法读取配置文件: {e}")))?;
             serde_json::from_str(&content).unwrap_or_default()
         } else {
             serde_json::Value::Object(serde_json::Map::new())

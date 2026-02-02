@@ -405,7 +405,7 @@ pub fn generate_claude_auth_url(state: &str, code_challenge: &str) -> String {
         .collect::<Vec<_>>()
         .join("&");
 
-    format!("{}?{}", CLAUDE_AUTH_URL, query)
+    format!("{CLAUDE_AUTH_URL}?{query}")
 }
 
 /// 生成 Setup Token 授权 URL（只需要推理权限）
@@ -427,7 +427,7 @@ pub fn generate_claude_setup_token_auth_url(state: &str, code_challenge: &str) -
         .collect::<Vec<_>>()
         .join("&");
 
-    format!("{}?{}", CLAUDE_AUTH_URL, query)
+    format!("{CLAUDE_AUTH_URL}?{query}")
 }
 
 /// 用授权码交换 Token（使用官方 redirect_uri）
@@ -468,7 +468,7 @@ pub async fn exchange_claude_code_for_token(
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         tracing::error!("[CLAUDE_OAUTH] Token 交换失败: {} - {}", status, body);
-        return Err(format!("Token 交换失败: {} - {}", status, body).into());
+        return Err(format!("Token 交换失败: {status} - {body}").into());
     }
 
     let data: serde_json::Value = resp.json().await?;
@@ -689,10 +689,10 @@ fn build_cookie_headers(session_key: &str) -> reqwest::header::HeaderMap {
     headers.insert("Cache-Control", "no-cache".parse().unwrap());
     headers.insert(
         "Cookie",
-        format!("sessionKey={}", session_key).parse().unwrap(),
+        format!("sessionKey={session_key}").parse().unwrap(),
     );
     headers.insert("Origin", CLAUDE_AI_URL.parse().unwrap());
-    headers.insert("Referer", format!("{}/new", CLAUDE_AI_URL).parse().unwrap());
+    headers.insert("Referer", format!("{CLAUDE_AI_URL}/new").parse().unwrap());
     headers.insert(
         "User-Agent",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -725,7 +725,7 @@ async fn get_organization_info(
         if status.as_u16() == 302 {
             return Err("请求被 Cloudflare 拦截，请稍后重试".into());
         }
-        return Err(format!("获取组织信息失败：HTTP {}", status).into());
+        return Err(format!("获取组织信息失败：HTTP {status}").into());
     }
 
     let data: serde_json::Value = resp.json().await?;
@@ -782,7 +782,7 @@ async fn authorize_with_cookie(
     let state = Uuid::new_v4().to_string();
 
     // 构建授权 URL
-    let authorize_url = format!("https://claude.ai/v1/oauth/{}/authorize", organization_uuid);
+    let authorize_url = format!("https://claude.ai/v1/oauth/{organization_uuid}/authorize");
 
     // 构建请求 payload
     let payload = serde_json::json!({
@@ -817,7 +817,7 @@ async fn authorize_with_cookie(
             return Err("请求被 Cloudflare 拦截，请稍后重试".into());
         }
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("授权请求失败：HTTP {} - {}", status, body).into());
+        return Err(format!("授权请求失败：HTTP {status} - {body}").into());
     }
 
     let data: serde_json::Value = resp.json().await?;

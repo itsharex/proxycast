@@ -158,11 +158,11 @@ pub enum ExportError {
 impl std::fmt::Display for ExportError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ExportError::ConfigError(msg) => write!(f, "配置错误: {}", msg),
-            ExportError::ReadError(msg) => write!(f, "文件读取错误: {}", msg),
-            ExportError::SerializeError(msg) => write!(f, "序列化错误: {}", msg),
-            ExportError::ParseError(msg) => write!(f, "解析错误: {}", msg),
-            ExportError::TokenFileNotFound(path) => write!(f, "Token 文件不存在: {}", path),
+            ExportError::ConfigError(msg) => write!(f, "配置错误: {msg}"),
+            ExportError::ReadError(msg) => write!(f, "文件读取错误: {msg}"),
+            ExportError::SerializeError(msg) => write!(f, "序列化错误: {msg}"),
+            ExportError::ParseError(msg) => write!(f, "解析错误: {msg}"),
+            ExportError::TokenFileNotFound(path) => write!(f, "Token 文件不存在: {path}"),
         }
     }
 }
@@ -458,7 +458,7 @@ mod base64 {
                 '0'..='9' => Ok((c as u32) - ('0' as u32) + 52),
                 '+' => Ok(62),
                 '/' => Ok(63),
-                _ => Err(format!("Invalid base64 character: {}", c)),
+                _ => Err(format!("Invalid base64 character: {c}")),
             }
         };
 
@@ -726,7 +726,7 @@ mod unit_tests {
             let original: Vec<u8> = (0..len).map(|i| i as u8).collect();
             let encoded = base64_encode(&original);
             let decoded = base64_decode(&encoded).expect("解码应成功");
-            assert_eq!(decoded, original, "长度 {} 的数据往返失败", len);
+            assert_eq!(decoded, original, "长度 {len} 的数据往返失败");
         }
     }
 

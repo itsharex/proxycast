@@ -124,7 +124,7 @@ impl TokenCacheService {
                             let conn = db.lock().map_err(|e| e.to_string())?;
                             ProviderPoolDao::get_by_uuid(&conn, uuid)
                                 .map_err(|e| e.to_string())?
-                                .ok_or_else(|| format!("Credential not found: {}", uuid))?
+                                .ok_or_else(|| format!("Credential not found: {uuid}"))?
                         };
 
                         // 尝试从源文件读取 accessToken
@@ -275,7 +275,7 @@ impl TokenCacheService {
             let conn = db.lock().map_err(|e| e.to_string())?;
             ProviderPoolDao::get_by_uuid(&conn, uuid)
                 .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("Credential not found: {}", uuid))?
+                .ok_or_else(|| format!("Credential not found: {uuid}"))?
         };
 
         tracing::info!(
@@ -355,7 +355,7 @@ impl TokenCacheService {
                         let conn = db.lock().map_err(|e| e.to_string())?;
                         // 简化禁用逻辑：直接在数据库中标记为禁用
                         let sql = "UPDATE credentials SET is_disabled = true WHERE uuid = ?";
-                        conn.execute(sql, &[&uuid]).map_err(|e| e.to_string())
+                        conn.execute(sql, [&uuid]).map_err(|e| e.to_string())
                     };
 
                     match disable_result {
@@ -504,12 +504,12 @@ impl TokenCacheService {
         provider
             .load_credentials_from_path(creds_path)
             .await
-            .map_err(|e| format!("加载 Kiro 凭证失败: {}", e))?;
+            .map_err(|e| format!("加载 Kiro 凭证失败: {e}"))?;
 
         let token = provider
             .refresh_token()
             .await
-            .map_err(|e| format!("刷新 Kiro Token 失败: {}", e))?;
+            .map_err(|e| format!("刷新 Kiro Token 失败: {e}"))?;
 
         // Kiro token 通常 1 小时过期，我们假设 50 分钟
         let expiry_time = Utc::now() + chrono::Duration::minutes(50);
@@ -530,12 +530,12 @@ impl TokenCacheService {
         provider
             .load_credentials_from_path(creds_path)
             .await
-            .map_err(|e| format!("加载 Gemini 凭证失败: {}", e))?;
+            .map_err(|e| format!("加载 Gemini 凭证失败: {e}"))?;
 
         let token = provider
             .refresh_token()
             .await
-            .map_err(|e| format!("刷新 Gemini Token 失败: {}", e))?;
+            .map_err(|e| format!("刷新 Gemini Token 失败: {e}"))?;
 
         // Gemini token 通常 1 小时过期
         let expiry_time = provider
@@ -562,12 +562,12 @@ impl TokenCacheService {
         provider
             .load_credentials_from_path(creds_path)
             .await
-            .map_err(|e| format!("加载 Antigravity 凭证失败: {}", e))?;
+            .map_err(|e| format!("加载 Antigravity 凭证失败: {e}"))?;
 
         let token = provider
             .refresh_token()
             .await
-            .map_err(|e| format!("刷新 Antigravity Token 失败: {}", e))?;
+            .map_err(|e| format!("刷新 Antigravity Token 失败: {e}"))?;
 
         // Antigravity token 通常 1 小时过期
         let expiry_time = provider
@@ -594,12 +594,12 @@ impl TokenCacheService {
         provider
             .load_credentials_from_path(creds_path)
             .await
-            .map_err(|e| format!("加载 Codex 凭证失败: {}", e))?;
+            .map_err(|e| format!("加载 Codex 凭证失败: {e}"))?;
 
         let token = provider
             .refresh_token_with_retry(3)
             .await
-            .map_err(|e| format!("刷新 Codex Token 失败: {}", e))?;
+            .map_err(|e| format!("刷新 Codex Token 失败: {e}"))?;
 
         // 解析过期时间
         let expiry_time = provider
@@ -628,12 +628,12 @@ impl TokenCacheService {
         provider
             .load_credentials_from_path(creds_path)
             .await
-            .map_err(|e| format!("加载 Claude OAuth 凭证失败: {}", e))?;
+            .map_err(|e| format!("加载 Claude OAuth 凭证失败: {e}"))?;
 
         let token = provider
             .refresh_token_with_retry(3)
             .await
-            .map_err(|e| format!("刷新 Claude OAuth Token 失败: {}", e))?;
+            .map_err(|e| format!("刷新 Claude OAuth Token 失败: {e}"))?;
 
         // 解析过期时间
         let expiry_time = provider
@@ -664,7 +664,7 @@ impl TokenCacheService {
             let conn = db.lock().map_err(|e| e.to_string())?;
             ProviderPoolDao::get_by_uuid(&conn, uuid)
                 .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("Credential not found: {}", uuid))?
+                .ok_or_else(|| format!("Credential not found: {uuid}"))?
         };
 
         // 尝试从源文件读取 token
@@ -691,9 +691,9 @@ impl TokenCacheService {
             CredentialData::KiroOAuth { creds_file_path } => {
                 let content = tokio::fs::read_to_string(creds_file_path)
                     .await
-                    .map_err(|e| format!("读取 Kiro 凭证文件失败: {}", e))?;
+                    .map_err(|e| format!("读取 Kiro 凭证文件失败: {e}"))?;
                 let creds: serde_json::Value =
-                    serde_json::from_str(&content).map_err(|e| format!("解析凭证失败: {}", e))?;
+                    serde_json::from_str(&content).map_err(|e| format!("解析凭证失败: {e}"))?;
 
                 let access_token = creds["accessToken"]
                     .as_str()
@@ -718,9 +718,9 @@ impl TokenCacheService {
             } => {
                 let content = tokio::fs::read_to_string(creds_file_path)
                     .await
-                    .map_err(|e| format!("读取 Gemini 凭证文件失败: {}", e))?;
+                    .map_err(|e| format!("读取 Gemini 凭证文件失败: {e}"))?;
                 let creds: serde_json::Value =
-                    serde_json::from_str(&content).map_err(|e| format!("解析凭证失败: {}", e))?;
+                    serde_json::from_str(&content).map_err(|e| format!("解析凭证失败: {e}"))?;
 
                 let access_token = creds["access_token"].as_str().map(|s| s.to_string());
                 let refresh_token = creds["refresh_token"].as_str().map(|s| s.to_string());
@@ -742,9 +742,9 @@ impl TokenCacheService {
             } => {
                 let content = tokio::fs::read_to_string(creds_file_path)
                     .await
-                    .map_err(|e| format!("读取 Antigravity 凭证文件失败: {}", e))?;
+                    .map_err(|e| format!("读取 Antigravity 凭证文件失败: {e}"))?;
                 let creds: serde_json::Value =
-                    serde_json::from_str(&content).map_err(|e| format!("解析凭证失败: {}", e))?;
+                    serde_json::from_str(&content).map_err(|e| format!("解析凭证失败: {e}"))?;
 
                 let access_token = creds["access_token"].as_str().map(|s| s.to_string());
                 let refresh_token = creds["refresh_token"].as_str().map(|s| s.to_string());
@@ -798,9 +798,9 @@ impl TokenCacheService {
             } => {
                 let content = tokio::fs::read_to_string(creds_file_path)
                     .await
-                    .map_err(|e| format!("读取 Codex 凭证文件失败: {}", e))?;
+                    .map_err(|e| format!("读取 Codex 凭证文件失败: {e}"))?;
                 let creds: serde_json::Value =
-                    serde_json::from_str(&content).map_err(|e| format!("解析凭证失败: {}", e))?;
+                    serde_json::from_str(&content).map_err(|e| format!("解析凭证失败: {e}"))?;
 
                 let access_token = creds["access_token"].as_str().map(|s| s.to_string());
                 let refresh_token = creds["refresh_token"].as_str().map(|s| s.to_string());
@@ -821,9 +821,9 @@ impl TokenCacheService {
             CredentialData::ClaudeOAuth { creds_file_path } => {
                 let content = tokio::fs::read_to_string(creds_file_path)
                     .await
-                    .map_err(|e| format!("读取 Claude OAuth 凭证文件失败: {}", e))?;
+                    .map_err(|e| format!("读取 Claude OAuth 凭证文件失败: {e}"))?;
                 let creds: serde_json::Value =
-                    serde_json::from_str(&content).map_err(|e| format!("解析凭证失败: {}", e))?;
+                    serde_json::from_str(&content).map_err(|e| format!("解析凭证失败: {e}"))?;
 
                 let access_token = creds["access_token"].as_str().map(|s| s.to_string());
                 let refresh_token = creds["refresh_token"].as_str().map(|s| s.to_string());
@@ -890,7 +890,7 @@ impl TokenCacheService {
         let hash_value = hasher.finish();
 
         // 生成0-30秒的延迟（转换为毫秒）
-        (hash_value % 30000) as u64
+        hash_value % 30000
     }
 
     /// 智能错误分类方法

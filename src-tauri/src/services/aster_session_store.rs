@@ -58,10 +58,7 @@ impl SessionStore for ProxyCastSessionStore {
         let now = Utc::now();
         let now_str = now.to_rfc3339();
 
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| anyhow!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| anyhow!("数据库锁定失败: {e}"))?;
 
         let type_str = session_type.to_string();
 
@@ -70,7 +67,7 @@ impl SessionStore for ProxyCastSessionStore {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             rusqlite::params![id, type_str, None::<String>, name, now_str, now_str],
         )
-        .map_err(|e| anyhow!("创建会话失败: {}", e))?;
+        .map_err(|e| anyhow!("创建会话失败: {e}"))?;
 
         Ok(Session {
             id,
@@ -98,17 +95,41 @@ impl SessionStore for ProxyCastSessionStore {
     }
 
     async fn get_session(&self, id: &str, include_messages: bool) -> Result<Session> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| anyhow!("数据库锁定失败: {}", e))?;
+        tracing::info!(
+            "[SessionStore] get_session 被调用: id={}, include_messages={}",
+            id,
+            include_messages
+        );
+
+        let conn = self.db.lock().map_err(|e| anyhow!("数据库锁定失败: {e}"))?;
+
+        // 检查 session 是否存在
+        let session_exists: bool = conn
+            .query_row("SELECT 1 FROM agent_sessions WHERE id = ?", [id], |_| {
+                Ok(true)
+            })
+            .unwrap_or(false);
+
+        tracing::info!("[SessionStore] session_exists={}", session_exists);
+
+        // 如果不存在，自动创建
+        if !session_exists {
+            let now = Utc::now().to_rfc3339();
+            conn.execute(
+                "INSERT INTO agent_sessions (id, model, system_prompt, title, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![id, "agent:default", None::<String>, "新对话", now, now],
+            )
+            .map_err(|e| anyhow!("自动创建会话失败: {e}"))?;
+            tracing::info!("[SessionStore] get_session 自动创建会话: {}", id);
+        }
 
         let mut stmt = conn
             .prepare(
                 "SELECT id, model, system_prompt, title, created_at, updated_at
                  FROM agent_sessions WHERE id = ?",
             )
-            .map_err(|e| anyhow!("准备查询失败: {}", e))?;
+            .map_err(|e| anyhow!("准备查询失败: {e}"))?;
 
         let session_row = stmt
             .query_row([id], |row| {
@@ -121,7 +142,7 @@ impl SessionStore for ProxyCastSessionStore {
                     row.get::<_, String>(5)?,
                 ))
             })
-            .map_err(|e| anyhow!("会话不存在: {}", e))?;
+            .map_err(|e| anyhow!("会话不存在: {e}"))?;
 
         let (id, model, _system_prompt, title, created_at, updated_at) = session_row;
 
@@ -168,10 +189,12 @@ impl SessionStore for ProxyCastSessionStore {
     }
 
     async fn add_message(&self, session_id: &str, message: &Message) -> Result<()> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| anyhow!("数据库锁定失败: {}", e))?;
+        tracing::info!(
+            "[SessionStore] add_message 被调用: session_id={}",
+            session_id
+        );
+
+        let conn = self.db.lock().map_err(|e| anyhow!("数据库锁定失败: {e}"))?;
 
         // 检查会话是否存在，如果不存在则自动创建
         let session_exists: bool = conn
@@ -196,13 +219,13 @@ impl SessionStore for ProxyCastSessionStore {
                     now
                 ],
             )
-            .map_err(|e| anyhow!("自动创建会话失败: {}", e))?;
+            .map_err(|e| anyhow!("自动创建会话失败: {e}"))?;
             tracing::info!("[SessionStore] 自动创建会话: {}", session_id);
         }
 
         let role = Self::message_role_to_string(message);
         let content_json = serde_json::to_string(&message.content)
-            .map_err(|e| anyhow!("序列化消息内容失败: {}", e))?;
+            .map_err(|e| anyhow!("序列化消息内容失败: {e}"))?;
         let timestamp = Utc::now().to_rfc3339();
 
         // 从 content 中提取 tool_calls（ToolRequest 类型）
@@ -238,13 +261,13 @@ impl SessionStore for ProxyCastSessionStore {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             rusqlite::params![session_id, role, content_json, timestamp, tool_calls_json, tool_call_id],
         )
-        .map_err(|e| anyhow!("添加消息失败: {}", e))?;
+        .map_err(|e| anyhow!("添加消息失败: {e}"))?;
 
         conn.execute(
             "UPDATE agent_sessions SET updated_at = ? WHERE id = ?",
             rusqlite::params![timestamp, session_id],
         )
-        .map_err(|e| anyhow!("更新会话时间失败: {}", e))?;
+        .map_err(|e| anyhow!("更新会话时间失败: {e}"))?;
 
         Ok(())
     }
@@ -254,16 +277,13 @@ impl SessionStore for ProxyCastSessionStore {
         session_id: &str,
         conversation: &Conversation,
     ) -> Result<()> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| anyhow!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| anyhow!("数据库锁定失败: {e}"))?;
 
         conn.execute(
             "DELETE FROM agent_messages WHERE session_id = ?",
             [session_id],
         )
-        .map_err(|e| anyhow!("删除旧消息失败: {}", e))?;
+        .map_err(|e| anyhow!("删除旧消息失败: {e}"))?;
 
         for message in conversation.messages() {
             let role = Self::message_role_to_string(message);
@@ -313,10 +333,7 @@ impl SessionStore for ProxyCastSessionStore {
     }
 
     async fn list_sessions(&self) -> Result<Vec<Session>> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| anyhow!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| anyhow!("数据库锁定失败: {e}"))?;
 
         let mut stmt = conn.prepare(
             "SELECT id, model, system_prompt, title, created_at, updated_at
@@ -381,19 +398,13 @@ impl SessionStore for ProxyCastSessionStore {
     }
 
     async fn delete_session(&self, id: &str) -> Result<()> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| anyhow!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| anyhow!("数据库锁定失败: {e}"))?;
         conn.execute("DELETE FROM agent_sessions WHERE id = ?", [id])?;
         Ok(())
     }
 
     async fn get_insights(&self) -> Result<SessionInsights> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| anyhow!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| anyhow!("数据库锁定失败: {e}"))?;
 
         let total_sessions: i64 =
             conn.query_row("SELECT COUNT(*) FROM agent_sessions", [], |row| row.get(0))?;
@@ -406,12 +417,12 @@ impl SessionStore for ProxyCastSessionStore {
 
     async fn export_session(&self, id: &str) -> Result<String> {
         let session = self.get_session(id, true).await?;
-        serde_json::to_string_pretty(&session).map_err(|e| anyhow!("导出会话失败: {}", e))
+        serde_json::to_string_pretty(&session).map_err(|e| anyhow!("导出会话失败: {e}"))
     }
 
     async fn import_session(&self, json: &str) -> Result<Session> {
         let session: Session =
-            serde_json::from_str(json).map_err(|e| anyhow!("解析会话 JSON 失败: {}", e))?;
+            serde_json::from_str(json).map_err(|e| anyhow!("解析会话 JSON 失败: {e}"))?;
 
         let new_session = self
             .create_session(
@@ -449,13 +460,9 @@ impl SessionStore for ProxyCastSessionStore {
     }
 
     async fn truncate_conversation(&self, session_id: &str, timestamp: i64) -> Result<()> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| anyhow!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| anyhow!("数据库锁定失败: {e}"))?;
 
-        let dt =
-            chrono::DateTime::from_timestamp(timestamp, 0).unwrap_or_else(|| Utc::now().into());
+        let dt = chrono::DateTime::from_timestamp(timestamp, 0).unwrap_or_else(Utc::now);
         let timestamp_str = dt.to_rfc3339();
 
         conn.execute(
@@ -472,10 +479,7 @@ impl SessionStore for ProxyCastSessionStore {
         name: String,
         _user_set: bool,
     ) -> Result<()> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| anyhow!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| anyhow!("数据库锁定失败: {e}"))?;
         conn.execute(
             "UPDATE agent_sessions SET title = ? WHERE id = ?",
             rusqlite::params![name, session_id],
@@ -502,10 +506,7 @@ impl SessionStore for ProxyCastSessionStore {
         _model_config: Option<ModelConfig>,
     ) -> Result<()> {
         if let Some(provider) = provider_name {
-            let conn = self
-                .db
-                .lock()
-                .map_err(|e| anyhow!("数据库锁定失败: {}", e))?;
+            let conn = self.db.lock().map_err(|e| anyhow!("数据库锁定失败: {e}"))?;
             conn.execute(
                 "UPDATE agent_sessions SET model = ? WHERE id = ?",
                 rusqlite::params![provider, session_id],
@@ -531,10 +532,7 @@ impl SessionStore for ProxyCastSessionStore {
         _before_date: Option<chrono::DateTime<chrono::Utc>>,
         _exclude_session_id: Option<String>,
     ) -> Result<Vec<ChatHistoryMatch>> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| anyhow!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| anyhow!("数据库锁定失败: {e}"))?;
         let limit = limit.unwrap_or(50);
 
         let mut stmt = conn.prepare(
@@ -546,7 +544,7 @@ impl SessionStore for ProxyCastSessionStore {
              LIMIT ?",
         )?;
 
-        let pattern = format!("%{}%", query);
+        let pattern = format!("%{query}%");
         let matches: Vec<ChatHistoryMatch> = stmt
             .query_map(rusqlite::params![pattern, limit as i64], |row| {
                 let session_id: String = row.get(0)?;

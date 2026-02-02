@@ -149,23 +149,20 @@ impl SSHOpts {
                 let host = &host_port[1..bracket_end];
                 let remaining = &host_port[bracket_end + 1..];
 
-                let port = if remaining.starts_with(':') {
-                    let port_str = &remaining[1..];
+                let port = if let Some(port_str) = remaining.strip_prefix(':') {
                     Some(Self::parse_port(port_str)?)
                 } else if remaining.is_empty() {
                     None
                 } else {
                     return Err(TerminalError::SSHConnectionFailed(format!(
-                        "无效的 IPv6 地址格式: {}",
-                        host_port
+                        "无效的 IPv6 地址格式: {host_port}"
                     )));
                 };
 
                 return Ok((host.to_string(), port));
             } else {
                 return Err(TerminalError::SSHConnectionFailed(format!(
-                    "无效的 IPv6 地址格式，缺少 ']': {}",
-                    host_port
+                    "无效的 IPv6 地址格式，缺少 ']': {host_port}"
                 )));
             }
         }
@@ -192,7 +189,7 @@ impl SSHOpts {
     fn parse_port(port_str: &str) -> Result<u16, TerminalError> {
         port_str
             .parse::<u16>()
-            .map_err(|_| TerminalError::SSHConnectionFailed(format!("无效的端口号: {}", port_str)))
+            .map_err(|_| TerminalError::SSHConnectionFailed(format!("无效的端口号: {port_str}")))
     }
 
     /// 获取有效端口（如果未指定则返回默认端口）
@@ -706,8 +703,7 @@ impl SSHConn {
         let current_state = self.state();
         if !current_state.can_transition_to(ConnectionState::Connecting) {
             return Err(TerminalError::SSHConnectionFailed(format!(
-                "无法从 {} 状态开始连接",
-                current_state
+                "无法从 {current_state} 状态开始连接"
             )));
         }
 
@@ -723,7 +719,7 @@ impl SSHConn {
         let tcp = match TcpStream::connect(&addr) {
             Ok(stream) => stream,
             Err(e) => {
-                let error_msg = format!("TCP 连接失败: {}", e);
+                let error_msg = format!("TCP 连接失败: {e}");
                 tracing::error!("[SSHConn] {}", error_msg);
                 self.set_state(ConnectionState::Error);
                 self.set_error(Some(error_msg.clone()));
@@ -734,7 +730,7 @@ impl SSHConn {
 
         // 创建 SSH 会话
         let mut session = Session::new().map_err(|e| {
-            let error_msg = format!("创建 SSH 会话失败: {}", e);
+            let error_msg = format!("创建 SSH 会话失败: {e}");
             self.set_state(ConnectionState::Error);
             self.set_error(Some(error_msg.clone()));
             self.broadcast_conn_change();
@@ -743,7 +739,7 @@ impl SSHConn {
 
         // 设置 TCP 流
         session.set_tcp_stream(tcp.try_clone().map_err(|e| {
-            let error_msg = format!("克隆 TCP 流失败: {}", e);
+            let error_msg = format!("克隆 TCP 流失败: {e}");
             self.set_state(ConnectionState::Error);
             self.set_error(Some(error_msg.clone()));
             self.broadcast_conn_change();
@@ -752,7 +748,7 @@ impl SSHConn {
 
         // 执行 SSH 握手
         session.handshake().map_err(|e| {
-            let error_msg = format!("SSH 握手失败: {}", e);
+            let error_msg = format!("SSH 握手失败: {e}");
             tracing::error!("[SSHConn] {}", error_msg);
             self.set_state(ConnectionState::Error);
             self.set_error(Some(error_msg.clone()));
@@ -836,18 +832,18 @@ impl SSHConn {
             SSHAuthMethod::Agent => {
                 tracing::debug!("[SSHConn] 尝试 SSH Agent 认证");
                 let mut agent = session.agent().map_err(|e| {
-                    TerminalError::SSHAuthFailed(format!("获取 SSH Agent 失败: {}", e))
+                    TerminalError::SSHAuthFailed(format!("获取 SSH Agent 失败: {e}"))
                 })?;
                 agent.connect().map_err(|e| {
-                    TerminalError::SSHAuthFailed(format!("连接 SSH Agent 失败: {}", e))
+                    TerminalError::SSHAuthFailed(format!("连接 SSH Agent 失败: {e}"))
                 })?;
                 agent
                     .list_identities()
-                    .map_err(|e| TerminalError::SSHAuthFailed(format!("列出身份失败: {}", e)))?;
+                    .map_err(|e| TerminalError::SSHAuthFailed(format!("列出身份失败: {e}")))?;
 
-                let identities: Vec<_> = agent.identities().map_err(|e| {
-                    TerminalError::SSHAuthFailed(format!("获取身份列表失败: {}", e))
-                })?;
+                let identities: Vec<_> = agent
+                    .identities()
+                    .map_err(|e| TerminalError::SSHAuthFailed(format!("获取身份列表失败: {e}")))?;
 
                 for identity in identities {
                     if agent.userauth(username, &identity).is_ok() {
@@ -943,7 +939,7 @@ impl SSHConn {
 
         // 转换为 Base64 格式的指纹
         use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-        format!("SHA256:{}", BASE64.encode(&result))
+        format!("SHA256:{}", BASE64.encode(result))
     }
 
     /// 检查 known_hosts 文件
@@ -1001,7 +997,7 @@ impl SSHConn {
         })?;
 
         let mut known_hosts = session.known_hosts().map_err(|e| {
-            TerminalError::HostKeyVerificationFailed(format!("获取 known_hosts 失败: {}", e))
+            TerminalError::HostKeyVerificationFailed(format!("获取 known_hosts 失败: {e}"))
         })?;
 
         // 读取现有的 known_hosts 文件
@@ -1038,14 +1034,14 @@ impl SSHConn {
         known_hosts
             .add(&host_with_port, host_key, "", key_type)
             .map_err(|e| {
-                TerminalError::HostKeyVerificationFailed(format!("添加主机密钥失败: {}", e))
+                TerminalError::HostKeyVerificationFailed(format!("添加主机密钥失败: {e}"))
             })?;
 
         // 确保 .ssh 目录存在
         if let Some(ssh_dir) = known_hosts_path.parent() {
             if !ssh_dir.exists() {
                 std::fs::create_dir_all(ssh_dir).map_err(|e| {
-                    TerminalError::HostKeyVerificationFailed(format!("创建 .ssh 目录失败: {}", e))
+                    TerminalError::HostKeyVerificationFailed(format!("创建 .ssh 目录失败: {e}"))
                 })?;
             }
         }
@@ -1054,7 +1050,7 @@ impl SSHConn {
         known_hosts
             .write_file(&known_hosts_path, ssh2::KnownHostFileKind::OpenSSH)
             .map_err(|e| {
-                TerminalError::HostKeyVerificationFailed(format!("写入 known_hosts 失败: {}", e))
+                TerminalError::HostKeyVerificationFailed(format!("写入 known_hosts 失败: {e}"))
             })?;
 
         tracing::info!("[SSHConn] 已添加主机密钥到 known_hosts: {}", host_with_port);
@@ -1192,18 +1188,18 @@ impl SSHConn {
             SSHAuthMethod::Agent => {
                 tracing::debug!("[SSHConn] 尝试 SSH Agent 认证");
                 let mut agent = session.agent().map_err(|e| {
-                    TerminalError::SSHAuthFailed(format!("获取 SSH Agent 失败: {}", e))
+                    TerminalError::SSHAuthFailed(format!("获取 SSH Agent 失败: {e}"))
                 })?;
                 agent.connect().map_err(|e| {
-                    TerminalError::SSHAuthFailed(format!("连接 SSH Agent 失败: {}", e))
+                    TerminalError::SSHAuthFailed(format!("连接 SSH Agent 失败: {e}"))
                 })?;
                 agent
                     .list_identities()
-                    .map_err(|e| TerminalError::SSHAuthFailed(format!("列出身份失败: {}", e)))?;
+                    .map_err(|e| TerminalError::SSHAuthFailed(format!("列出身份失败: {e}")))?;
 
-                let identities: Vec<_> = agent.identities().map_err(|e| {
-                    TerminalError::SSHAuthFailed(format!("获取身份列表失败: {}", e))
-                })?;
+                let identities: Vec<_> = agent
+                    .identities()
+                    .map_err(|e| TerminalError::SSHAuthFailed(format!("获取身份列表失败: {e}")))?;
 
                 for identity in identities {
                     if agent.userauth(username, &identity).is_ok() && session.authenticated() {
@@ -1373,7 +1369,7 @@ impl SSHConfigParser {
     /// _Requirements: 4.12_
     pub fn parse_config(path: &PathBuf) -> Result<HashMap<String, ConnKeywords>, TerminalError> {
         let content = std::fs::read_to_string(path).map_err(|e| {
-            TerminalError::SSHConnectionFailed(format!("读取 SSH 配置文件失败: {}", e))
+            TerminalError::SSHConnectionFailed(format!("读取 SSH 配置文件失败: {e}"))
         })?;
 
         Self::parse_config_content(&content)
@@ -1486,12 +1482,11 @@ impl SSHConfigParser {
     /// 移除值两端的引号
     fn unquote(value: &str) -> String {
         let value = value.trim();
-        if (value.starts_with('"') && value.ends_with('"'))
-            || (value.starts_with('\'') && value.ends_with('\''))
+        if ((value.starts_with('"') && value.ends_with('"'))
+            || (value.starts_with('\'') && value.ends_with('\'')))
+            && value.len() >= 2
         {
-            if value.len() >= 2 {
-                return value[1..value.len() - 1].to_string();
-            }
+            return value[1..value.len() - 1].to_string();
         }
         value.to_string()
     }
@@ -1635,7 +1630,7 @@ impl SSHConfigParser {
         host: &str,
     ) -> Result<ConnKeywords, TerminalError> {
         let content = std::fs::read_to_string(path).map_err(|e| {
-            TerminalError::SSHConnectionFailed(format!("读取 SSH 配置文件失败: {}", e))
+            TerminalError::SSHConnectionFailed(format!("读取 SSH 配置文件失败: {e}"))
         })?;
 
         Self::get_host_config_from_content(&content, host)
@@ -1886,8 +1881,7 @@ impl SSHConfigParser {
     ) -> Result<Vec<(SSHOpts, ConnKeywords)>, TerminalError> {
         if depth > MAX_PROXY_JUMP_DEPTH {
             return Err(TerminalError::SSHConnectionFailed(format!(
-                "ProxyJump 链深度超过最大限制 {}",
-                MAX_PROXY_JUMP_DEPTH
+                "ProxyJump 链深度超过最大限制 {MAX_PROXY_JUMP_DEPTH}"
             )));
         }
 

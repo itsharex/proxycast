@@ -61,10 +61,7 @@ impl ContentManager {
             updated_at: now,
         };
 
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         conn.execute(
             "INSERT INTO contents (id, project_id, title, content_type, status, sort_order, body, word_count, metadata_json, session_id, created_at, updated_at)
@@ -84,7 +81,7 @@ impl ContentManager {
                 content.updated_at.timestamp_millis(),
             ],
         )
-        .map_err(|e| format!("创建内容失败: {}", e))?;
+        .map_err(|e| format!("创建内容失败: {e}"))?;
 
         tracing::info!(
             "[Content] 创建: id={}, project_id={}, title={}",
@@ -131,22 +128,19 @@ impl ContentManager {
 
     /// 获取内容
     pub fn get(&self, id: &ContentId) -> Result<Option<Content>, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let result = conn.query_row(
             "SELECT id, project_id, title, content_type, status, sort_order, body, word_count, metadata_json, session_id, created_at, updated_at
              FROM contents WHERE id = ?",
             params![id],
-            |row| Ok(Self::row_to_content(row)?),
+            Self::row_to_content,
         );
 
         match result {
             Ok(content) => Ok(Some(content)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(format!("获取内容失败: {}", e)),
+            Err(e) => Err(format!("获取内容失败: {e}")),
         }
     }
 
@@ -156,10 +150,7 @@ impl ContentManager {
         project_id: &str,
         query: Option<ContentListQuery>,
     ) -> Result<Vec<Content>, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let query = query.unwrap_or_default();
 
@@ -185,7 +176,7 @@ impl ContentManager {
         // 搜索
         if let Some(ref search) = query.search {
             sql.push_str(" AND (title LIKE ? OR body LIKE ?)");
-            let search_pattern = format!("%{}%", search);
+            let search_pattern = format!("%{search}%");
             params_vec.push(Box::new(search_pattern.clone()));
             params_vec.push(Box::new(search_pattern));
         }
@@ -193,7 +184,7 @@ impl ContentManager {
         // 排序
         let sort_by = query.sort_by.unwrap_or_else(|| "sort_order".to_string());
         let sort_order = query.sort_order.unwrap_or_else(|| "asc".to_string());
-        sql.push_str(&format!(" ORDER BY {} {}", sort_by, sort_order));
+        sql.push_str(&format!(" ORDER BY {sort_by} {sort_order}"));
 
         // 分页
         if let Some(limit) = query.limit {
@@ -210,23 +201,20 @@ impl ContentManager {
 
         let mut stmt = conn
             .prepare(&sql)
-            .map_err(|e| format!("准备查询失败: {}", e))?;
+            .map_err(|e| format!("准备查询失败: {e}"))?;
 
         let contents = stmt
-            .query_map(params_refs.as_slice(), |row| Ok(Self::row_to_content(row)?))
-            .map_err(|e| format!("查询失败: {}", e))?
+            .query_map(params_refs.as_slice(), Self::row_to_content)
+            .map_err(|e| format!("查询失败: {e}"))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("解析结果失败: {}", e))?;
+            .map_err(|e| format!("解析结果失败: {e}"))?;
 
         Ok(contents)
     }
 
     /// 更新内容
     pub fn update(&self, id: &ContentId, updates: ContentUpdateRequest) -> Result<Content, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
         let now = Utc::now().timestamp_millis();
 
         // 构建更新语句
@@ -277,7 +265,7 @@ impl ContentManager {
             params_vec.iter().map(|p| p.as_ref()).collect();
 
         conn.execute(&sql, params_refs.as_slice())
-            .map_err(|e| format!("更新内容失败: {}", e))?;
+            .map_err(|e| format!("更新内容失败: {e}"))?;
 
         drop(conn);
 
@@ -286,14 +274,11 @@ impl ContentManager {
 
     /// 删除内容
     pub fn delete(&self, id: &ContentId) -> Result<bool, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let affected = conn
             .execute("DELETE FROM contents WHERE id = ?", params![id])
-            .map_err(|e| format!("删除内容失败: {}", e))?;
+            .map_err(|e| format!("删除内容失败: {e}"))?;
 
         if affected > 0 {
             tracing::info!("[Content] 删除: id={}", id);
@@ -304,17 +289,14 @@ impl ContentManager {
 
     /// 批量删除项目下的所有内容
     pub fn delete_by_project(&self, project_id: &str) -> Result<i64, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let affected = conn
             .execute(
                 "DELETE FROM contents WHERE project_id = ?",
                 params![project_id],
             )
-            .map_err(|e| format!("删除内容失败: {}", e))?;
+            .map_err(|e| format!("删除内容失败: {e}"))?;
 
         tracing::info!(
             "[Content] 批量删除: project_id={}, count={}",
@@ -327,10 +309,7 @@ impl ContentManager {
 
     /// 获取项目的内容统计
     pub fn get_project_stats(&self, project_id: &str) -> Result<(i64, i64, i64), String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let result = conn.query_row(
             "SELECT COUNT(*), COALESCE(SUM(word_count), 0), COUNT(CASE WHEN status = 'completed' THEN 1 END)
@@ -346,16 +325,13 @@ impl ContentManager {
 
         match result {
             Ok(stats) => Ok(stats),
-            Err(e) => Err(format!("获取统计失败: {}", e)),
+            Err(e) => Err(format!("获取统计失败: {e}")),
         }
     }
 
     /// 重新排序内容
     pub fn reorder(&self, project_id: &str, content_ids: Vec<String>) -> Result<(), String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         for (index, content_id) in content_ids.iter().enumerate() {
             conn.execute(
@@ -367,7 +343,7 @@ impl ContentManager {
                     project_id
                 ],
             )
-            .map_err(|e| format!("重新排序失败: {}", e))?;
+            .map_err(|e| format!("重新排序失败: {e}"))?;
         }
 
         Ok(())
@@ -375,10 +351,7 @@ impl ContentManager {
 
     /// 获取下一个排序顺序
     fn get_next_order(&self, project_id: &str) -> Result<i32, String> {
-        let conn = self
-            .db
-            .lock()
-            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
         let result: Result<i32, _> = conn.query_row(
             "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM contents WHERE project_id = ?",
@@ -386,7 +359,7 @@ impl ContentManager {
             |row| row.get(0),
         );
 
-        result.map_err(|e| format!("获取排序顺序失败: {}", e))
+        result.map_err(|e| format!("获取排序顺序失败: {e}"))
     }
 
     /// 从数据库行解析 Content

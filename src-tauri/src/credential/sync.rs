@@ -26,10 +26,10 @@ pub enum SyncError {
 impl std::fmt::Display for SyncError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SyncError::ConfigError(msg) => write!(f, "配置错误: {}", msg),
-            SyncError::IoError(msg) => write!(f, "IO 错误: {}", msg),
-            SyncError::CredentialNotFound(id) => write!(f, "凭证不存在: {}", id),
-            SyncError::InvalidCredentialType(msg) => write!(f, "无效的凭证类型: {}", msg),
+            SyncError::ConfigError(msg) => write!(f, "配置错误: {msg}"),
+            SyncError::IoError(msg) => write!(f, "IO 错误: {msg}"),
+            SyncError::CredentialNotFound(id) => write!(f, "凭证不存在: {id}"),
+            SyncError::InvalidCredentialType(msg) => write!(f, "无效的凭证类型: {msg}"),
         }
     }
 }
@@ -67,7 +67,7 @@ impl CredentialSyncService {
         let manager = self
             .config_manager
             .read()
-            .map_err(|e| SyncError::ConfigError(format!("获取配置锁失败: {}", e)))?;
+            .map_err(|e| SyncError::ConfigError(format!("获取配置锁失败: {e}")))?;
         Ok(manager.config().clone())
     }
 
@@ -76,7 +76,7 @@ impl CredentialSyncService {
         let mut manager = self
             .config_manager
             .write()
-            .map_err(|e| SyncError::ConfigError(format!("获取配置写锁失败: {}", e)))?;
+            .map_err(|e| SyncError::ConfigError(format!("获取配置写锁失败: {e}")))?;
 
         let config_path = manager.config_path().to_path_buf();
         manager.set_config(config.clone());
@@ -252,7 +252,7 @@ impl CredentialSyncService {
         std::fs::create_dir_all(&provider_dir)?;
 
         // 生成 token 文件名
-        let token_filename = format!("{}.json", credential_id);
+        let token_filename = format!("{credential_id}.json");
         let token_path = provider_dir.join(&token_filename);
 
         // 展开源路径并复制文件
@@ -262,7 +262,7 @@ impl CredentialSyncService {
         }
 
         // 返回相对路径
-        Ok(format!("{}/{}", provider, token_filename))
+        Ok(format!("{provider}/{token_filename}"))
     }
 
     /// 删除凭证并同步到配置

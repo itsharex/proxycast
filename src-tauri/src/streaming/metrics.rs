@@ -270,7 +270,7 @@ impl StreamMetrics {
         let duration = self.duration_ms();
         let ttfb = self
             .ttfb_ms
-            .map(|t| format!("{}ms", t))
+            .map(|t| format!("{t}ms"))
             .unwrap_or_else(|| "N/A".to_string());
         let throughput = self
             .throughput_bytes_per_sec()
@@ -278,7 +278,7 @@ impl StreamMetrics {
             .unwrap_or_else(|| "N/A".to_string());
         let avg_chunk = self
             .avg_chunk_size()
-            .map(|s| format!("{:.0}B", s))
+            .map(|s| format!("{s:.0}B"))
             .unwrap_or_else(|| "N/A".to_string());
 
         format!(

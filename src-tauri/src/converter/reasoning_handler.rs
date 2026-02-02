@@ -16,6 +16,13 @@
 //! - 只有 `content` 字段需要保留在对话历史中
 //! - Tool Calls 场景下，需要正确处理 reasoning_content 的传递
 //!
+//! # 使用状态
+//!
+//! 此模块为预留功能，将在 Proxy 层集成推理模型时启用。
+//! 目前代码已完成，等待在 `proxy_handler.rs` 中调用 `ReasoningHandler::preprocess_messages`。
+
+// 预留功能模块，暂未在主流程中调用
+#![allow(dead_code)]
 
 use crate::models::openai::ChatMessage;
 
@@ -85,8 +92,6 @@ impl ReasoningHandler {
     ///
     /// 清除历史消息中的 reasoning_content，只保留最后一条 assistant 消息的 reasoning_content
     fn process_deepseek_messages(mut messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
-        let len = messages.len();
-
         // 先找出最后一条 assistant 消息的索引
         let last_assistant_idx = messages
             .iter()

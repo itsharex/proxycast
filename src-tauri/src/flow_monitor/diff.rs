@@ -20,7 +20,7 @@ use super::models::{LLMFlow, Message, MessageContent, TokenUsage};
 // ============================================================================
 
 /// 差异类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum DiffType {
     /// 新增
     Added,
@@ -29,13 +29,8 @@ pub enum DiffType {
     /// 修改
     Modified,
     /// 未变化
+    #[default]
     Unchanged,
-}
-
-impl Default for DiffType {
-    fn default() -> Self {
-        DiffType::Unchanged
-    }
 }
 
 // ============================================================================
@@ -344,36 +339,30 @@ impl FlowDiff {
         let mut diffs = Vec::new();
 
         // 对比模型
-        if !config.should_ignore("request.model") {
-            if left.model != right.model {
-                diffs.push(DiffItem::modified(
-                    "request.model",
-                    Value::String(left.model.clone()),
-                    Value::String(right.model.clone()),
-                ));
-            }
+        if !config.should_ignore("request.model") && left.model != right.model {
+            diffs.push(DiffItem::modified(
+                "request.model",
+                Value::String(left.model.clone()),
+                Value::String(right.model.clone()),
+            ));
         }
 
         // 对比方法
-        if !config.should_ignore("request.method") {
-            if left.method != right.method {
-                diffs.push(DiffItem::modified(
-                    "request.method",
-                    Value::String(left.method.clone()),
-                    Value::String(right.method.clone()),
-                ));
-            }
+        if !config.should_ignore("request.method") && left.method != right.method {
+            diffs.push(DiffItem::modified(
+                "request.method",
+                Value::String(left.method.clone()),
+                Value::String(right.method.clone()),
+            ));
         }
 
         // 对比路径
-        if !config.should_ignore("request.path") {
-            if left.path != right.path {
-                diffs.push(DiffItem::modified(
-                    "request.path",
-                    Value::String(left.path.clone()),
-                    Value::String(right.path.clone()),
-                ));
-            }
+        if !config.should_ignore("request.path") && left.path != right.path {
+            diffs.push(DiffItem::modified(
+                "request.path",
+                Value::String(left.path.clone()),
+                Value::String(right.path.clone()),
+            ));
         }
 
         // 对比系统提示词
@@ -638,8 +627,8 @@ impl FlowDiff {
         if !config.should_ignore("metadata.provider") && left.provider != right.provider {
             diffs.push(DiffItem::modified(
                 "metadata.provider",
-                serde_json::to_value(&left.provider).unwrap_or(Value::Null),
-                serde_json::to_value(&right.provider).unwrap_or(Value::Null),
+                serde_json::to_value(left.provider).unwrap_or(Value::Null),
+                serde_json::to_value(right.provider).unwrap_or(Value::Null),
             ));
         }
 
@@ -731,12 +720,12 @@ impl FlowDiff {
     /// 对比单个消息的内容
     fn diff_message_content(left: &Message, right: &Message, index: usize) -> Vec<DiffItem> {
         let mut diffs = Vec::new();
-        let prefix = format!("messages[{}]", index);
+        let prefix = format!("messages[{index}]");
 
         // 对比角色
         if left.role != right.role {
             diffs.push(DiffItem::modified(
-                format!("{}.role", prefix),
+                format!("{prefix}.role"),
                 serde_json::to_value(&left.role).unwrap_or(Value::Null),
                 serde_json::to_value(&right.role).unwrap_or(Value::Null),
             ));
@@ -747,7 +736,7 @@ impl FlowDiff {
         let right_text = Self::get_message_text(&right.content);
         if left_text != right_text {
             diffs.push(DiffItem::modified(
-                format!("{}.content", prefix),
+                format!("{prefix}.content"),
                 Value::String(left_text),
                 Value::String(right_text),
             ));
@@ -757,20 +746,20 @@ impl FlowDiff {
         match (&left.name, &right.name) {
             (Some(l), Some(r)) if l != r => {
                 diffs.push(DiffItem::modified(
-                    format!("{}.name", prefix),
+                    format!("{prefix}.name"),
                     Value::String(l.clone()),
                     Value::String(r.clone()),
                 ));
             }
             (Some(l), None) => {
                 diffs.push(DiffItem::removed(
-                    format!("{}.name", prefix),
+                    format!("{prefix}.name"),
                     Value::String(l.clone()),
                 ));
             }
             (None, Some(r)) => {
                 diffs.push(DiffItem::added(
-                    format!("{}.name", prefix),
+                    format!("{prefix}.name"),
                     Value::String(r.clone()),
                 ));
             }
@@ -781,20 +770,20 @@ impl FlowDiff {
         match (&left.tool_calls, &right.tool_calls) {
             (Some(l), Some(r)) if l.len() != r.len() => {
                 diffs.push(DiffItem::modified(
-                    format!("{}.tool_calls.count", prefix),
+                    format!("{prefix}.tool_calls.count"),
                     serde_json::json!(l.len()),
                     serde_json::json!(r.len()),
                 ));
             }
             (Some(l), None) => {
                 diffs.push(DiffItem::removed(
-                    format!("{}.tool_calls", prefix),
+                    format!("{prefix}.tool_calls"),
                     serde_json::to_value(l).unwrap_or(Value::Null),
                 ));
             }
             (None, Some(r)) => {
                 diffs.push(DiffItem::added(
-                    format!("{}.tool_calls", prefix),
+                    format!("{prefix}.tool_calls"),
                     serde_json::to_value(r).unwrap_or(Value::Null),
                 ));
             }
@@ -864,7 +853,7 @@ impl FlowDiff {
                     let new_path = if path.is_empty() {
                         key.clone()
                     } else {
-                        format!("{}.{}", path, key)
+                        format!("{path}.{key}")
                     };
 
                     match (l.get(key), r.get(key)) {
@@ -888,7 +877,7 @@ impl FlowDiff {
             (Value::Array(l), Value::Array(r)) => {
                 let max_len = l.len().max(r.len());
                 for i in 0..max_len {
-                    let new_path = format!("{}[{}]", path, i);
+                    let new_path = format!("{path}[{i}]");
                     match (l.get(i), r.get(i)) {
                         (Some(lv), Some(rv)) => {
                             diffs.extend(Self::diff_json(lv, rv, &new_path, config));

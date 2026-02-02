@@ -53,7 +53,7 @@ impl BrowserInterceptor {
         tracing::info!("验证配置...");
         config.validate().map_err(|e| {
             tracing::error!("配置验证失败: {}", e);
-            BrowserInterceptorError::ConfigError(format!("配置验证失败: {}", e))
+            BrowserInterceptorError::ConfigError(format!("配置验证失败: {e}"))
         })?;
 
         drop(config); // 释放读锁
@@ -226,7 +226,7 @@ impl BrowserInterceptor {
         // 验证新配置
         new_config
             .validate()
-            .map_err(|e| BrowserInterceptorError::ConfigError(format!("配置验证失败: {}", e)))?;
+            .map_err(|e| BrowserInterceptorError::ConfigError(format!("配置验证失败: {e}")))?;
 
         let mut config = self.config.write().await;
         *config = new_config;
@@ -375,16 +375,14 @@ impl BrowserInterceptor {
             Ok(mut clipboard) => {
                 if let Err(e) = clipboard.set_text(text) {
                     return Err(BrowserInterceptorError::InterceptorError(format!(
-                        "复制到剪贴板失败: {}",
-                        e
+                        "复制到剪贴板失败: {e}"
                     )));
                 }
                 tracing::info!("已复制到剪贴板: {}", text);
                 Ok(())
             }
             Err(e) => Err(BrowserInterceptorError::InterceptorError(format!(
-                "创建剪贴板实例失败: {}",
-                e
+                "创建剪贴板实例失败: {e}"
             ))),
         }
     }
@@ -446,8 +444,7 @@ impl BrowserInterceptor {
                 Ok(())
             }
             Err(e) => Err(BrowserInterceptorError::InterceptorError(format!(
-                "启动指纹浏览器失败: {}",
-                e
+                "启动指纹浏览器失败: {e}"
             ))),
         }
     }

@@ -186,14 +186,14 @@ impl ModelRegistryService {
         );
 
         if !index_file.exists() {
-            return Err(format!("索引文件不存在: {:?}", index_file));
+            return Err(format!("索引文件不存在: {index_file:?}"));
         }
 
         // 1. 读取索引文件
         let index_content =
-            std::fs::read_to_string(&index_file).map_err(|e| format!("读取索引文件失败: {}", e))?;
+            std::fs::read_to_string(&index_file).map_err(|e| format!("读取索引文件失败: {e}"))?;
         let index: RepoIndex =
-            serde_json::from_str(&index_content).map_err(|e| format!("解析索引文件失败: {}", e))?;
+            serde_json::from_str(&index_content).map_err(|e| format!("解析索引文件失败: {e}"))?;
 
         tracing::info!(
             "[ModelRegistry] 索引包含 {} 个 providers",
@@ -208,7 +208,7 @@ impl ModelRegistryService {
         tracing::info!("[ModelRegistry] providers_dir: {:?}", providers_dir);
 
         for provider_id in &index.providers {
-            let provider_file = providers_dir.join(format!("{}.json", provider_id));
+            let provider_file = providers_dir.join(format!("{provider_id}.json"));
 
             if !provider_file.exists() {
                 tracing::warn!("[ModelRegistry] Provider 文件不存在: {:?}", provider_file);
@@ -294,7 +294,7 @@ impl ModelRegistryService {
         let alias_files = ["kiro", "antigravity", "codex", "gemini"];
 
         for alias_name in alias_files {
-            let alias_file = aliases_dir.join(format!("{}.json", alias_name));
+            let alias_file = aliases_dir.join(format!("{alias_name}.json"));
             if !alias_file.exists() {
                 continue;
             }
@@ -877,13 +877,13 @@ impl ModelRegistryService {
                     Ok(FetchModelsResult {
                         models: vec![],
                         source: ModelFetchSource::LocalFallback,
-                        error: Some(format!("API 获取失败: {}, 本地也无数据", api_error)),
+                        error: Some(format!("API 获取失败: {api_error}, 本地也无数据")),
                     })
                 } else {
                     Ok(FetchModelsResult {
                         models: local_models,
                         source: ModelFetchSource::LocalFallback,
-                        error: Some(format!("API 获取失败: {}, 已使用本地数据", api_error)),
+                        error: Some(format!("API 获取失败: {api_error}, 已使用本地数据")),
                     })
                 }
             }
@@ -901,7 +901,7 @@ impl ModelRegistryService {
             // 如果路径中间有 /v1/，直接追加 models
             format!("{}models", host.trim_end_matches('/').to_string() + "/")
         } else {
-            format!("{}/v1/models", host)
+            format!("{host}/v1/models")
         }
     }
 
@@ -914,15 +914,15 @@ impl ModelRegistryService {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()
-            .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+            .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
 
         let response = client
             .get(url)
-            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
             .send()
             .await
-            .map_err(|e| format!("请求失败: {}", e))?;
+            .map_err(|e| format!("请求失败: {e}"))?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -930,17 +930,17 @@ impl ModelRegistryService {
                 .text()
                 .await
                 .unwrap_or_else(|_| "无法读取响应体".to_string());
-            return Err(format!("API 返回错误 {}: {}", status, body));
+            return Err(format!("API 返回错误 {status}: {body}"));
         }
 
         let body = response
             .text()
             .await
-            .map_err(|e| format!("读取响应失败: {}", e))?;
+            .map_err(|e| format!("读取响应失败: {e}"))?;
 
         // 解析 OpenAI 格式的响应
         let api_response: ApiModelsResponse =
-            serde_json::from_str(&body).map_err(|e| format!("解析响应失败: {}", e))?;
+            serde_json::from_str(&body).map_err(|e| format!("解析响应失败: {e}"))?;
 
         Ok(api_response.data)
     }
@@ -953,7 +953,12 @@ impl ModelRegistryService {
         now: i64,
     ) -> EnhancedModelMetadata {
         // 从 model id 推断显示名称
-        let display_name = model.id.split('/').last().unwrap_or(&model.id).to_string();
+        let display_name = model
+            .id
+            .split('/')
+            .next_back()
+            .unwrap_or(&model.id)
+            .to_string();
 
         EnhancedModelMetadata {
             id: model.id.clone(),

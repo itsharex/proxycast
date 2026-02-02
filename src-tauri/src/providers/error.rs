@@ -66,31 +66,31 @@ impl ProviderError {
     pub fn user_friendly_message(&self) -> String {
         match self {
             ProviderError::NetworkError(msg) => {
-                format!("网络连接失败，请检查网络设置后重试。详情：{}", msg)
+                format!("网络连接失败，请检查网络设置后重试。详情：{msg}")
             }
             ProviderError::AuthenticationError(msg) => {
-                format!("认证失败，请重新登录。详情：{}", msg)
+                format!("认证失败，请重新登录。详情：{msg}")
             }
             ProviderError::TokenExpired(msg) => {
-                format!("Token 已过期，正在尝试刷新。详情：{}", msg)
+                format!("Token 已过期，正在尝试刷新。详情：{msg}")
             }
             ProviderError::ConfigurationError(msg) => {
-                format!("配置错误，请检查凭证设置。详情：{}", msg)
+                format!("配置错误，请检查凭证设置。详情：{msg}")
             }
             ProviderError::RateLimitError(msg) => {
-                format!("请求过于频繁，请稍后重试。详情：{}", msg)
+                format!("请求过于频繁，请稍后重试。详情：{msg}")
             }
             ProviderError::ServerError(msg) => {
-                format!("服务器暂时不可用，请稍后重试。详情：{}", msg)
+                format!("服务器暂时不可用，请稍后重试。详情：{msg}")
             }
             ProviderError::RequestError(msg) => {
-                format!("请求失败。详情：{}", msg)
+                format!("请求失败。详情：{msg}")
             }
             ProviderError::ParseError(msg) => {
-                format!("数据解析失败。详情：{}", msg)
+                format!("数据解析失败。详情：{msg}")
             }
             ProviderError::Unknown(msg) => {
-                format!("发生未知错误。详情：{}", msg)
+                format!("发生未知错误。详情：{msg}")
             }
         }
     }
@@ -222,10 +222,10 @@ impl From<std::io::Error> for ProviderError {
     fn from(err: std::io::Error) -> Self {
         match err.kind() {
             std::io::ErrorKind::NotFound => {
-                ProviderError::ConfigurationError(format!("文件不存在: {}", err))
+                ProviderError::ConfigurationError(format!("文件不存在: {err}"))
             }
             std::io::ErrorKind::PermissionDenied => {
-                ProviderError::ConfigurationError(format!("权限不足: {}", err))
+                ProviderError::ConfigurationError(format!("权限不足: {err}"))
             }
             std::io::ErrorKind::ConnectionRefused
             | std::io::ErrorKind::ConnectionReset

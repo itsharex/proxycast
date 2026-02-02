@@ -65,7 +65,7 @@ impl PluginRow {
     fn into_record(self) -> Result<InstalledPluginRecord, String> {
         let source = deserialize_source(&self.source_type, self.source_data.as_deref())?;
         let installed_at = DateTime::parse_from_rfc3339(&self.installed_at)
-            .map_err(|e| format!("无效的时间格式: {}", e))?
+            .map_err(|e| format!("无效的时间格式: {e}"))?
             .with_timezone(&Utc);
 
         Ok(InstalledPluginRecord {
@@ -112,14 +112,14 @@ fn deserialize_source(
         }),
         "github" => {
             let data: serde_json::Value = serde_json::from_str(source_data.unwrap_or("{}"))
-                .map_err(|e| format!("JSON 解析错误: {}", e))?;
+                .map_err(|e| format!("JSON 解析错误: {e}"))?;
             Ok(InstallSource::GitHub {
                 owner: data["owner"].as_str().unwrap_or_default().to_string(),
                 repo: data["repo"].as_str().unwrap_or_default().to_string(),
                 tag: data["tag"].as_str().unwrap_or_default().to_string(),
             })
         }
-        _ => Err(format!("未知的来源类型: {}", source_type)),
+        _ => Err(format!("未知的来源类型: {source_type}")),
     }
 }
 
@@ -194,7 +194,7 @@ impl InstalledPluginsDao {
                 },
             )
             .optional()
-            .map_err(|e| format!("数据库错误: {}", e))?;
+            .map_err(|e| format!("数据库错误: {e}"))?;
 
         match result {
             Some(row) => Ok(Some(row.into_record()?)),
@@ -209,7 +209,7 @@ impl InstalledPluginsDao {
                 "SELECT id, name, version, description, author, install_path, installed_at, source_type, source_data, enabled
                  FROM installed_plugins ORDER BY installed_at DESC",
             )
-            .map_err(|e| format!("数据库错误: {}", e))?;
+            .map_err(|e| format!("数据库错误: {e}"))?;
 
         let rows = stmt
             .query_map([], |row| {
@@ -226,11 +226,11 @@ impl InstalledPluginsDao {
                     enabled: row.get(9)?,
                 })
             })
-            .map_err(|e| format!("数据库错误: {}", e))?;
+            .map_err(|e| format!("数据库错误: {e}"))?;
 
         let mut plugins = Vec::new();
         for row in rows {
-            let row = row.map_err(|e| format!("数据库错误: {}", e))?;
+            let row = row.map_err(|e| format!("数据库错误: {e}"))?;
             plugins.push(row.into_record()?);
         }
 
@@ -291,11 +291,11 @@ mod tests {
     fn create_test_plugin(id: &str) -> InstalledPluginRecord {
         InstalledPluginRecord {
             id: id.to_string(),
-            name: format!("Test Plugin {}", id),
+            name: format!("Test Plugin {id}"),
             version: "1.0.0".to_string(),
             description: Some("A test plugin".to_string()),
             author: Some("Test Author".to_string()),
-            install_path: PathBuf::from(format!("/plugins/{}", id)),
+            install_path: PathBuf::from(format!("/plugins/{id}")),
             installed_at: Utc::now(),
             source: InstallSource::Local {
                 path: "/tmp/plugin.zip".to_string(),

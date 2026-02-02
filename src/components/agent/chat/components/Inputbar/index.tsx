@@ -1,9 +1,11 @@
 import React from "react";
 import { InputbarCore } from "./components/InputbarCore";
+import { CharacterMention } from "./components/CharacterMention";
 import { toast } from "sonner";
 import { useState, useCallback, useRef } from "react";
 import styled from "styled-components";
 import type { MessageImage } from "../../types";
+import type { Character } from "@/lib/api/memory";
 import { TaskFileList, type TaskFile } from "../TaskFiles";
 import { FolderOpen, ChevronUp } from "lucide-react";
 
@@ -92,6 +94,10 @@ interface InputbarProps {
   onToggleTaskFiles?: () => void;
   /** 文件点击回调 */
   onTaskFileClick?: (file: TaskFile) => void;
+  /** 角色列表（用于 @ 引用） */
+  characters?: Character[];
+  /** 选择角色回调 */
+  onSelectCharacter?: (character: Character) => void;
 }
 
 export const Inputbar: React.FC<InputbarProps> = ({
@@ -109,11 +115,14 @@ export const Inputbar: React.FC<InputbarProps> = ({
   taskFilesExpanded = false,
   onToggleTaskFiles,
   onTaskFileClick,
+  characters = [],
+  onSelectCharacter,
 }) => {
   const [activeTools, setActiveTools] = useState<Record<string, boolean>>({});
   const [pendingImages, setPendingImages] = useState<MessageImage[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleToolClick = useCallback(
     (tool: string) => {
@@ -326,7 +335,18 @@ export const Inputbar: React.FC<InputbarProps> = ({
         style={{ display: "none" }}
         onChange={handleFileSelect}
       />
+      {/* 角色引用组件 */}
+      {characters.length > 0 && (
+        <CharacterMention
+          characters={characters}
+          inputRef={textareaRef}
+          value={input}
+          onChange={setInput}
+          onSelectCharacter={onSelectCharacter}
+        />
+      )}
       <InputbarCore
+        textareaRef={textareaRef}
         text={input}
         setText={setInput}
         onSend={handleSend}

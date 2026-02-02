@@ -330,7 +330,7 @@ pub fn list_directory(path: &str) -> DirectoryListing {
                 path: path.to_string(),
                 parent_path: None,
                 entries: vec![],
-                error: Some(format!("无法解析路径: {}", e)),
+                error: Some(format!("无法解析路径: {e}")),
             };
         }
     };
@@ -419,7 +419,7 @@ pub fn list_directory(path: &str) -> DirectoryListing {
                 path: canonical_path.to_string_lossy().to_string(),
                 parent_path,
                 entries: vec![],
-                error: Some(format!("无法读取目录: {}", e)),
+                error: Some(format!("无法读取目录: {e}")),
             };
         }
     };
@@ -451,7 +451,7 @@ pub fn read_file_preview(path: &str, max_size: Option<usize>) -> FilePreview {
                 content: None,
                 is_binary: false,
                 size: 0,
-                error: Some(format!("无法读取文件元信息: {}", e)),
+                error: Some(format!("无法读取文件元信息: {e}")),
             };
         }
     };
@@ -503,7 +503,7 @@ pub fn read_file_preview(path: &str, max_size: Option<usize>) -> FilePreview {
                 content: None,
                 is_binary: false,
                 size,
-                error: Some(format!("无法读取文件: {}", e)),
+                error: Some(format!("无法读取文件: {e}")),
             };
         }
     };
@@ -553,12 +553,12 @@ pub async fn create_file(path: String) -> Result<(), String> {
     // 确保父目录存在
     if let Some(parent) = path_buf.parent() {
         if !parent.exists() {
-            fs::create_dir_all(parent).map_err(|e| format!("无法创建父目录: {}", e))?;
+            fs::create_dir_all(parent).map_err(|e| format!("无法创建父目录: {e}"))?;
         }
     }
 
     // 创建空文件
-    fs::File::create(&path_buf).map_err(|e| format!("无法创建文件: {}", e))?;
+    fs::File::create(&path_buf).map_err(|e| format!("无法创建文件: {e}"))?;
 
     debug!("创建文件: {}", path);
     Ok(())
@@ -574,7 +574,7 @@ pub async fn create_directory(path: String) -> Result<(), String> {
         return Err("目录已存在".to_string());
     }
 
-    fs::create_dir_all(&path_buf).map_err(|e| format!("无法创建目录: {}", e))?;
+    fs::create_dir_all(&path_buf).map_err(|e| format!("无法创建目录: {e}"))?;
 
     debug!("创建目录: {}", path);
     Ok(())
@@ -591,14 +591,14 @@ pub async fn delete_file(path: String, recursive: bool) -> Result<(), String> {
 
     if path_buf.is_dir() {
         if recursive {
-            fs::remove_dir_all(&path_buf).map_err(|e| format!("无法删除目录: {}", e))?;
+            fs::remove_dir_all(&path_buf).map_err(|e| format!("无法删除目录: {e}"))?;
         } else {
             fs::remove_dir(&path_buf)
-                .map_err(|e| format!("无法删除目录（目录非空，需要递归删除）: {}", e))?;
+                .map_err(|e| format!("无法删除目录（目录非空，需要递归删除）: {e}"))?;
         }
         debug!("删除目录: {}", path);
     } else {
-        fs::remove_file(&path_buf).map_err(|e| format!("无法删除文件: {}", e))?;
+        fs::remove_file(&path_buf).map_err(|e| format!("无法删除文件: {e}"))?;
         debug!("删除文件: {}", path);
     }
 
@@ -619,7 +619,7 @@ pub async fn rename_file(old_path: String, new_path: String) -> Result<(), Strin
         return Err("目标文件或目录已存在".to_string());
     }
 
-    fs::rename(&old_path_buf, &new_path_buf).map_err(|e| format!("无法重命名: {}", e))?;
+    fs::rename(&old_path_buf, &new_path_buf).map_err(|e| format!("无法重命名: {e}"))?;
 
     debug!("重命名: {} -> {}", old_path, new_path);
     Ok(())
@@ -650,7 +650,7 @@ pub async fn reveal_in_finder(path: String) -> Result<(), String> {
         std::process::Command::new("open")
             .args(["-R", &path])
             .spawn()
-            .map_err(|e| format!("无法打开 Finder: {}", e))?;
+            .map_err(|e| format!("无法打开 Finder: {e}"))?;
     }
 
     #[cfg(target_os = "windows")]
@@ -688,7 +688,7 @@ pub async fn open_with_default_app(path: String) -> Result<(), String> {
         std::process::Command::new("open")
             .arg(&path)
             .spawn()
-            .map_err(|e| format!("无法打开文件: {}", e))?;
+            .map_err(|e| format!("无法打开文件: {e}"))?;
     }
 
     #[cfg(target_os = "windows")]

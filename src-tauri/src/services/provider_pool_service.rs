@@ -89,7 +89,7 @@ impl ProviderPoolService {
 
     /// 获取所有凭证概览
     pub fn get_overview(&self, db: &DbConnection) -> Result<Vec<ProviderPoolOverview>, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let grouped = ProviderPoolDao::get_grouped(&conn).map_err(|e| e.to_string())?;
 
         let mut overview = Vec::new();
@@ -123,7 +123,7 @@ impl ProviderPoolService {
         provider_type: &str,
     ) -> Result<Vec<CredentialDisplay>, String> {
         let pt: PoolProviderType = provider_type.parse().map_err(|e: String| e)?;
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let mut credentials =
             ProviderPoolDao::get_by_type(&conn, &pt).map_err(|e| e.to_string())?;
 
@@ -154,7 +154,7 @@ impl ProviderPoolService {
         cred.check_health = check_health.unwrap_or(true);
         cred.check_model_name = check_model_name;
 
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         ProviderPoolDao::insert(&conn, &cred).map_err(|e| e.to_string())?;
 
         Ok(cred)
@@ -172,10 +172,10 @@ impl ProviderPoolService {
         not_supported_models: Option<Vec<String>>,
         proxy_url: Option<String>,
     ) -> Result<ProviderCredential, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let mut cred = ProviderPoolDao::get_by_uuid(&conn, uuid)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Credential not found: {}", uuid))?;
+            .ok_or_else(|| format!("Credential not found: {uuid}"))?;
 
         // 处理 name：空字符串表示清除，None 表示不修改
         if let Some(n) = name {
@@ -206,7 +206,7 @@ impl ProviderPoolService {
 
     /// 删除凭证
     pub fn delete_credential(&self, db: &DbConnection, uuid: &str) -> Result<bool, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         ProviderPoolDao::delete(&conn, uuid).map_err(|e| e.to_string())
     }
 
@@ -242,13 +242,12 @@ impl ProviderPoolService {
             Ok(pt) => pt,
             Err(_) => {
                 eprintln!(
-                    "[SELECT_CREDENTIAL] 未知的 provider_type '{}', 返回 None 以便智能降级",
-                    provider_type
+                    "[SELECT_CREDENTIAL] 未知的 provider_type '{provider_type}', 返回 None 以便智能降级"
                 );
                 return Ok(None);
             }
         };
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
 
         // 获取凭证，对于 AI Provider 类型，也查找 Assistant 类型的凭证
         let mut credentials =
@@ -394,8 +393,7 @@ impl ProviderPoolService {
         client_type: Option<&crate::server::client_detector::ClientType>,
     ) -> Result<Option<ProviderCredential>, String> {
         eprintln!(
-            "[select_credential_with_fallback] 开始: provider_type={}, model={:?}, provider_id_hint={:?}",
-            provider_type, model, provider_id_hint
+            "[select_credential_with_fallback] 开始: provider_type={provider_type}, model={model:?}, provider_id_hint={provider_id_hint:?}"
         );
 
         // Step 1: 尝试从 Provider Pool 选择 (OAuth + API Key)
@@ -413,8 +411,7 @@ impl ProviderPoolService {
         // Step 2: 智能降级到 API Key Provider
         let pt: PoolProviderType = provider_type.parse().unwrap_or(PoolProviderType::OpenAI);
         eprintln!(
-            "[select_credential_with_fallback] 解析 provider_type '{}' -> {:?}",
-            provider_type, pt
+            "[select_credential_with_fallback] 解析 provider_type '{provider_type}' -> {pt:?}"
         );
 
         // 传入 provider_id_hint 支持 60+ Provider
@@ -432,8 +429,7 @@ impl ProviderPoolService {
 
         // Step 3: 都没有找到
         eprintln!(
-            "[select_credential_with_fallback] 未找到任何凭证 for provider_type='{}'",
-            provider_type
+            "[select_credential_with_fallback] 未找到任何凭证 for provider_type='{provider_type}'"
         );
         Ok(None)
     }
@@ -540,10 +536,10 @@ impl ProviderPoolService {
 
     /// 记录凭证使用
     pub fn record_usage(&self, db: &DbConnection, uuid: &str) -> Result<(), String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let cred = ProviderPoolDao::get_by_uuid(&conn, uuid)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Credential not found: {}", uuid))?;
+            .ok_or_else(|| format!("Credential not found: {uuid}"))?;
 
         ProviderPoolDao::update_usage(&conn, uuid, cred.usage_count + 1, Utc::now())
             .map_err(|e| e.to_string())
@@ -556,7 +552,7 @@ impl ProviderPoolService {
         uuid: &str,
         check_model: Option<&str>,
     ) -> Result<(), String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         ProviderPoolDao::update_health_status(
             &conn,
             uuid,
@@ -577,10 +573,10 @@ impl ProviderPoolService {
         uuid: &str,
         error_message: Option<&str>,
     ) -> Result<(), String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let cred = ProviderPoolDao::get_by_uuid(&conn, uuid)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Credential not found: {}", uuid))?;
+            .ok_or_else(|| format!("Credential not found: {uuid}"))?;
 
         let new_error_count = cred.error_count + 1;
         let is_healthy = new_error_count < self.max_error_count;
@@ -600,7 +596,7 @@ impl ProviderPoolService {
 
     /// 重置凭证计数器
     pub fn reset_counters(&self, db: &DbConnection, uuid: &str) -> Result<(), String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         ProviderPoolDao::reset_counters(&conn, uuid).map_err(|e| e.to_string())
     }
 
@@ -611,7 +607,7 @@ impl ProviderPoolService {
         provider_type: &str,
     ) -> Result<usize, String> {
         let pt: PoolProviderType = provider_type.parse().map_err(|e: String| e)?;
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         ProviderPoolDao::reset_health_by_type(&conn, &pt).map_err(|e| e.to_string())
     }
 
@@ -622,7 +618,7 @@ impl ProviderPoolService {
         db: &DbConnection,
         uuid: &str,
     ) -> Result<Option<CredentialHealthInfo>, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let cred = ProviderPoolDao::get_by_uuid(&conn, uuid).map_err(|e| e.to_string())?;
 
         Ok(cred.map(|c| CredentialHealthInfo {
@@ -647,7 +643,7 @@ impl ProviderPoolService {
         &self,
         db: &DbConnection,
     ) -> Result<Vec<CredentialHealthInfo>, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let credentials = ProviderPoolDao::get_all(&conn).map_err(|e| e.to_string())?;
 
         Ok(credentials
@@ -680,10 +676,10 @@ impl ProviderPoolService {
         let error_message = error.user_message();
         let requires_reauth = error.requires_reauth();
 
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let cred = ProviderPoolDao::get_by_uuid(&conn, uuid)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Credential not found: {}", uuid))?;
+            .ok_or_else(|| format!("Credential not found: {uuid}"))?;
 
         let new_error_count = cred.error_count + 1;
         // 如果需要重新授权，直接标记为不健康
@@ -694,7 +690,7 @@ impl ProviderPoolService {
         };
 
         let error_msg = if requires_reauth {
-            format!("[需要重新授权] {}", error_message)
+            format!("[需要重新授权] {error_message}")
         } else {
             error_message
         };
@@ -723,7 +719,7 @@ impl ProviderPoolService {
         let pt: PoolProviderType = provider_type
             .parse()
             .map_err(|_| SelectionError::NoCredentials)?;
-        let conn = db.lock().map_err(|_| SelectionError::NoCredentials)?;
+        let conn = crate::database::lock_db(db).map_err(|_| SelectionError::NoCredentials)?;
         let credentials =
             ProviderPoolDao::get_by_type(&conn, &pt).map_err(|_| SelectionError::NoCredentials)?;
         drop(conn);
@@ -833,10 +829,10 @@ impl ProviderPoolService {
         uuid: &str,
     ) -> Result<HealthCheckResult, String> {
         let cred = {
-            let conn = db.lock().map_err(|e| e.to_string())?;
+            let conn = crate::database::lock_db(db)?;
             ProviderPoolDao::get_by_uuid(&conn, uuid)
                 .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("Credential not found: {}", uuid))?
+                .ok_or_else(|| format!("Credential not found: {uuid}"))?
         };
 
         let check_model = cred
@@ -873,10 +869,10 @@ impl ProviderPoolService {
 
                             // 重新获取凭证（token 已更新）
                             let updated_cred = {
-                                let conn = db.lock().map_err(|e| e.to_string())?;
+                                let conn = crate::database::lock_db(db)?;
                                 ProviderPoolDao::get_by_uuid(&conn, uuid)
                                     .map_err(|e| e.to_string())?
-                                    .ok_or_else(|| format!("Credential not found: {}", uuid))?
+                                    .ok_or_else(|| format!("Credential not found: {uuid}"))?
                             };
 
                             // 重新执行健康检查
@@ -920,7 +916,7 @@ impl ProviderPoolService {
                                 uuid: uuid.to_string(),
                                 success: false,
                                 model: Some(check_model),
-                                message: Some(format!("{} (Token 刷新失败: {})", e, refresh_err)),
+                                message: Some(format!("{e} (Token 刷新失败: {refresh_err})")),
                                 duration_ms,
                             });
                         }
@@ -947,7 +943,7 @@ impl ProviderPoolService {
     ) -> Result<Vec<HealthCheckResult>, String> {
         let pt: PoolProviderType = provider_type.parse().map_err(|e: String| e)?;
         let credentials = {
-            let conn = db.lock().map_err(|e| e.to_string())?;
+            let conn = crate::database::lock_db(db)?;
             ProviderPoolDao::get_by_type(&conn, &pt).map_err(|e| e.to_string())?
         };
 
@@ -1030,24 +1026,24 @@ impl ProviderPoolService {
     /// 将技术错误转换为用户友好的错误信息
     fn format_user_friendly_error(&self, error: &str, provider_type: &str) -> String {
         if error.contains("No client_id") {
-            format!("OAuth 配置不完整：缺少必要的认证参数。\n💡 解决方案：\n1. 检查 {} OAuth 凭证配置是否完整\n2. 如问题持续，建议删除后重新添加此凭证\n3. 或者切换到其他可用的凭证", provider_type)
+            format!("OAuth 配置不完整：缺少必要的认证参数。\n💡 解决方案：\n1. 检查 {provider_type} OAuth 凭证配置是否完整\n2. 如问题持续，建议删除后重新添加此凭证\n3. 或者切换到其他可用的凭证")
         } else if error.contains("请求失败") || error.contains("error sending request") {
-            format!("网络连接失败，无法访问 {} 服务。\n💡 解决方案：\n1. 检查网络连接是否正常\n2. 确认防火墙或代理设置\n3. 稍后重试，如问题持续请联系网络管理员", provider_type)
+            format!("网络连接失败，无法访问 {provider_type} 服务。\n💡 解决方案：\n1. 检查网络连接是否正常\n2. 确认防火墙或代理设置\n3. 稍后重试，如问题持续请联系网络管理员")
         } else if error.contains("HTTP 401") || error.contains("HTTP 403") {
-            format!("{} 认证失败，凭证可能已过期或无效。\n💡 解决方案：\n1. 点击\"刷新\"按钮尝试更新 Token\n2. 如刷新失败，请删除后重新添加此凭证\n3. 检查账户权限是否正常", provider_type)
+            format!("{provider_type} 认证失败，凭证可能已过期或无效。\n💡 解决方案：\n1. 点击\"刷新\"按钮尝试更新 Token\n2. 如刷新失败，请删除后重新添加此凭证\n3. 检查账户权限是否正常")
         } else if error.contains("HTTP 429") {
-            format!("{} 请求频率过高，已被限流。\n💡 解决方案：\n1. 稍等几分钟后再次尝试\n2. 考虑添加更多凭证分散负载", provider_type)
+            format!("{provider_type} 请求频率过高，已被限流。\n💡 解决方案：\n1. 稍等几分钟后再次尝试\n2. 考虑添加更多凭证分散负载")
         } else if error.contains("HTTP 500")
             || error.contains("HTTP 502")
             || error.contains("HTTP 503")
         {
-            format!("{} 服务暂时不可用。\n💡 解决方案：\n1. 这通常是服务提供方的临时问题\n2. 请稍后重试\n3. 如问题持续，可尝试其他凭证", provider_type)
+            format!("{provider_type} 服务暂时不可用。\n💡 解决方案：\n1. 这通常是服务提供方的临时问题\n2. 请稍后重试\n3. 如问题持续，可尝试其他凭证")
         } else if error.contains("读取凭证文件失败") || error.contains("解析凭证失败")
         {
             "凭证文件损坏或不可读。\n💡 解决方案：\n1. 凭证文件可能已损坏\n2. 建议删除此凭证后重新添加\n3. 确保文件权限正确且格式为有效的 JSON".to_string()
         } else {
             // 对于其他未识别的错误，提供通用建议
-            format!("操作失败：{}\n💡 建议：\n1. 检查网络连接和凭证状态\n2. 尝试刷新 Token 或重新添加凭证\n3. 如问题持续，请联系技术支持", error)
+            format!("操作失败：{error}\n💡 建议：\n1. 检查网络连接和凭证状态\n2. 尝试刷新 Token 或重新添加凭证\n3. 如问题持续，请联系技术支持")
         }
     }
 
@@ -1060,9 +1056,7 @@ impl ProviderPoolService {
         provider
             .load_credentials_from_path(creds_path)
             .await
-            .map_err(|e| {
-                self.format_user_friendly_error(&format!("加载凭证失败: {}", e), "Kiro")
-            })?;
+            .map_err(|e| self.format_user_friendly_error(&format!("加载凭证失败: {e}"), "Kiro"))?;
 
         let access_token = provider
             .credentials
@@ -1125,7 +1119,7 @@ impl ProviderPoolService {
             .timeout(self.health_check_timeout)
             .send()
             .await
-            .map_err(|e| self.format_user_friendly_error(&format!("请求失败: {}", e), "Kiro"))?;
+            .map_err(|e| self.format_user_friendly_error(&format!("请求失败: {e}"), "Kiro"))?;
 
         let status = response.status();
         tracing::info!("[KIRO HEALTH] 响应状态: {}", status);
@@ -1136,7 +1130,7 @@ impl ProviderPoolService {
         } else {
             let body_text = response.text().await.unwrap_or_default();
             tracing::warn!("[KIRO HEALTH] 健康检查失败: {} - {}", status, body_text);
-            let error_msg = format!("HTTP {}: {}", status, body_text);
+            let error_msg = format!("HTTP {status}: {body_text}");
             Err(self.format_user_friendly_error(&error_msg, "Kiro"))
         }
     }
@@ -1151,9 +1145,9 @@ impl ProviderPoolService {
         _model: &str,
     ) -> Result<(), String> {
         let creds_content =
-            std::fs::read_to_string(creds_path).map_err(|e| format!("读取凭证文件失败: {}", e))?;
+            std::fs::read_to_string(creds_path).map_err(|e| format!("读取凭证文件失败: {e}"))?;
         let creds: serde_json::Value =
-            serde_json::from_str(&creds_content).map_err(|e| format!("解析凭证失败: {}", e))?;
+            serde_json::from_str(&creds_content).map_err(|e| format!("解析凭证失败: {e}"))?;
 
         let access_token = creds["access_token"]
             .as_str()
@@ -1182,14 +1176,14 @@ impl ProviderPoolService {
             .timeout(self.health_check_timeout)
             .send()
             .await
-            .map_err(|e| format!("请求失败: {}", e))?;
+            .map_err(|e| format!("请求失败: {e}"))?;
 
         if response.status().is_success() {
             Ok(())
         } else {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            Err(format!("HTTP {} - {}", status, body))
+            Err(format!("HTTP {status} - {body}"))
         }
     }
 
@@ -1201,9 +1195,9 @@ impl ProviderPoolService {
         _model: &str,
     ) -> Result<(), String> {
         let creds_content =
-            std::fs::read_to_string(creds_path).map_err(|e| format!("读取凭证文件失败: {}", e))?;
+            std::fs::read_to_string(creds_path).map_err(|e| format!("读取凭证文件失败: {e}"))?;
         let creds: serde_json::Value =
-            serde_json::from_str(&creds_content).map_err(|e| format!("解析凭证失败: {}", e))?;
+            serde_json::from_str(&creds_content).map_err(|e| format!("解析凭证失败: {e}"))?;
 
         let access_token = creds["access_token"]
             .as_str()
@@ -1222,7 +1216,7 @@ impl ProviderPoolService {
             .timeout(self.health_check_timeout)
             .send()
             .await
-            .map_err(|e| format!("请求失败: {}", e))?;
+            .map_err(|e| format!("请求失败: {e}"))?;
 
         if response.status().is_success() {
             Ok(())
@@ -1246,9 +1240,9 @@ impl ProviderPoolService {
 
         // 如果用户输入了带 /v1 的 URL，直接使用；否则拼接 /v1
         let url = if base.ends_with("/v1") {
-            format!("{}/chat/completions", base)
+            format!("{base}/chat/completions")
         } else {
-            format!("{}/v1/chat/completions", base)
+            format!("{base}/v1/chat/completions")
         };
 
         let request_body = serde_json::json!({
@@ -1267,7 +1261,7 @@ impl ProviderPoolService {
             .timeout(self.health_check_timeout)
             .send()
             .await
-            .map_err(|e| format!("请求失败: {}", e))?;
+            .map_err(|e| format!("请求失败: {e}"))?;
 
         if response.status().is_success() {
             Ok(())
@@ -1298,9 +1292,9 @@ impl ProviderPoolService {
 
         // 如果用户输入了带 /v1 的 URL，直接使用；否则拼接 /v1
         let url = if base.ends_with("/v1") {
-            format!("{}/messages", base)
+            format!("{base}/messages")
         } else {
-            format!("{}/v1/messages", base)
+            format!("{base}/v1/messages")
         };
 
         let request_body = serde_json::json!({
@@ -1320,7 +1314,7 @@ impl ProviderPoolService {
             .timeout(self.health_check_timeout)
             .send()
             .await
-            .map_err(|e| format!("请求失败: {}", e))?;
+            .map_err(|e| format!("请求失败: {e}"))?;
 
         if response.status().is_success() {
             Ok(())
@@ -1343,7 +1337,7 @@ impl ProviderPoolService {
         model: &str,
     ) -> Result<(), String> {
         let base = base_url.unwrap_or("https://generativelanguage.googleapis.com/v1beta");
-        let url = format!("{}/models/{}:generateContent", base, model);
+        let url = format!("{base}/models/{model}:generateContent");
 
         let request_body = serde_json::json!({
             "contents": [{"role": "user", "parts": [{"text": "Say OK"}]}],
@@ -1358,7 +1352,7 @@ impl ProviderPoolService {
             .timeout(self.health_check_timeout)
             .send()
             .await
-            .map_err(|e| format!("请求失败: {}", e))?;
+            .map_err(|e| format!("请求失败: {e}"))?;
 
         if response.status().is_success() {
             Ok(())
@@ -1375,7 +1369,7 @@ impl ProviderPoolService {
         model: &str,
     ) -> Result<(), String> {
         let base = base_url.unwrap_or("https://generativelanguage.googleapis.com");
-        let url = format!("{}/v1beta/models/{}:generateContent", base, model);
+        let url = format!("{base}/v1beta/models/{model}:generateContent");
 
         let request_body = serde_json::json!({
             "contents": [{"role": "user", "parts": [{"text": "Say OK"}]}],
@@ -1390,7 +1384,7 @@ impl ProviderPoolService {
             .timeout(self.health_check_timeout)
             .send()
             .await
-            .map_err(|e| format!("请求失败: {}", e))?;
+            .map_err(|e| format!("请求失败: {e}"))?;
 
         if response.status().is_success() {
             Ok(())
@@ -1413,14 +1407,12 @@ impl ProviderPoolService {
         provider
             .load_credentials_from_path(creds_path)
             .await
-            .map_err(|e| format!("加载 Codex 凭证失败: {}", e))?;
+            .map_err(|e| format!("加载 Codex 凭证失败: {e}"))?;
 
-        let token = provider.ensure_valid_token().await.map_err(|e| {
-            format!(
-                "获取 Codex Token 失败: 配置错误，请检查凭证设置。详情：{}",
-                e
-            )
-        })?;
+        let token = provider
+            .ensure_valid_token()
+            .await
+            .map_err(|e| format!("获取 Codex Token 失败: 配置错误，请检查凭证设置。详情：{e}"))?;
 
         // 优先使用 override_base_url（来自 CredentialData），其次使用凭证文件中的配置
         let base_url = override_base_url
@@ -1492,7 +1484,7 @@ impl ProviderPoolService {
             .timeout(self.health_check_timeout)
             .send()
             .await
-            .map_err(|e| format!("请求失败: {}", e))?;
+            .map_err(|e| format!("请求失败: {e}"))?;
 
         if response.status().is_success() {
             Ok(())
@@ -1515,12 +1507,12 @@ impl ProviderPoolService {
         provider
             .load_credentials_from_path(creds_path)
             .await
-            .map_err(|e| format!("加载 Claude OAuth 凭证失败: {}", e))?;
+            .map_err(|e| format!("加载 Claude OAuth 凭证失败: {e}"))?;
 
         let token = provider
             .ensure_valid_token()
             .await
-            .map_err(|e| format!("获取 Claude OAuth Token 失败: {}", e))?;
+            .map_err(|e| format!("获取 Claude OAuth Token 失败: {e}"))?;
 
         // 使用 Anthropic API 进行健康检查
         let url = "https://api.anthropic.com/v1/messages";
@@ -1533,13 +1525,13 @@ impl ProviderPoolService {
         let response = self
             .client
             .post(url)
-            .header("Authorization", format!("Bearer {}", token))
+            .header("Authorization", format!("Bearer {token}"))
             .header("anthropic-version", "2023-06-01")
             .json(&request_body)
             .timeout(self.health_check_timeout)
             .send()
             .await
-            .map_err(|e| format!("请求失败: {}", e))?;
+            .map_err(|e| format!("请求失败: {e}"))?;
 
         if response.status().is_success() {
             Ok(())
@@ -1554,7 +1546,7 @@ impl ProviderPoolService {
         db: &DbConnection,
         name: &str,
     ) -> Result<Option<ProviderCredential>, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         ProviderPoolDao::get_by_name(&conn, name).map_err(|e| e.to_string())
     }
 
@@ -1564,7 +1556,7 @@ impl ProviderPoolService {
         db: &DbConnection,
         uuid: &str,
     ) -> Result<Option<ProviderCredential>, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         ProviderPoolDao::get_by_uuid(&conn, uuid).map_err(|e| e.to_string())
     }
 
@@ -1574,7 +1566,7 @@ impl ProviderPoolService {
         db: &DbConnection,
         base_url: &str,
     ) -> Result<Vec<RouteInfo>, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let grouped = ProviderPoolDao::get_grouped(&conn).map_err(|e| e.to_string())?;
         drop(conn);
 
@@ -1624,9 +1616,9 @@ impl ProviderPoolService {
         provider_type: &str,
     ) -> Result<OAuthStatus, String> {
         let content =
-            std::fs::read_to_string(creds_path).map_err(|e| format!("读取凭证文件失败: {}", e))?;
+            std::fs::read_to_string(creds_path).map_err(|e| format!("读取凭证文件失败: {e}"))?;
         let creds: serde_json::Value =
-            serde_json::from_str(&content).map_err(|e| format!("解析凭证文件失败: {}", e))?;
+            serde_json::from_str(&content).map_err(|e| format!("解析凭证文件失败: {e}"))?;
 
         let has_api_key = creds
             .get("apiKey")
@@ -1695,14 +1687,13 @@ impl ProviderPoolService {
         provider
             .load_credentials_from_path(creds_path)
             .await
-            .map_err(|e| {
-                self.format_user_friendly_error(&format!("加载凭证失败: {}", e), "Kiro")
-            })?;
+            .map_err(|e| self.format_user_friendly_error(&format!("加载凭证失败: {e}"), "Kiro"))?;
 
         // 使用副本文件中的凭证刷新 Token
-        provider.refresh_token().await.map_err(|e| {
-            self.format_user_friendly_error(&format!("刷新 Token 失败: {}", e), "Kiro")
-        })
+        provider
+            .refresh_token()
+            .await
+            .map_err(|e| self.format_user_friendly_error(&format!("刷新 Token 失败: {e}"), "Kiro"))
     }
 
     /// 刷新 OAuth Token (Gemini)
@@ -1711,11 +1702,11 @@ impl ProviderPoolService {
         provider
             .load_credentials_from_path(creds_path)
             .await
-            .map_err(|e| format!("加载凭证失败: {}", e))?;
+            .map_err(|e| format!("加载凭证失败: {e}"))?;
         provider
             .refresh_token()
             .await
-            .map_err(|e| format!("刷新 Token 失败: {}", e))
+            .map_err(|e| format!("刷新 Token 失败: {e}"))
     }
 
     /// 刷新 OAuth Token (Antigravity)
@@ -1724,11 +1715,11 @@ impl ProviderPoolService {
         provider
             .load_credentials_from_path(creds_path)
             .await
-            .map_err(|e| format!("加载凭证失败: {}", e))?;
+            .map_err(|e| format!("加载凭证失败: {e}"))?;
         provider
             .refresh_token()
             .await
-            .map_err(|e| format!("刷新 Token 失败: {}", e))
+            .map_err(|e| format!("刷新 Token 失败: {e}"))
     }
 
     /// 刷新凭证池中指定凭证的 OAuth Token
@@ -1738,10 +1729,10 @@ impl ProviderPoolService {
         uuid: &str,
     ) -> Result<String, String> {
         let cred = {
-            let conn = db.lock().map_err(|e| e.to_string())?;
+            let conn = crate::database::lock_db(db)?;
             ProviderPoolDao::get_by_uuid(&conn, uuid)
                 .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("Credential not found: {}", uuid))?
+                .ok_or_else(|| format!("Credential not found: {uuid}"))?
         };
 
         match &cred.credential {
@@ -1765,10 +1756,10 @@ impl ProviderPoolService {
         uuid: &str,
     ) -> Result<OAuthStatus, String> {
         let cred = {
-            let conn = db.lock().map_err(|e| e.to_string())?;
+            let conn = crate::database::lock_db(db)?;
             ProviderPoolDao::get_by_uuid(&conn, uuid)
                 .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("Credential not found: {}", uuid))?
+                .ok_or_else(|| format!("Credential not found: {uuid}"))?
         };
 
         let creds_path = get_oauth_creds_path(&cred.credential)
@@ -1795,7 +1786,7 @@ impl ProviderPoolService {
         cred.check_health = check_health.unwrap_or(true);
         cred.check_model_name = check_model_name;
 
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         ProviderPoolDao::insert(&conn, &cred).map_err(|e| e.to_string())?;
 
         Ok(cred)
@@ -1834,7 +1825,7 @@ impl ProviderPoolService {
                             CredentialSource::Private,
                         ) {
                             Ok(_) => result.migrated_count += 1,
-                            Err(e) => result.errors.push(format!("Kiro: {}", e)),
+                            Err(e) => result.errors.push(format!("Kiro: {e}")),
                         }
                     } else {
                         result.skipped_count += 1;
@@ -1863,7 +1854,7 @@ impl ProviderPoolService {
                             CredentialSource::Private,
                         ) {
                             Ok(_) => result.migrated_count += 1,
-                            Err(e) => result.errors.push(format!("Gemini: {}", e)),
+                            Err(e) => result.errors.push(format!("Gemini: {e}")),
                         }
                     } else {
                         result.skipped_count += 1;
@@ -1889,7 +1880,7 @@ impl ProviderPoolService {
                         CredentialSource::Private,
                     ) {
                         Ok(_) => result.migrated_count += 1,
-                        Err(e) => result.errors.push(format!("OpenAI: {}", e)),
+                        Err(e) => result.errors.push(format!("OpenAI: {e}")),
                     }
                 } else {
                     result.skipped_count += 1;
@@ -1914,7 +1905,7 @@ impl ProviderPoolService {
                         CredentialSource::Private,
                     ) {
                         Ok(_) => result.migrated_count += 1,
-                        Err(e) => result.errors.push(format!("Claude: {}", e)),
+                        Err(e) => result.errors.push(format!("Claude: {e}")),
                     }
                 } else {
                     result.skipped_count += 1;
@@ -1927,7 +1918,7 @@ impl ProviderPoolService {
 
     /// 检查是否存在相同路径的凭证
     fn credential_exists_by_path(&self, db: &DbConnection, path: &str) -> Result<bool, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let all_creds = ProviderPoolDao::get_all(&conn).map_err(|e| e.to_string())?;
 
         for cred in all_creds {
@@ -1946,7 +1937,7 @@ impl ProviderPoolService {
         db: &DbConnection,
         api_key: &str,
     ) -> Result<bool, String> {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+        let conn = crate::database::lock_db(db)?;
         let all_creds = ProviderPoolDao::get_all(&conn).map_err(|e| e.to_string())?;
 
         for cred in all_creds {

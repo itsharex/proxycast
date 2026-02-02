@@ -48,7 +48,7 @@ fn arb_ip_addr() -> impl Strategy<Value = String> {
                 if a == 127 {
                     None
                 } else {
-                    Some(format!("{}.{}.{}.{}", a, b, c, d))
+                    Some(format!("{a}.{b}.{c}.{d}"))
                 }
             }
         ),
@@ -146,7 +146,7 @@ fn test_management_auth_rate_limit_after_failures() {
     let octet3 = ((unique_id >> 8) & 0xFF) as u8;
     let octet4 = (unique_id & 0xFF) as u8;
     let client_ip = format!("198.51.{}.{}", 100 + (octet3 % 155), octet4.max(1));
-    let addr: SocketAddr = format!("{}:12345", client_ip).parse().unwrap();
+    let addr: SocketAddr = format!("{client_ip}:12345").parse().unwrap();
 
     // 发送 5 次失败请求，每次都应该返回 401
     for i in 0..5 {
@@ -234,8 +234,8 @@ proptest! {
         let mut service = layer.layer(MockService);
 
         // Create request with WRONG auth header (append "wrong" to make it different)
-        let wrong_key = format!("{}wrong", secret_key);
-        let req = create_request_with_auth(Some(&format!("Bearer {}", wrong_key)));
+        let wrong_key = format!("{secret_key}wrong");
+        let req = create_request_with_auth(Some(&format!("Bearer {wrong_key}")));
 
         // Execute the service
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -272,7 +272,7 @@ proptest! {
         let mut service = layer.layer(MockService);
 
         // Create request with CORRECT auth header
-        let req = create_request_with_auth(Some(&format!("Bearer {}", secret_key)));
+        let req = create_request_with_auth(Some(&format!("Bearer {secret_key}")));
 
         // Execute the service
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -346,7 +346,7 @@ proptest! {
         let mut service = layer.layer(MockService);
 
         // Create request with WRONG X-Management-Key header
-        let wrong_key = format!("{}wrong", secret_key);
+        let wrong_key = format!("{secret_key}wrong");
         let req = create_request_with_management_key(Some(&wrong_key));
 
         // Execute the service

@@ -40,7 +40,7 @@ pub struct UpdateInfo {
 }
 
 /// 更新检查服务状态
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UpdateCheckState {
     /// 是否正在检查
     pub is_checking: bool,
@@ -48,16 +48,6 @@ pub struct UpdateCheckState {
     pub last_result: Option<UpdateInfo>,
     /// 下次检查时间（Unix 时间戳）
     pub next_check_at: Option<u64>,
-}
-
-impl Default for UpdateCheckState {
-    fn default() -> Self {
-        Self {
-            is_checking: false,
-            last_result: None,
-            next_check_at: None,
-        }
-    }
 }
 
 /// 更新检查服务
@@ -150,7 +140,7 @@ impl UpdateCheckService {
                     download_url: None,
                     release_notes_url: None,
                     checked_at: now,
-                    error: Some(format!("创建 HTTP 客户端失败: {}", e)),
+                    error: Some(format!("创建 HTTP 客户端失败: {e}")),
                 };
             }
         };
@@ -195,7 +185,7 @@ impl UpdateCheckService {
                             download_url: None,
                             release_notes_url: None,
                             checked_at: now,
-                            error: Some(format!("解析响应失败: {}", e)),
+                            error: Some(format!("解析响应失败: {e}")),
                         },
                     }
                 } else {
@@ -217,7 +207,7 @@ impl UpdateCheckService {
                 download_url: None,
                 release_notes_url: None,
                 checked_at: now,
-                error: Some(format!("网络请求失败: {}", e)),
+                error: Some(format!("网络请求失败: {e}")),
             },
         }
     }

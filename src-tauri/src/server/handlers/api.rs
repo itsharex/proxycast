@@ -414,10 +414,11 @@ async fn check_request_intercept(
         return InterceptCheckResult::Continue(None);
     }
 
-    state.logs.write().await.add(
-        "info",
-        &format!("[INTERCEPT] 拦截请求: flow_id={}", flow_id),
-    );
+    state
+        .logs
+        .write()
+        .await
+        .add("info", &format!("[INTERCEPT] 拦截请求: flow_id={flow_id}"));
 
     // 拦截请求
     let _intercepted = state
@@ -448,17 +449,14 @@ async fn check_request_intercept(
         InterceptAction::Cancel => {
             state.logs.write().await.add(
                 "info",
-                &format!("[INTERCEPT] 请求被取消: flow_id={}", flow_id),
+                &format!("[INTERCEPT] 请求被取消: flow_id={flow_id}"),
             );
             InterceptCheckResult::Cancelled
         }
         InterceptAction::Timeout(timeout_action) => {
             state.logs.write().await.add(
                 "warn",
-                &format!(
-                    "[INTERCEPT] 请求超时: flow_id={}, action={:?}",
-                    flow_id, timeout_action
-                ),
+                &format!("[INTERCEPT] 请求超时: flow_id={flow_id}, action={timeout_action:?}"),
             );
             match timeout_action {
                 crate::flow_monitor::TimeoutAction::Continue => {
@@ -501,10 +499,11 @@ async fn check_response_intercept(
         return None;
     }
 
-    state.logs.write().await.add(
-        "info",
-        &format!("[INTERCEPT] 拦截响应: flow_id={}", flow_id),
-    );
+    state
+        .logs
+        .write()
+        .await
+        .add("info", &format!("[INTERCEPT] 拦截响应: flow_id={flow_id}"));
 
     // 拦截响应
     let _intercepted = state
@@ -535,7 +534,7 @@ async fn check_response_intercept(
         InterceptAction::Cancel | InterceptAction::Timeout(_) => {
             state.logs.write().await.add(
                 "warn",
-                &format!("[INTERCEPT] 响应处理被取消或超时: flow_id={}", flow_id),
+                &format!("[INTERCEPT] 响应处理被取消或超时: flow_id={flow_id}"),
             );
             None
         }
@@ -700,10 +699,7 @@ pub async fn chat_completions(
     // 根据客户端类型选择 Provider
     // **Validates: Requirements 3.1, 3.3, 3.4**
     let (selected_provider, client_type) = select_provider_for_client(&headers, &state).await;
-    eprintln!(
-        "[CHAT_COMPLETIONS] 客户端类型: {}, 选择的Provider: {}",
-        client_type, selected_provider
-    );
+    eprintln!("[CHAT_COMPLETIONS] 客户端类型: {client_type}, 选择的Provider: {selected_provider}");
 
     // 记录客户端检测和 Provider 选择结果
     state.logs.write().await.add(
@@ -738,8 +734,7 @@ pub async fn chat_completions(
             // 如果指定了 X-Provider-Id，优先使用它（不降级）
             if let Some(ref explicit_provider_id) = provider_id_header {
                 eprintln!(
-                    "[CHAT_COMPLETIONS] 使用 X-Provider-Id 指定的 provider: {}",
-                    explicit_provider_id
+                    "[CHAT_COMPLETIONS] 使用 X-Provider-Id 指定的 provider: {explicit_provider_id}"
                 );
                 let cred = state
                     .pool_service
@@ -754,14 +749,12 @@ pub async fn chat_completions(
 
                 if cred.is_none() {
                     eprintln!(
-                        "[CHAT_COMPLETIONS] X-Provider-Id '{}' 没有可用凭证，不进行降级",
-                        explicit_provider_id
+                        "[CHAT_COMPLETIONS] X-Provider-Id '{explicit_provider_id}' 没有可用凭证，不进行降级"
                     );
                     state.logs.write().await.add(
                         "error",
                         &format!(
-                            "[ROUTE] No available credentials for explicitly specified provider '{}', refusing to fallback",
-                            explicit_provider_id
+                            "[ROUTE] No available credentials for explicitly specified provider '{explicit_provider_id}', refusing to fallback"
                         ),
                     );
                     // 返回错误，不降级
@@ -796,15 +789,9 @@ pub async fn chat_completions(
                     .flatten();
 
                 if cred.is_some() {
-                    eprintln!(
-                        "[CHAT_COMPLETIONS] 找到凭证: provider={}",
-                        selected_provider
-                    );
+                    eprintln!("[CHAT_COMPLETIONS] 找到凭证: provider={selected_provider}");
                 } else {
-                    eprintln!(
-                        "[CHAT_COMPLETIONS] 未找到凭证: provider={}",
-                        selected_provider
-                    );
+                    eprintln!("[CHAT_COMPLETIONS] 未找到凭证: provider={selected_provider}");
                 }
 
                 cred
@@ -830,10 +817,7 @@ pub async fn chat_completions(
 
         if let Some(db) = &state.db {
             // 先尝试按 provider_id 直接查找
-            eprintln!(
-                "[CHAT_COMPLETIONS] 尝试按 provider_id '{}' 直接查找凭证",
-                provider_id_lower
-            );
+            eprintln!("[CHAT_COMPLETIONS] 尝试按 provider_id '{provider_id_lower}' 直接查找凭证");
 
             match state
                 .api_key_service
@@ -853,20 +837,18 @@ pub async fn chat_completions(
                     state.logs.write().await.add(
                         "info",
                         &format!(
-                            "[ROUTE] Using API Key Provider credential by provider_id: {}",
-                            provider_id_lower
+                            "[ROUTE] Using API Key Provider credential by provider_id: {provider_id_lower}"
                         ),
                     );
                     found_credential = Some(cred);
                 }
                 Ok(None) => {
                     eprintln!(
-                        "[CHAT_COMPLETIONS] provider_id '{}' 未找到凭证，尝试按类型查找",
-                        provider_id_lower
+                        "[CHAT_COMPLETIONS] provider_id '{provider_id_lower}' 未找到凭证，尝试按类型查找"
                     );
                 }
                 Err(e) => {
-                    eprintln!("[CHAT_COMPLETIONS] 按 provider_id 查找凭证失败: {}", e);
+                    eprintln!("[CHAT_COMPLETIONS] 按 provider_id 查找凭证失败: {e}");
                 }
             }
 
@@ -884,8 +866,7 @@ pub async fn chat_completions(
 
                 if let Some(api_type) = api_provider_type {
                     eprintln!(
-                        "[CHAT_COMPLETIONS] 尝试从 API Key Provider 类型 '{:?}' 获取凭证",
-                        api_type
+                        "[CHAT_COMPLETIONS] 尝试从 API Key Provider 类型 '{api_type:?}' 获取凭证"
                     );
 
                     match state.api_key_service.get_next_api_key_by_type(db, api_type) {
@@ -950,12 +931,11 @@ pub async fn chat_completions(
                         }
                         Ok(None) => {
                             eprintln!(
-                                "[CHAT_COMPLETIONS] API Key Provider 类型 '{:?}' 没有可用的 API Key",
-                                api_type
+                                "[CHAT_COMPLETIONS] API Key Provider 类型 '{api_type:?}' 没有可用的 API Key"
                             );
                         }
                         Err(e) => {
-                            eprintln!("[CHAT_COMPLETIONS] 从 API Key Provider 获取凭证失败: {}", e);
+                            eprintln!("[CHAT_COMPLETIONS] 从 API Key Provider 获取凭证失败: {e}");
                         }
                     }
                 }
@@ -996,12 +976,12 @@ pub async fn chat_completions(
 
         // 从凭证名称中提取 Provider 显示名称
         // 凭证名称格式：Some("[降级] DeepSeek") 或 Some("DeepSeek")
-        let provider_display_name = cred.name.as_ref().and_then(|name| {
+        let provider_display_name = cred.name.as_ref().map(|name| {
             // 去掉 "[降级] " 前缀
             if name.starts_with("[降级] ") {
-                Some(&name[9..]) // "[降级] " 是 9 个字节
+                &name[9..] // "[降级] " 是 9 个字节
             } else {
-                Some(name.as_str())
+                name.as_str()
             }
         });
 
@@ -1080,10 +1060,10 @@ pub async fn chat_completions(
             let body_bytes = match axum::body::to_bytes(body, usize::MAX).await {
                 Ok(bytes) => bytes,
                 Err(e) => {
-                    eprintln!("[CHAT_COMPLETIONS] 读取响应体失败: {}", e);
+                    eprintln!("[CHAT_COMPLETIONS] 读取响应体失败: {e}");
                     // 如果读取失败，返回错误
                     if let Some(fid) = flow_id {
-                        let error = FlowError::new(FlowErrorType::Network, &e.to_string());
+                        let error = FlowError::new(FlowErrorType::Network, e.to_string());
                         state.flow_monitor.fail_flow(&fid, error).await;
                     }
                     return (
@@ -1098,12 +1078,12 @@ pub async fn chat_completions(
             let response_json: serde_json::Value = match serde_json::from_slice(&body_bytes) {
                 Ok(json) => json,
                 Err(e) => {
-                    eprintln!("[CHAT_COMPLETIONS] 解析响应体失败: {}", e);
+                    eprintln!("[CHAT_COMPLETIONS] 解析响应体失败: {e}");
                     // 如果解析失败，仍然返回原始响应
                     if let Some(fid) = flow_id {
                         let error = FlowError::new(
                             FlowErrorType::Other,
-                            &format!("Failed to parse response: {}", e),
+                            format!("Failed to parse response: {e}"),
                         );
                         state.flow_monitor.fail_flow(&fid, error).await;
                     }
@@ -1172,7 +1152,7 @@ pub async fn chat_completions(
                         .logs
                         .write()
                         .await
-                        .add("info", &format!("[INTERCEPT] 响应被修改: flow_id={}", fid));
+                        .add("info", &format!("[INTERCEPT] 响应被修改: flow_id={fid}"));
 
                     // 使用修改后的响应完成 Flow
                     state
@@ -1217,7 +1197,7 @@ pub async fn chat_completions(
                     .complete_flow(&fid, Some(llm_response))
                     .await;
 
-                eprintln!("[FLOW_DEBUG] Flow 已完成: flow_id={}", fid);
+                eprintln!("[FLOW_DEBUG] Flow 已完成: flow_id={fid}");
             }
 
             // 重新构建响应返回给客户端
@@ -1271,8 +1251,7 @@ pub async fn chat_completions(
         state.logs.write().await.add(
             "error",
             &format!(
-                "[ROUTE] No pool credential found for '{}' (client_type={}), and legacy mode only supports Kiro",
-                selected_provider, client_type
+                "[ROUTE] No pool credential found for '{selected_provider}' (client_type={client_type}), and legacy mode only supports Kiro"
             ),
         );
         return (
@@ -1290,10 +1269,7 @@ pub async fn chat_completions(
 
     state.logs.write().await.add(
         "debug",
-        &format!(
-            "[ROUTE] No pool credential found for '{}', using legacy mode",
-            selected_provider
-        ),
+        &format!("[ROUTE] No pool credential found for '{selected_provider}', using legacy mode"),
     );
 
     // 启动 Flow 捕获（legacy mode）
@@ -1359,7 +1335,7 @@ pub async fn chat_completions(
                 if let Some(fid) = &flow_id {
                     let error = FlowError::new(
                         FlowErrorType::Authentication,
-                        &format!("Token refresh failed: {e}"),
+                        format!("Token refresh failed: {e}"),
                     );
                     state.flow_monitor.fail_flow(fid, error).await;
                 }
@@ -1483,10 +1459,11 @@ pub async fn chat_completions(
                             .await
                             {
                                 // 响应被修改，需要重新构建响应
-                                state.logs.write().await.add(
-                                    "info",
-                                    &format!("[INTERCEPT] 响应被修改: flow_id={}", fid),
-                                );
+                                state
+                                    .logs
+                                    .write()
+                                    .await
+                                    .add("info", &format!("[INTERCEPT] 响应被修改: flow_id={fid}"));
 
                                 // 使用修改后的响应完成 Flow
                                 state
@@ -1540,7 +1517,7 @@ pub async fn chat_completions(
                         );
                         // 标记 Flow 失败
                         if let Some(fid) = &flow_id {
-                            let error = FlowError::new(FlowErrorType::Network, &e.to_string());
+                            let error = FlowError::new(FlowErrorType::Network, e.to_string());
                             state.flow_monitor.fail_flow(fid, error).await;
                         }
                         (
@@ -1656,8 +1633,7 @@ pub async fn chat_completions(
                                                     state.logs.write().await.add(
                                                         "info",
                                                         &format!(
-                                                            "[INTERCEPT] 响应被修改: flow_id={}",
-                                                            fid
+                                                            "[INTERCEPT] 响应被修改: flow_id={fid}"
                                                         ),
                                                     );
 
@@ -1712,7 +1688,7 @@ pub async fn chat_completions(
                                             if let Some(fid) = &flow_id {
                                                 let error = FlowError::new(
                                                     FlowErrorType::Network,
-                                                    &e.to_string(),
+                                                    e.to_string(),
                                                 );
                                                 state.flow_monitor.fail_flow(fid, error).await;
                                             }
@@ -1728,7 +1704,7 @@ pub async fn chat_completions(
                                 if let Some(fid) = &flow_id {
                                     let error = FlowError::new(
                                         FlowErrorType::ServerError,
-                                        &format!("Retry failed: {}", body),
+                                        format!("Retry failed: {body}"),
                                     );
                                     state.flow_monitor.fail_flow(fid, error).await;
                                 }
@@ -1741,7 +1717,7 @@ pub async fn chat_completions(
                                 // 标记 Flow 失败
                                 if let Some(fid) = &flow_id {
                                     let error =
-                                        FlowError::new(FlowErrorType::Network, &e.to_string());
+                                        FlowError::new(FlowErrorType::Network, e.to_string());
                                     state.flow_monitor.fail_flow(fid, error).await;
                                 }
                                 (
@@ -1762,7 +1738,7 @@ pub async fn chat_completions(
                         if let Some(fid) = &flow_id {
                             let error = FlowError::new(
                                 FlowErrorType::Authentication,
-                                &format!("Token refresh failed: {e}"),
+                                format!("Token refresh failed: {e}"),
                             );
                             state.flow_monitor.fail_flow(fid, error).await;
                         }
@@ -1800,7 +1776,7 @@ pub async fn chat_completions(
                 .add("error", &format!("API call failed: {e}"));
             // 标记 Flow 失败
             if let Some(fid) = &flow_id {
-                let error = FlowError::new(FlowErrorType::Network, &e.to_string());
+                let error = FlowError::new(FlowErrorType::Network, e.to_string());
                 state.flow_monitor.fail_flow(fid, error).await;
             }
             (
@@ -1941,8 +1917,7 @@ pub async fn anthropic_messages(
             // 如果指定了 X-Provider-Id，优先使用它（不降级）
             if let Some(ref explicit_provider_id) = provider_id_header {
                 eprintln!(
-                    "[ANTHROPIC_MESSAGES] 使用 X-Provider-Id 指定的 provider: {}",
-                    explicit_provider_id
+                    "[ANTHROPIC_MESSAGES] 使用 X-Provider-Id 指定的 provider: {explicit_provider_id}"
                 );
                 let cred = state
                     .pool_service
@@ -1957,14 +1932,12 @@ pub async fn anthropic_messages(
 
                 if cred.is_none() {
                     eprintln!(
-                        "[AMP] X-Provider-Id '{}' 没有可用凭证，不进行降级",
-                        explicit_provider_id
+                        "[AMP] X-Provider-Id '{explicit_provider_id}' 没有可用凭证，不进行降级"
                     );
                     state.logs.write().await.add(
                         "error",
                         &format!(
-                            "[ROUTE] No available credentials for explicitly specified provider '{}', refusing to fallback",
-                            explicit_provider_id
+                            "[ROUTE] No available credentials for explicitly specified provider '{explicit_provider_id}', refusing to fallback"
                         ),
                     );
                     // 返回错误，不降级
@@ -1998,15 +1971,9 @@ pub async fn anthropic_messages(
                     .flatten();
 
                 if cred.is_some() {
-                    eprintln!(
-                        "[ANTHROPIC_MESSAGES] 找到凭证: provider={}",
-                        selected_provider
-                    );
+                    eprintln!("[ANTHROPIC_MESSAGES] 找到凭证: provider={selected_provider}");
                 } else {
-                    eprintln!(
-                        "[ANTHROPIC_MESSAGES] 未找到凭证: provider={}",
-                        selected_provider
-                    );
+                    eprintln!("[ANTHROPIC_MESSAGES] 未找到凭证: provider={selected_provider}");
                 }
 
                 cred
@@ -2027,10 +1994,7 @@ pub async fn anthropic_messages(
             None;
 
         if let Some(db) = &state.db {
-            eprintln!(
-                "[ANTHROPIC_MESSAGES] 尝试按 provider_id '{}' 直接查找凭证",
-                selected_provider
-            );
+            eprintln!("[ANTHROPIC_MESSAGES] 尝试按 provider_id '{selected_provider}' 直接查找凭证");
 
             match state
                 .api_key_service
@@ -2050,13 +2014,10 @@ pub async fn anthropic_messages(
                     found_credential = Some(cred);
                 }
                 Ok(None) => {
-                    eprintln!(
-                        "[ANTHROPIC_MESSAGES] provider_id '{}' 未找到凭证",
-                        selected_provider
-                    );
+                    eprintln!("[ANTHROPIC_MESSAGES] provider_id '{selected_provider}' 未找到凭证");
                 }
                 Err(e) => {
-                    eprintln!("[ANTHROPIC_MESSAGES] 查找凭证时出错: {}", e);
+                    eprintln!("[ANTHROPIC_MESSAGES] 查找凭证时出错: {e}");
                 }
             }
         }
@@ -2087,12 +2048,12 @@ pub async fn anthropic_messages(
 
         // 从凭证名称中提取 Provider 显示名称
         // 凭证名称格式：Some("[降级] DeepSeek") 或 Some("DeepSeek")
-        let provider_display_name = cred.name.as_ref().and_then(|name| {
+        let provider_display_name = cred.name.as_ref().map(|name| {
             // 去掉 "[降级] " 前缀
             if name.starts_with("[降级] ") {
-                Some(&name[9..]) // "[降级] " 是 9 个字节
+                &name[9..] // "[降级] " 是 9 个字节
             } else {
-                Some(name.as_str())
+                name.as_str()
             }
         });
 
@@ -2205,7 +2166,7 @@ pub async fn anthropic_messages(
                         .logs
                         .write()
                         .await
-                        .add("info", &format!("[INTERCEPT] 响应被修改: flow_id={}", fid));
+                        .add("info", &format!("[INTERCEPT] 响应被修改: flow_id={fid}"));
 
                     // 使用修改后的响应完成 Flow
                     state
@@ -2260,8 +2221,7 @@ pub async fn anthropic_messages(
         state.logs.write().await.add(
             "error",
             &format!(
-                "[ROUTE] No pool credential found for '{}' (client_type={}), and legacy mode only supports Kiro",
-                selected_provider, client_type
+                "[ROUTE] No pool credential found for '{selected_provider}' (client_type={client_type}), and legacy mode only supports Kiro"
             ),
         );
         return (
@@ -2279,10 +2239,7 @@ pub async fn anthropic_messages(
 
     state.logs.write().await.add(
         "debug",
-        &format!(
-            "[ROUTE] No pool credential found for '{}', using legacy mode",
-            selected_provider
-        ),
+        &format!("[ROUTE] No pool credential found for '{selected_provider}', using legacy mode"),
     );
 
     // 启动 Flow 捕获（legacy mode）
@@ -2358,7 +2315,7 @@ pub async fn anthropic_messages(
                 if let Some(fid) = &flow_id {
                     let error = FlowError::new(
                         FlowErrorType::Authentication,
-                        &format!("Token refresh failed: {e}"),
+                        format!("Token refresh failed: {e}"),
                     );
                     state.flow_monitor.fail_flow(fid, error).await;
                 }
@@ -2479,7 +2436,7 @@ pub async fn anthropic_messages(
                                     // 响应被修改，需要重新构建响应
                                     state.logs.write().await.add(
                                         "info",
-                                        &format!("[INTERCEPT] 流式响应被修改: flow_id={}", fid),
+                                        &format!("[INTERCEPT] 流式响应被修改: flow_id={fid}"),
                                     );
 
                                     // 使用修改后的响应完成 Flow
@@ -2541,10 +2498,11 @@ pub async fn anthropic_messages(
                             .await
                             {
                                 // 响应被修改，需要重新构建响应
-                                state.logs.write().await.add(
-                                    "info",
-                                    &format!("[INTERCEPT] 响应被修改: flow_id={}", fid),
-                                );
+                                state
+                                    .logs
+                                    .write()
+                                    .await
+                                    .add("info", &format!("[INTERCEPT] 响应被修改: flow_id={fid}"));
 
                                 // 使用修改后的响应完成 Flow
                                 state
@@ -2592,7 +2550,7 @@ pub async fn anthropic_messages(
                             .add("error", &format!("[ERROR] Response body read failed: {e}"));
                         // 标记 Flow 失败
                         if let Some(fid) = &flow_id {
-                            let error = FlowError::new(FlowErrorType::Network, &e.to_string());
+                            let error = FlowError::new(FlowErrorType::Network, e.to_string());
                             state.flow_monitor.fail_flow(fid, error).await;
                         }
                         (
@@ -2675,7 +2633,7 @@ pub async fn anthropic_messages(
                                                     // 响应被修改，需要重新构建响应
                                                     state.logs.write().await.add(
                                                         "info",
-                                                        &format!("[INTERCEPT] 重试响应被修改: flow_id={}", fid),
+                                                        &format!("[INTERCEPT] 重试响应被修改: flow_id={fid}"),
                                                     );
 
                                                     // 使用修改后的响应完成 Flow
@@ -2758,7 +2716,7 @@ pub async fn anthropic_messages(
                                             if let Some(fid) = &flow_id {
                                                 let error = FlowError::new(
                                                     FlowErrorType::Network,
-                                                    &e.to_string(),
+                                                    e.to_string(),
                                                 );
                                                 state.flow_monitor.fail_flow(fid, error).await;
                                             }
@@ -2786,7 +2744,7 @@ pub async fn anthropic_messages(
                                 if let Some(fid) = &flow_id {
                                     let error = FlowError::new(
                                         FlowErrorType::ServerError,
-                                        &format!("Retry failed: {}", body),
+                                        format!("Retry failed: {body}"),
                                     );
                                     state.flow_monitor.fail_flow(fid, error).await;
                                 }
@@ -2805,7 +2763,7 @@ pub async fn anthropic_messages(
                                 // 标记 Flow 失败
                                 if let Some(fid) = &flow_id {
                                     let error =
-                                        FlowError::new(FlowErrorType::Network, &e.to_string());
+                                        FlowError::new(FlowErrorType::Network, e.to_string());
                                     state.flow_monitor.fail_flow(fid, error).await;
                                 }
                                 (
@@ -2826,7 +2784,7 @@ pub async fn anthropic_messages(
                         if let Some(fid) = &flow_id {
                             let error = FlowError::new(
                                 FlowErrorType::Authentication,
-                                &format!("Token refresh failed: {e}"),
+                                format!("Token refresh failed: {e}"),
                             );
                             state.flow_monitor.fail_flow(fid, error).await;
                         }
@@ -2878,7 +2836,7 @@ pub async fn anthropic_messages(
             );
             // 标记 Flow 失败
             if let Some(fid) = &flow_id {
-                let error = FlowError::new(FlowErrorType::Network, &e.to_string());
+                let error = FlowError::new(FlowErrorType::Network, e.to_string());
                 state.flow_monitor.fail_flow(fid, error).await;
             }
             (
@@ -3060,7 +3018,7 @@ fn build_api_key_headers(
             headers.insert("api-key".to_string(), api_key.to_string());
         }
         _ => {
-            headers.insert("Authorization".to_string(), format!("Bearer {}", api_key));
+            headers.insert("Authorization".to_string(), format!("Bearer {api_key}"));
         }
     }
 

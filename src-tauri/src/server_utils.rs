@@ -696,7 +696,7 @@ pub fn build_gemini_native_request(
         let n: u64 = u64::from_le_bytes([
             bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
         ]) % 9_000_000_000_000_000_000;
-        format!("-{}", n)
+        format!("-{n}")
     };
 
     // 构建内部请求
@@ -869,7 +869,7 @@ mod property_tests {
             ],
         )
             .prop_map(|(id, name, args)| ToolCall {
-                id: format!("call_{}", id),
+                id: format!("call_{id}"),
                 call_type: "function".to_string(),
                 function: FunctionCall {
                     name,
@@ -1053,7 +1053,7 @@ mod property_tests {
             prop_assert_eq!(parts.status, StatusCode::OK);
 
             // 即使内容为空，content 数组也应该有一个空文本元素
-            let content_array = vec![serde_json::json!({"type": "text", "text": ""})];
+            let content_array = [serde_json::json!({"type": "text", "text": ""})];
             prop_assert!(!content_array.is_empty());
         }
 
@@ -1202,8 +1202,7 @@ mod property_tests {
         for required in &required_models {
             assert!(
                 model_ids.contains(required),
-                "Model {} should be in the list",
-                required
+                "Model {required} should be in the list"
             );
         }
     }
@@ -1256,8 +1255,7 @@ mod property_tests {
             let actual_model = result.get("model").and_then(|v| v.as_str()).unwrap();
             assert_eq!(
                 actual_model, *expected,
-                "Model {} should map to {}",
-                input, expected
+                "Model {input} should map to {expected}"
             );
         }
 
@@ -1268,8 +1266,7 @@ mod property_tests {
             let actual_model = result.get("model").and_then(|v| v.as_str()).unwrap();
             assert_eq!(
                 actual_model, *model,
-                "Unknown model {} should be returned unchanged",
-                model
+                "Unknown model {model} should be returned unchanged"
             );
         }
     }
@@ -1316,8 +1313,7 @@ mod property_tests {
         for model in &thinking_enabled_models {
             assert!(
                 should_enable_thinking(model),
-                "Model {} should have thinking enabled",
-                model
+                "Model {model} should have thinking enabled"
             );
         }
 
@@ -1333,8 +1329,7 @@ mod property_tests {
         for model in &thinking_disabled_models {
             assert!(
                 !should_enable_thinking(model),
-                "Model {} should have thinking disabled",
-                model
+                "Model {model} should have thinking disabled"
             );
         }
     }
@@ -1372,14 +1367,12 @@ mod property_tests {
             assert_eq!(
                 thinking_config["includeThoughts"].as_bool(),
                 Some(true),
-                "Model {} should have includeThoughts=true",
-                model
+                "Model {model} should have includeThoughts=true"
             );
             assert_eq!(
                 thinking_config["thinkingBudget"].as_i64(),
                 Some(1024),
-                "Model {} should have thinkingBudget=1024",
-                model
+                "Model {model} should have thinkingBudget=1024"
             );
         }
 
@@ -1397,14 +1390,12 @@ mod property_tests {
             assert_eq!(
                 thinking_config["includeThoughts"].as_bool(),
                 Some(false),
-                "Model {} should have includeThoughts=false",
-                model
+                "Model {model} should have includeThoughts=false"
             );
             assert_eq!(
                 thinking_config["thinkingBudget"].as_i64(),
                 Some(0),
-                "Model {} should have thinkingBudget=0",
-                model
+                "Model {model} should have thinkingBudget=0"
             );
         }
     }

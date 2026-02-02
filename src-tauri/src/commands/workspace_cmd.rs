@@ -172,7 +172,7 @@ pub async fn workspace_delete(
         if let Some(workspace) = manager.get(&id)? {
             let root_path = workspace.root_path;
             if root_path.exists() && root_path.is_dir() {
-                std::fs::remove_dir_all(&root_path).map_err(|e| format!("删除目录失败: {}", e))?;
+                std::fs::remove_dir_all(&root_path).map_err(|e| format!("删除目录失败: {e}"))?;
                 tracing::info!("[Workspace] 删除目录: {:?}", root_path);
             }
         }

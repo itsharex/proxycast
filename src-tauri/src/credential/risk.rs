@@ -478,7 +478,7 @@ mod tests {
         for i in 0..5 {
             let event = RateLimitEvent::new("cred-1".to_string())
                 .with_status_code(429)
-                .with_error_message(format!("Rate limit {}", i));
+                .with_error_message(format!("Rate limit {i}"));
             controller.record_rate_limit(event);
         }
 

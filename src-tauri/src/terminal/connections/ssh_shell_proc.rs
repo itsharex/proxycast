@@ -95,7 +95,7 @@ impl SSHShellProc {
 
         // 创建 SSH Channel
         let mut channel = session.channel_session().map_err(|e| {
-            TerminalError::SSHConnectionFailed(format!("创建 SSH Channel 失败: {}", e))
+            TerminalError::SSHConnectionFailed(format!("创建 SSH Channel 失败: {e}"))
         })?;
 
         // 请求 PTY
@@ -106,7 +106,7 @@ impl SSHShellProc {
                 None,
                 Some((cols as u32, rows as u32, 0, 0)),
             )
-            .map_err(|e| TerminalError::SSHConnectionFailed(format!("请求远程 PTY 失败: {}", e)))?;
+            .map_err(|e| TerminalError::SSHConnectionFailed(format!("请求远程 PTY 失败: {e}")))?;
 
         // 根据控制器类型启动 Shell 或执行命令
         if controller_type == "cmd" {
@@ -114,12 +114,12 @@ impl SSHShellProc {
             let cmd = Self::build_remote_command(&block_meta)?;
             tracing::info!("[SSHShellProc] 执行远程命令: {}", cmd);
             channel.exec(&cmd).map_err(|e| {
-                TerminalError::SSHConnectionFailed(format!("执行远程命令失败: {}", e))
+                TerminalError::SSHConnectionFailed(format!("执行远程命令失败: {e}"))
             })?;
         } else {
             // Shell 模式 - 启动交互式 Shell
             channel.shell().map_err(|e| {
-                TerminalError::SSHConnectionFailed(format!("启动远程 Shell 失败: {}", e))
+                TerminalError::SSHConnectionFailed(format!("启动远程 Shell 失败: {e}"))
             })?;
         }
 
@@ -636,7 +636,7 @@ impl SSHShellProc {
         let mut channel = self.channel.lock();
         channel
             .send_eof()
-            .map_err(|e| TerminalError::WriteFailed(format!("发送 EOF 失败: {}", e)))?;
+            .map_err(|e| TerminalError::WriteFailed(format!("发送 EOF 失败: {e}")))?;
         Ok(())
     }
 }

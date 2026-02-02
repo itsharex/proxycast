@@ -161,7 +161,7 @@ impl LogStore {
         self.prune_old_logs(path);
     }
 
-    fn prune_old_logs(&self, path: &PathBuf) {
+    fn prune_old_logs(&self, path: &std::path::Path) {
         let Some(dir) = path.parent() else {
             return;
         };

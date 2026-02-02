@@ -242,7 +242,7 @@ pub fn export_config(config: Config, redact_secrets: bool) -> Result<ExportResul
     // 生成带时间戳的文件名
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
     let suffix = if redact_secrets { "_redacted" } else { "" };
-    let suggested_filename = format!("proxycast_config_{}{}.yaml", timestamp, suffix);
+    let suggested_filename = format!("proxycast_config_{timestamp}{suffix}.yaml");
 
     Ok(ExportResult {
         content,
@@ -435,7 +435,7 @@ pub fn export_bundle(
         (false, true) => "credentials",
         (false, false) => "empty",
     };
-    let suggested_filename = format!("proxycast_{}_{}{}.json", scope, timestamp, suffix);
+    let suggested_filename = format!("proxycast_{scope}_{timestamp}{suffix}.json");
 
     Ok(UnifiedExportResult {
         content,
@@ -460,7 +460,7 @@ pub fn export_config_yaml(config: Config, redact_secrets: bool) -> Result<Export
     // 生成带时间戳的文件名
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
     let suffix = if redact_secrets { "_redacted" } else { "" };
-    let suggested_filename = format!("proxycast_config_{}{}.yaml", timestamp, suffix);
+    let suggested_filename = format!("proxycast_config_{timestamp}{suffix}.yaml");
 
     Ok(ExportResult {
         content,
@@ -639,7 +639,7 @@ pub async fn check_for_updates() -> Result<VersionCheckResult, String> {
                         latest: None,
                         has_update: false,
                         download_url: None,
-                        error: Some(format!("解析响应失败: {}", e)),
+                        error: Some(format!("解析响应失败: {e}")),
                     }),
                 }
             } else {
@@ -657,7 +657,7 @@ pub async fn check_for_updates() -> Result<VersionCheckResult, String> {
             latest: None,
             has_update: false,
             download_url: None,
-            error: Some(format!("网络请求失败: {}", e)),
+            error: Some(format!("网络请求失败: {e}")),
         }),
     }
 }
@@ -837,27 +837,27 @@ pub async fn download_update(app_handle: AppHandle) -> Result<DownloadResult, St
 
                             Ok(DownloadResult {
                                 success: true,
-                                message: format!("下载完成: {}", filename),
+                                message: format!("下载完成: {filename}"),
                                 file_path: Some(file_path.to_string_lossy().to_string()),
                             })
                         }
                         Err(e) => Ok(DownloadResult {
                             success: false,
-                            message: format!("保存文件失败: {}", e),
+                            message: format!("保存文件失败: {e}"),
                             file_path: None,
                         }),
                     }
                 }
                 Err(e) => Ok(DownloadResult {
                     success: false,
-                    message: format!("读取下载内容失败: {}", e),
+                    message: format!("读取下载内容失败: {e}"),
                     file_path: None,
                 }),
             }
         }
         Err(e) => Ok(DownloadResult {
             success: false,
-            message: format!("网络请求失败: {}", e),
+            message: format!("网络请求失败: {e}"),
             file_path: None,
         }),
     }
@@ -865,10 +865,8 @@ pub async fn download_update(app_handle: AppHandle) -> Result<DownloadResult, St
 
 /// 从 GitHub API 获取实际的文件列表并匹配平台
 async fn get_platform_download_from_github(version: &str) -> Result<(String, String), String> {
-    let api_url = format!(
-        "https://api.github.com/repos/aiclientproxy/proxycast/releases/tags/v{}",
-        version
-    );
+    let api_url =
+        format!("https://api.github.com/repos/aiclientproxy/proxycast/releases/tags/v{version}");
 
     let client = reqwest::Client::new();
     let response = client
@@ -876,7 +874,7 @@ async fn get_platform_download_from_github(version: &str) -> Result<(String, Str
         .header("User-Agent", "ProxyCast")
         .send()
         .await
-        .map_err(|e| format!("请求 GitHub API 失败: {}", e))?;
+        .map_err(|e| format!("请求 GitHub API 失败: {e}"))?;
 
     if !response.status().is_success() {
         return Err(format!("GitHub API 请求失败: {}", response.status()));
@@ -885,7 +883,7 @@ async fn get_platform_download_from_github(version: &str) -> Result<(String, Str
     let data: serde_json::Value = response
         .json()
         .await
-        .map_err(|e| format!("解析 GitHub API 响应失败: {}", e))?;
+        .map_err(|e| format!("解析 GitHub API 响应失败: {e}"))?;
 
     let assets = data["assets"]
         .as_array()
@@ -970,12 +968,12 @@ fn get_download_directory(app_handle: &AppHandle) -> Result<PathBuf, String> {
     let app_data_dir = app_handle
         .path()
         .app_data_dir()
-        .map_err(|e| format!("无法获取应用数据目录: {}", e))?;
+        .map_err(|e| format!("无法获取应用数据目录: {e}"))?;
 
     let download_dir = app_data_dir.join("downloads");
 
     // 确保目录存在
-    std::fs::create_dir_all(&download_dir).map_err(|e| format!("创建下载目录失败: {}", e))?;
+    std::fs::create_dir_all(&download_dir).map_err(|e| format!("创建下载目录失败: {e}"))?;
 
     Ok(download_dir)
 }
@@ -1007,9 +1005,9 @@ fn run_installer(file_path: &PathBuf) -> Result<(), String> {
             {
                 tracing::info!("macOS: 打开 DMG 文件: {:?}", file_path);
                 std::process::Command::new("open")
-                    .arg(&file_path)
+                    .arg(file_path)
                     .spawn()
-                    .map_err(|e| format!("打开 macOS DMG 文件失败: {}", e))?;
+                    .map_err(|e| format!("打开 macOS DMG 文件失败: {e}"))?;
             }
 
             #[cfg(not(target_os = "macos"))]
@@ -1060,7 +1058,7 @@ fn run_installer(file_path: &PathBuf) -> Result<(), String> {
             }
         }
         _ => {
-            return Err(format!("不支持的文件类型: {}", extension));
+            return Err(format!("不支持的文件类型: {extension}"));
         }
     }
 
@@ -1083,9 +1081,9 @@ fn open_file_location(file_path: &PathBuf) -> Result<(), String> {
     {
         tracing::info!("macOS: 使用 open -R 打开文件位置: {:?}", file_path);
         std::process::Command::new("open")
-            .args(&["-R", &file_path.to_string_lossy()])
+            .args(["-R", &file_path.to_string_lossy()])
             .spawn()
-            .map_err(|e| format!("macOS open 命令失败: {}", e))?;
+            .map_err(|e| format!("macOS open 命令失败: {e}"))?;
     }
 
     #[cfg(target_os = "linux")]

@@ -78,7 +78,7 @@ pub async fn temporary_disable_interceptor(duration_seconds: u64) -> Result<Stri
         int.temporary_disable(duration_seconds)
             .await
             .map_err(|e| e.to_string())?;
-        Ok(format!("拦截器已临时禁用 {} 秒", duration_seconds))
+        Ok(format!("拦截器已临时禁用 {duration_seconds} 秒"))
     } else {
         Err("拦截器未运行".to_string())
     }
@@ -177,7 +177,7 @@ pub async fn get_default_browser_interceptor_config() -> Result<BrowserIntercept
 pub async fn validate_browser_interceptor_config(
     config: BrowserInterceptorConfig,
 ) -> Result<String, String> {
-    config.validate().map_err(|e| e)?;
+    config.validate()?;
     Ok("配置验证通过".to_string())
 }
 

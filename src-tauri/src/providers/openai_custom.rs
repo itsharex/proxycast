@@ -95,10 +95,10 @@ impl OpenAICustomProvider {
 
         if has_version {
             // 已有版本号，直接拼接 endpoint
-            format!("{}/{}", base, endpoint)
+            format!("{base}/{endpoint}")
         } else {
             // 没有版本号，添加 /v1
-            format!("{}/v1/{}", base, endpoint)
+            format!("{base}/v1/{endpoint}")
         }
     }
 
@@ -125,9 +125,9 @@ impl OpenAICustomProvider {
             .unwrap_or(false);
 
         if has_version {
-            format!("{}/{}", base, endpoint)
+            format!("{base}/{endpoint}")
         } else {
-            format!("{}/v1/{}", base, endpoint)
+            format!("{base}/v1/{endpoint}")
         }
     }
 
@@ -136,7 +136,7 @@ impl OpenAICustomProvider {
         let base = base.trim();
 
         let mut url = Url::parse(base)
-            .or_else(|_| Url::parse(&format!("http://{}", base)))
+            .or_else(|_| Url::parse(&format!("http://{base}")))
             .ok()?;
 
         let path = url.path().trim_end_matches('/');
@@ -212,7 +212,7 @@ impl OpenAICustomProvider {
         );
 
         for url in &urls {
-            eprintln!("[OPENAI_CUSTOM] call_api trying URL: {}", url);
+            eprintln!("[OPENAI_CUSTOM] call_api trying URL: {url}");
             let resp = self
                 .client
                 .post(url)
@@ -243,7 +243,7 @@ impl OpenAICustomProvider {
 
         let url = self.build_url("chat/completions");
 
-        eprintln!("[OPENAI_CUSTOM] chat_completions URL: {}", url);
+        eprintln!("[OPENAI_CUSTOM] chat_completions URL: {url}");
         eprintln!(
             "[OPENAI_CUSTOM] chat_completions base_url: {}",
             self.get_base_url()
@@ -289,7 +289,7 @@ impl OpenAICustomProvider {
         let mut resp: Option<reqwest::Response> = None;
 
         for url in urls {
-            eprintln!("[OPENAI_CUSTOM] list_models URL: {}", url);
+            eprintln!("[OPENAI_CUSTOM] list_models URL: {url}");
             tried_urls.push(url.clone());
             let r = self
                 .client
@@ -309,7 +309,7 @@ impl OpenAICustomProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            eprintln!("[OPENAI_CUSTOM] list_models 失败: {} - {}", status, body);
+            eprintln!("[OPENAI_CUSTOM] list_models 失败: {status} - {body}");
             return Err(format!(
                 "Failed to list models: {status} - {body} (tried: {})",
                 tried_urls.join(", ")

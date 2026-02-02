@@ -92,7 +92,7 @@ pub async fn update_tray_server_status(
     // 更新服务器相关字段
     current_state.server_running = server_running;
     current_state.server_address = if server_running {
-        format!("{}:{}", server_host, server_port)
+        format!("{server_host}:{server_port}")
     } else {
         String::new()
     };

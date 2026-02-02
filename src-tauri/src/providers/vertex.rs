@@ -184,7 +184,7 @@ impl VertexProvider {
             .unwrap_or("gemini-2.0-flash");
 
         // Vertex AI uses a different URL pattern
-        let url = format!("{}/models/{}:generateContent", base_url, model);
+        let url = format!("{base_url}/models/{model}:generateContent");
 
         let resp = self
             .client
@@ -223,7 +223,7 @@ impl VertexProvider {
             .unwrap_or("gemini-2.0-flash");
 
         // Streaming endpoint
-        let url = format!("{}/models/{}:streamGenerateContent", base_url, model);
+        let url = format!("{base_url}/models/{model}:streamGenerateContent");
 
         let resp = self
             .client
@@ -246,7 +246,7 @@ impl VertexProvider {
             .ok_or("Vertex AI API key not configured")?;
 
         let base_url = self.get_base_url();
-        let url = format!("{}/models", base_url);
+        let url = format!("{base_url}/models");
 
         let resp = self
             .client
@@ -258,7 +258,7 @@ impl VertexProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(format!("Failed to list models: {} - {}", status, body).into());
+            return Err(format!("Failed to list models: {status} - {body}").into());
         }
 
         let data: serde_json::Value = resp.json().await?;

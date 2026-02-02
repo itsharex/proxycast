@@ -64,15 +64,15 @@ pub enum StreamError {
 impl fmt::Display for StreamError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            StreamError::Network(msg) => write!(f, "网络错误: {}", msg),
+            StreamError::Network(msg) => write!(f, "网络错误: {msg}"),
             StreamError::Timeout => write!(f, "流式响应超时"),
-            StreamError::ParseError(msg) => write!(f, "解析错误: {}", msg),
+            StreamError::ParseError(msg) => write!(f, "解析错误: {msg}"),
             StreamError::ProviderError { status, message } => {
-                write!(f, "Provider 错误 ({}): {}", status, message)
+                write!(f, "Provider 错误 ({status}): {message}")
             }
             StreamError::ClientDisconnected => write!(f, "客户端已断开连接"),
             StreamError::BufferOverflow => write!(f, "缓冲区溢出"),
-            StreamError::Internal(msg) => write!(f, "内部错误: {}", msg),
+            StreamError::Internal(msg) => write!(f, "内部错误: {msg}"),
         }
     }
 }
@@ -94,9 +94,9 @@ impl From<reqwest::Error> for StreamError {
         if err.is_timeout() {
             StreamError::Timeout
         } else if err.is_connect() {
-            StreamError::Network(format!("连接失败: {}", err))
+            StreamError::Network(format!("连接失败: {err}"))
         } else if err.is_request() {
-            StreamError::Network(format!("请求错误: {}", err))
+            StreamError::Network(format!("请求错误: {err}"))
         } else {
             StreamError::Network(err.to_string())
         }
@@ -187,7 +187,7 @@ impl StreamError {
                 "message": self.to_string(),
             }
         });
-        format!("event: error\ndata: {}\n\n", error_json)
+        format!("event: error\ndata: {error_json}\n\n")
     }
 
     /// 获取错误类型字符串

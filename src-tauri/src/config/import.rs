@@ -149,12 +149,12 @@ pub enum ImportError {
 impl std::fmt::Display for ImportError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ImportError::FormatError(msg) => write!(f, "格式错误: {}", msg),
-            ImportError::VersionError(msg) => write!(f, "版本不兼容: {}", msg),
-            ImportError::ConfigError(msg) => write!(f, "配置错误: {}", msg),
-            ImportError::IoError(msg) => write!(f, "IO 错误: {}", msg),
-            ImportError::ValidationError(msg) => write!(f, "验证错误: {}", msg),
-            ImportError::RedactedDataError(msg) => write!(f, "脱敏数据无法导入: {}", msg),
+            ImportError::FormatError(msg) => write!(f, "格式错误: {msg}"),
+            ImportError::VersionError(msg) => write!(f, "版本不兼容: {msg}"),
+            ImportError::ConfigError(msg) => write!(f, "配置错误: {msg}"),
+            ImportError::IoError(msg) => write!(f, "IO 错误: {msg}"),
+            ImportError::ValidationError(msg) => write!(f, "验证错误: {msg}"),
+            ImportError::RedactedDataError(msg) => write!(f, "脱敏数据无法导入: {msg}"),
         }
     }
 }
@@ -234,7 +234,7 @@ impl ImportService {
         // 验证配置内容（如果存在）
         if let Some(ref yaml) = bundle.config_yaml {
             if let Err(e) = ConfigManager::parse_yaml(yaml) {
-                result.add_error(format!("配置 YAML 解析失败: {}", e));
+                result.add_error(format!("配置 YAML 解析失败: {e}"));
             }
         }
 
@@ -453,17 +453,17 @@ impl ImportService {
                 Ok(content) => {
                     // 检查是否是脱敏内容
                     if content == REDACTED_PLACEHOLDER.as_bytes() {
-                        warnings.push(format!("Token 文件 {} 已脱敏，无法恢复", relative_path));
+                        warnings.push(format!("Token 文件 {relative_path} 已脱敏，无法恢复"));
                         continue;
                     }
 
                     // 写入文件
                     if let Err(e) = std::fs::write(&token_path, &content) {
-                        warnings.push(format!("写入 token 文件 {} 失败: {}", relative_path, e));
+                        warnings.push(format!("写入 token 文件 {relative_path} 失败: {e}"));
                     }
                 }
                 Err(e) => {
-                    warnings.push(format!("解码 token 文件 {} 失败: {}", relative_path, e));
+                    warnings.push(format!("解码 token 文件 {relative_path} 失败: {e}"));
                 }
             }
         }

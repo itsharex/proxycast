@@ -128,14 +128,14 @@ pub async fn get_available_credentials(
     let credentials = {
         let conn = db.lock().map_err(|e| ApiError {
             error: "database_lock_error".to_string(),
-            message: format!("数据库锁定失败: {}", e),
+            message: format!("数据库锁定失败: {e}"),
             status_code: 500,
         })?;
 
         ProviderPoolDao::get_all(&conn)
             .map_err(|e| ApiError {
                 error: "database_query_error".to_string(),
-                message: format!("查询凭证失败: {}", e),
+                message: format!("查询凭证失败: {e}"),
                 status_code: 500,
             })?
             .into_iter()
@@ -152,12 +152,12 @@ pub async fn get_available_credentials(
             .get_cache_status(db, &credential.uuid)
             .map_err(|e| ApiError {
                 error: "cache_query_error".to_string(),
-                message: format!("获取缓存状态失败: {}", e),
+                message: format!("获取缓存状态失败: {e}"),
                 status_code: 500,
             })?;
 
         // 计算健康状态分数
-        let health_score = calculate_health_score(&credential, cache_status.as_ref());
+        let health_score = calculate_health_score(credential, cache_status.as_ref());
 
         let is_available = health_score > 50.0; // 健康分数大于50认为可用
         if is_available {
@@ -232,19 +232,19 @@ pub async fn select_credential(
         // 强制选择指定UUID
         let conn = db.lock().map_err(|e| ApiError {
             error: "database_lock_error".to_string(),
-            message: format!("数据库锁定失败: {}", e),
+            message: format!("数据库锁定失败: {e}"),
             status_code: 500,
         })?;
 
-        ProviderPoolDao::get_by_uuid(&conn, &force_uuid)
+        ProviderPoolDao::get_by_uuid(&conn, force_uuid)
             .map_err(|e| ApiError {
                 error: "database_query_error".to_string(),
-                message: format!("查询凭证失败: {}", e),
+                message: format!("查询凭证失败: {e}"),
                 status_code: 500,
             })?
             .ok_or_else(|| ApiError {
                 error: "credential_not_found".to_string(),
-                message: format!("未找到UUID为{}的凭证", force_uuid),
+                message: format!("未找到UUID为{force_uuid}的凭证"),
                 status_code: 404,
             })?
     } else {
@@ -254,7 +254,7 @@ pub async fn select_credential(
             .select_credential(db, "kiro", request.model.as_deref())
             .map_err(|e| ApiError {
                 error: "selection_error".to_string(),
-                message: format!("凭证选择失败: {}", e),
+                message: format!("凭证选择失败: {e}"),
                 status_code: 500,
             })?
             .ok_or_else(|| ApiError {
@@ -330,19 +330,19 @@ pub async fn refresh_credential(
     let credential = {
         let conn = db.lock().map_err(|e| ApiError {
             error: "database_lock_error".to_string(),
-            message: format!("数据库锁定失败: {}", e),
+            message: format!("数据库锁定失败: {e}"),
             status_code: 500,
         })?;
 
         let cred = ProviderPoolDao::get_by_uuid(&conn, &uuid)
             .map_err(|e| ApiError {
                 error: "database_query_error".to_string(),
-                message: format!("查询凭证失败: {}", e),
+                message: format!("查询凭证失败: {e}"),
                 status_code: 500,
             })?
             .ok_or_else(|| ApiError {
                 error: "credential_not_found".to_string(),
-                message: format!("未找到UUID为{}的凭证", uuid),
+                message: format!("未找到UUID为{uuid}的凭证"),
                 status_code: 404,
             })?;
 
@@ -368,7 +368,7 @@ pub async fn refresh_credential(
                 .get_cache_status(db, &uuid)
                 .map_err(|e| ApiError {
                     error: "cache_query_error".to_string(),
-                    message: format!("获取刷新后缓存状态失败: {}", e),
+                    message: format!("获取刷新后缓存状态失败: {e}"),
                     status_code: 500,
                 })?;
 
@@ -445,19 +445,19 @@ pub async fn get_credential_status(
     let credential = {
         let conn = db.lock().map_err(|e| ApiError {
             error: "database_lock_error".to_string(),
-            message: format!("数据库锁定失败: {}", e),
+            message: format!("数据库锁定失败: {e}"),
             status_code: 500,
         })?;
 
         ProviderPoolDao::get_by_uuid(&conn, &uuid)
             .map_err(|e| ApiError {
                 error: "database_query_error".to_string(),
-                message: format!("查询凭证失败: {}", e),
+                message: format!("查询凭证失败: {e}"),
                 status_code: 500,
             })?
             .ok_or_else(|| ApiError {
                 error: "credential_not_found".to_string(),
-                message: format!("未找到UUID为{}的凭证", uuid),
+                message: format!("未找到UUID为{uuid}的凭证"),
                 status_code: 404,
             })?
     };
@@ -467,7 +467,7 @@ pub async fn get_credential_status(
         .get_cache_status(db, &uuid)
         .map_err(|e| ApiError {
             error: "cache_query_error".to_string(),
-            message: format!("获取缓存状态失败: {}", e),
+            message: format!("获取缓存状态失败: {e}"),
             status_code: 500,
         })?;
 
@@ -541,7 +541,7 @@ pub async fn get_credential_status(
             "last_refresh_error".to_string(),
             cache
                 .last_refresh_error
-                .map(|err| serde_json::Value::String(err))
+                .map(serde_json::Value::String)
                 .unwrap_or(serde_json::Value::Null),
         );
     } else {

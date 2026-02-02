@@ -49,7 +49,7 @@ pub fn generate_machine_id_from_credentials_with_uuid(
     let mut hasher = Sha256::new();
     hasher.update(unique_key.as_bytes());
     let result = hasher.finalize();
-    format!("{:x}", result)
+    format!("{result:x}")
 }
 
 /// 获取系统运行时信息
@@ -65,7 +65,7 @@ fn get_system_runtime_info() -> (String, String) {
             .and_then(|o| String::from_utf8(o.stdout).ok())
             .map(|s| s.trim().to_string())
             .unwrap_or_else(|| "14.0".to_string());
-        format!("macos#{}", version)
+        format!("macos#{version}")
     } else if cfg!(target_os = "linux") {
         // Linux: 获取内核版本
         let version = std::process::Command::new("uname")
@@ -75,7 +75,7 @@ fn get_system_runtime_info() -> (String, String) {
             .and_then(|o| String::from_utf8(o.stdout).ok())
             .map(|s| s.trim().to_string())
             .unwrap_or_else(|| "5.15.0".to_string());
-        format!("linux#{}", version)
+        format!("linux#{version}")
     } else if cfg!(target_os = "windows") {
         // Windows: 使用固定版本（实际应该获取真实版本）
         "windows#10.0".to_string()
@@ -108,7 +108,7 @@ fn get_device_fingerprint() -> String {
     let mut hasher = Sha256::new();
     hasher.update(raw_id.as_bytes());
     let result = hasher.finalize();
-    format!("{:x}", result)
+    format!("{result:x}")
 }
 
 /// 获取原始 Machine ID（未哈希）
@@ -305,7 +305,7 @@ impl KiroProvider {
 
         // 如果有 clientIdHash，尝试加载对应的 client_id 和 client_secret
         if let Some(hash) = &merged.client_id_hash {
-            let hash_file_path = dir.join(format!("{}.json", hash));
+            let hash_file_path = dir.join(format!("{hash}.json"));
             tracing::info!(
                 "[KIRO] 检查 clientIdHash 文件: {}",
                 hash_file_path.display()
@@ -401,7 +401,7 @@ impl KiroProvider {
             );
             merge_credentials(&mut merged, &creds);
         } else {
-            return Err(format!("凭证文件不存在: {:?}", path).into());
+            return Err(format!("凭证文件不存在: {path:?}").into());
         }
 
         // 如果副本文件中已有 client_id/client_secret，直接使用（方案B：完全独立）
@@ -422,7 +422,7 @@ impl KiroProvider {
                 tracing::info!(
                     "[KIRO] 副本文件缺少 client_id/client_secret，尝试从 clientIdHash 文件读取"
                 );
-                let hash_file_path = aws_sso_cache_dir.join(format!("{}.json", hash));
+                let hash_file_path = aws_sso_cache_dir.join(format!("{hash}.json"));
 
                 if tokio::fs::try_exists(&hash_file_path)
                     .await
@@ -568,7 +568,7 @@ impl KiroProvider {
     /// 从凭证文件中提取 region 信息的静态方法，供健康检查服务使用
     pub fn extract_region_from_creds(creds_content: &str) -> Result<String, String> {
         let creds: serde_json::Value =
-            serde_json::from_str(creds_content).map_err(|e| format!("解析凭证失败: {}", e))?;
+            serde_json::from_str(creds_content).map_err(|e| format!("解析凭证失败: {e}"))?;
 
         let region = creds["region"].as_str().unwrap_or("us-east-1").to_string();
 
@@ -633,8 +633,7 @@ impl KiroProvider {
             // 安全修复：不打印 token 内容，只打印长度
             tracing::error!("[KIRO] 检测到 refreshToken 被截断！长度: {}", token_len);
             return Err(format!(
-                "refreshToken 已被截断（长度: {} 字符）。\n\n⚠️ 这通常是 Kiro IDE 为了防止凭证被第三方工具使用而故意截断的。\n\n💡 解决方案：\n1. 使用 Kir-Manager 工具获取完整的凭证\n2. 或者使用其他方式获取未截断的凭证文件\n3. 正常的 refreshToken 长度应该在 500+ 字符",
-                token_len
+                "refreshToken 已被截断（长度: {token_len} 字符）。\n\n⚠️ 这通常是 Kiro IDE 为了防止凭证被第三方工具使用而故意截断的。\n\n💡 解决方案：\n1. 使用 Kir-Manager 工具获取完整的凭证\n2. 或者使用其他方式获取未截断的凭证文件\n3. 正常的 refreshToken 长度应该在 500+ 字符"
             ));
         }
 
@@ -709,8 +708,7 @@ impl KiroProvider {
             };
 
             return Err(format!(
-                "IdC 认证配置不完整：缺少 {}。\n\n⚠️ 注意：IdC 凭证的 refreshToken 无法用于 Social 认证，必须提供完整的 IdC 配置。\n\n💡 解决方案：\n1. 删除当前凭证\n2. 重新从 Kiro IDE 获取最新的凭证文件（确保完成完整的 SSO 登录流程）\n3. 确保 ~/.aws/sso/cache/ 目录下有对应的 clientIdHash 文件\n4. 重新添加凭证到 ProxyCast",
-                missing
+                "IdC 认证配置不完整：缺少 {missing}。\n\n⚠️ 注意：IdC 凭证的 refreshToken 无法用于 Social 认证，必须提供完整的 IdC 配置。\n\n💡 解决方案：\n1. 删除当前凭证\n2. 重新从 Kiro IDE 获取最新的凭证文件（确保完成完整的 SSO 登录流程）\n3. 确保 ~/.aws/sso/cache/ 目录下有对应的 clientIdHash 文件\n4. 重新添加凭证到 ProxyCast"
             ).into());
         }
         let refresh_url = self.get_refresh_url();
@@ -764,7 +762,7 @@ impl KiroProvider {
                 .header("Host", "oidc.us-east-1.amazonaws.com")
                 .header(
                     "x-amz-user-agent",
-                    format!("aws-sdk-js/3.738.0 ua/2.1 os/other lang/js api/sso-oidc#3.738.0 m/E KiroIDE-{}-{}", kiro_version, machine_id),
+                    format!("aws-sdk-js/3.738.0 ua/2.1 os/other lang/js api/sso-oidc#3.738.0 m/E KiroIDE-{kiro_version}-{machine_id}"),
                 )
                 .header("User-Agent", "node")
                 .header("Accept", "*/*")
@@ -779,10 +777,7 @@ impl KiroProvider {
             // Social 认证的 Headers（参考 Kir-Manager）
             self.client
                 .post(&refresh_url)
-                .header(
-                    "User-Agent",
-                    format!("KiroIDE-{}-{}", kiro_version, machine_id),
-                )
+                .header("User-Agent", format!("KiroIDE-{kiro_version}-{machine_id}"))
                 .header("Accept", "application/json, text/plain, */*")
                 .header("Accept-Encoding", "br, gzip, deflate")
                 .header("Content-Type", "application/json")
@@ -806,15 +801,15 @@ impl KiroProvider {
             let error_msg = match status.as_u16() {
                 401 => {
                     if body_text.contains("Bad credentials") || body_text.contains("invalid") {
-                        format!("OAuth 凭证已过期或无效，需要重新认证。\n💡 解决方案：\n1. 删除当前 OAuth 凭证\n2. 重新添加 OAuth 凭证\n3. 确保使用最新的凭证文件\n\n技术详情：{} {}", status, body_text)
+                        format!("OAuth 凭证已过期或无效，需要重新认证。\n💡 解决方案：\n1. 删除当前 OAuth 凭证\n2. 重新添加 OAuth 凭证\n3. 确保使用最新的凭证文件\n\n技术详情：{status} {body_text}")
                     } else {
-                        format!("认证失败，Token 可能已过期。\n💡 解决方案：\n1. 检查 AWS 账户状态\n2. 重新生成 OAuth 凭证\n3. 确保凭证文件格式正确\n\n技术详情：{} {}", status, body_text)
+                        format!("认证失败，Token 可能已过期。\n💡 解决方案：\n1. 检查 AWS 账户状态\n2. 重新生成 OAuth 凭证\n3. 确保凭证文件格式正确\n\n技术详情：{status} {body_text}")
                     }
                 }
-                403 => format!("权限不足，无法刷新 Token。\n💡 解决方案：\n1. 检查 AWS 账户权限\n2. 确保 OAuth 应用配置正确\n3. 联系管理员检查权限设置\n\n技术详情：{} {}", status, body_text),
-                429 => format!("请求过于频繁，已被限流。\n💡 解决方案：\n1. 等待 5-10 分钟后重试\n2. 减少 Token 刷新频率\n3. 检查是否有其他程序在同时使用\n\n技术详情：{} {}", status, body_text),
-                500..=599 => format!("服务器错误，AWS OAuth 服务暂时不可用。\n💡 解决方案：\n1. 稍后重试（通常几分钟后恢复）\n2. 检查 AWS 服务状态页面\n3. 如持续失败，联系 AWS 支持\n\n技术详情：{} {}", status, body_text),
-                _ => format!("Token 刷新失败。\n💡 解决方案：\n1. 检查网络连接\n2. 确认凭证文件完整性\n3. 尝试重新添加凭证\n\n技术详情：{} {}", status, body_text)
+                403 => format!("权限不足，无法刷新 Token。\n💡 解决方案：\n1. 检查 AWS 账户权限\n2. 确保 OAuth 应用配置正确\n3. 联系管理员检查权限设置\n\n技术详情：{status} {body_text}"),
+                429 => format!("请求过于频繁，已被限流。\n💡 解决方案：\n1. 等待 5-10 分钟后重试\n2. 减少 Token 刷新频率\n3. 检查是否有其他程序在同时使用\n\n技术详情：{status} {body_text}"),
+                500..=599 => format!("服务器错误，AWS OAuth 服务暂时不可用。\n💡 解决方案：\n1. 稍后重试（通常几分钟后恢复）\n2. 检查 AWS 服务状态页面\n3. 如持续失败，联系 AWS 支持\n\n技术详情：{status} {body_text}"),
+                _ => format!("Token 刷新失败。\n💡 解决方案：\n1. 检查网络连接\n2. 确认凭证文件完整性\n3. 尝试重新添加凭证\n\n技术详情：{status} {body_text}")
             };
 
             return Err(error_msg.into());

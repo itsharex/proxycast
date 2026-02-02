@@ -93,7 +93,7 @@ impl ModelSelector {
             .tier_configs
             .get(&ctx.tier)
             .cloned()
-            .unwrap_or_else(|| TierConfig::pro());
+            .unwrap_or_else(TierConfig::pro);
 
         // 获取策略
         let registry = self.registry.read().await;
@@ -173,7 +173,7 @@ impl ModelSelector {
                     .tier_configs
                     .get(&fallback_tier)
                     .cloned()
-                    .unwrap_or_else(|| TierConfig::pro());
+                    .unwrap_or_else(TierConfig::pro);
 
                 let registry = self.registry.read().await;
                 let strategy = registry

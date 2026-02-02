@@ -170,7 +170,7 @@ impl SelectionStrategy for TaskBasedStrategy {
 
         Ok(ModelSelection {
             model: selected,
-            reason: format!("任务匹配选择 (任务类型: {})", task_name),
+            reason: format!("任务匹配选择 (任务类型: {task_name})"),
             confidence: 85,
             alternatives: available,
         })

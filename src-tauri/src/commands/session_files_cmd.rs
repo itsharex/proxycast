@@ -21,7 +21,7 @@ pub fn session_files_create(
     state: State<SessionFilesState>,
     session_id: String,
 ) -> Result<SessionMeta, String> {
-    let storage = state.0.lock().map_err(|e| format!("锁定失败: {}", e))?;
+    let storage = state.0.lock().map_err(|e| format!("锁定失败: {e}"))?;
     storage.create_session(&session_id)
 }
 
@@ -31,7 +31,7 @@ pub fn session_files_exists(
     state: State<SessionFilesState>,
     session_id: String,
 ) -> Result<bool, String> {
-    let storage = state.0.lock().map_err(|e| format!("锁定失败: {}", e))?;
+    let storage = state.0.lock().map_err(|e| format!("锁定失败: {e}"))?;
     Ok(storage.session_exists(&session_id))
 }
 
@@ -41,7 +41,7 @@ pub fn session_files_get_or_create(
     state: State<SessionFilesState>,
     session_id: String,
 ) -> Result<SessionMeta, String> {
-    let storage = state.0.lock().map_err(|e| format!("锁定失败: {}", e))?;
+    let storage = state.0.lock().map_err(|e| format!("锁定失败: {e}"))?;
     storage.get_or_create_session(&session_id)
 }
 
@@ -51,14 +51,14 @@ pub fn session_files_delete(
     state: State<SessionFilesState>,
     session_id: String,
 ) -> Result<(), String> {
-    let storage = state.0.lock().map_err(|e| format!("锁定失败: {}", e))?;
+    let storage = state.0.lock().map_err(|e| format!("锁定失败: {e}"))?;
     storage.delete_session(&session_id)
 }
 
 /// 列出所有会话
 #[tauri::command]
 pub fn session_files_list(state: State<SessionFilesState>) -> Result<Vec<SessionSummary>, String> {
-    let storage = state.0.lock().map_err(|e| format!("锁定失败: {}", e))?;
+    let storage = state.0.lock().map_err(|e| format!("锁定失败: {e}"))?;
     storage.list_sessions()
 }
 
@@ -68,7 +68,7 @@ pub fn session_files_get_detail(
     state: State<SessionFilesState>,
     session_id: String,
 ) -> Result<SessionDetail, String> {
-    let storage = state.0.lock().map_err(|e| format!("锁定失败: {}", e))?;
+    let storage = state.0.lock().map_err(|e| format!("锁定失败: {e}"))?;
     storage.get_session_detail(&session_id)
 }
 
@@ -81,7 +81,7 @@ pub fn session_files_update_meta(
     theme: Option<String>,
     creation_mode: Option<String>,
 ) -> Result<SessionMeta, String> {
-    let storage = state.0.lock().map_err(|e| format!("锁定失败: {}", e))?;
+    let storage = state.0.lock().map_err(|e| format!("锁定失败: {e}"))?;
     storage.update_meta(&session_id, title, theme, creation_mode)
 }
 
@@ -97,7 +97,7 @@ pub fn session_files_save_file(
     file_name: String,
     content: String,
 ) -> Result<SessionFile, String> {
-    let storage = state.0.lock().map_err(|e| format!("锁定失败: {}", e))?;
+    let storage = state.0.lock().map_err(|e| format!("锁定失败: {e}"))?;
     storage.save_file(&session_id, &file_name, &content)
 }
 
@@ -108,7 +108,7 @@ pub fn session_files_read_file(
     session_id: String,
     file_name: String,
 ) -> Result<String, String> {
-    let storage = state.0.lock().map_err(|e| format!("锁定失败: {}", e))?;
+    let storage = state.0.lock().map_err(|e| format!("锁定失败: {e}"))?;
     storage.read_file(&session_id, &file_name)
 }
 
@@ -119,7 +119,7 @@ pub fn session_files_delete_file(
     session_id: String,
     file_name: String,
 ) -> Result<(), String> {
-    let storage = state.0.lock().map_err(|e| format!("锁定失败: {}", e))?;
+    let storage = state.0.lock().map_err(|e| format!("锁定失败: {e}"))?;
     storage.delete_file(&session_id, &file_name)
 }
 
@@ -129,7 +129,7 @@ pub fn session_files_list_files(
     state: State<SessionFilesState>,
     session_id: String,
 ) -> Result<Vec<SessionFile>, String> {
-    let storage = state.0.lock().map_err(|e| format!("锁定失败: {}", e))?;
+    let storage = state.0.lock().map_err(|e| format!("锁定失败: {e}"))?;
     storage.list_files(&session_id)
 }
 
@@ -143,13 +143,13 @@ pub fn session_files_cleanup_expired(
     state: State<SessionFilesState>,
     max_age_days: Option<u32>,
 ) -> Result<u32, String> {
-    let storage = state.0.lock().map_err(|e| format!("锁定失败: {}", e))?;
+    let storage = state.0.lock().map_err(|e| format!("锁定失败: {e}"))?;
     storage.cleanup_expired(max_age_days.unwrap_or(30))
 }
 
 /// 清理空会话
 #[tauri::command]
 pub fn session_files_cleanup_empty(state: State<SessionFilesState>) -> Result<u32, String> {
-    let storage = state.0.lock().map_err(|e| format!("锁定失败: {}", e))?;
+    let storage = state.0.lock().map_err(|e| format!("锁定失败: {e}"))?;
     storage.cleanup_empty()
 }

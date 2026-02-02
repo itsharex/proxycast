@@ -37,8 +37,10 @@ pub enum QueryWithExpressionError {
 /// 排序字段
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum FlowSortBy {
     /// 按创建时间排序
+    #[default]
     CreatedAt,
     /// 按耗时排序
     Duration,
@@ -48,12 +50,6 @@ pub enum FlowSortBy {
     ContentLength,
     /// 按模型名称排序
     Model,
-}
-
-impl Default for FlowSortBy {
-    fn default() -> Self {
-        FlowSortBy::CreatedAt
-    }
 }
 
 // ============================================================================
@@ -213,8 +209,7 @@ impl FlowQueryService {
         page_size: usize,
     ) -> Result<FlowQueryResult, FileStoreError> {
         eprintln!(
-            "[QUERY_SERVICE] 开始查询: filter={:?}, sort_by={:?}, page={}, page_size={}",
-            filter, sort_by, page, page_size
+            "[QUERY_SERVICE] 开始查询: filter={filter:?}, sort_by={sort_by:?}, page={page}, page_size={page_size}"
         );
 
         // 先从内存获取
@@ -236,8 +231,7 @@ impl FlowQueryService {
 
         if memory_count < needed {
             eprintln!(
-                "[QUERY_SERVICE] 内存数据不足，从文件补充: memory_count={}, needed={}",
-                memory_count, needed
+                "[QUERY_SERVICE] 内存数据不足，从文件补充: memory_count={memory_count}, needed={needed}"
             );
 
             // 从文件存储获取更多数据
@@ -263,7 +257,7 @@ impl FlowQueryService {
         // 计算分页
         let total = all_flows.len();
         let total_pages = if page_size > 0 {
-            (total + page_size - 1) / page_size
+            total.div_ceil(page_size)
         } else {
             0
         };
@@ -360,7 +354,7 @@ impl FlowQueryService {
         // 计算分页
         let total = all_flows.len();
         let total_pages = if page_size > 0 {
-            (total + page_size - 1) / page_size
+            total.div_ceil(page_size)
         } else {
             0
         };
@@ -1142,12 +1136,10 @@ mod property_tests {
             provider in arb_provider_type(),
         ) {
             // 创建不同 Provider 的 Flow
-            let providers = vec![
-                ProviderType::OpenAI,
+            let providers = [ProviderType::OpenAI,
                 ProviderType::Claude,
                 ProviderType::Gemini,
-                ProviderType::Kiro,
-            ];
+                ProviderType::Kiro];
 
             let mut flows: Vec<LLMFlow> = Vec::new();
             for (i, p) in providers.iter().enumerate() {
@@ -1158,16 +1150,16 @@ mod property_tests {
                     ..Default::default()
                 };
                 let metadata = FlowMetadata {
-                    provider: p.clone(),
+                    provider: *p,
                     ..Default::default()
                 };
-                let flow = LLMFlow::new(format!("flow-{}", i), FlowType::ChatCompletions, request, metadata);
+                let flow = LLMFlow::new(format!("flow-{i}"), FlowType::ChatCompletions, request, metadata);
                 flows.push(flow);
             }
 
             // 按 Provider 过滤
             let filter = FlowFilter {
-                providers: Some(vec![provider.clone()]),
+                providers: Some(vec![provider]),
                 ..Default::default()
             };
 
@@ -1202,7 +1194,7 @@ mod property_tests {
                     ..Default::default()
                 };
                 let metadata = FlowMetadata::default();
-                let mut flow = LLMFlow::new(format!("flow-{}", i), FlowType::ChatCompletions, request, metadata);
+                let mut flow = LLMFlow::new(format!("flow-{i}"), FlowType::ChatCompletions, request, metadata);
                 flow.timestamps.duration_ms = (i * 100) as u64;
                 flow.timestamps.created = Utc::now() - chrono::Duration::minutes(i as i64);
 
@@ -1281,14 +1273,14 @@ mod property_tests {
                     ..Default::default()
                 };
                 let metadata = FlowMetadata::default();
-                let flow = LLMFlow::new(format!("flow-{:04}", i), FlowType::ChatCompletions, request, metadata);
+                let flow = LLMFlow::new(format!("flow-{i:04}"), FlowType::ChatCompletions, request, metadata);
                 all_flows.push(flow);
             }
 
             // 计算分页
             let total = all_flows.len();
             let total_pages = if page_size > 0 {
-                (total + page_size - 1) / page_size
+                total.div_ceil(page_size)
             } else {
                 0
             };

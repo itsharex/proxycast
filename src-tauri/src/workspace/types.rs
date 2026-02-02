@@ -331,7 +331,7 @@ mod tests {
         for wt in types {
             let s = wt.as_str();
             let parsed = WorkspaceType::from_str(s);
-            assert_eq!(wt, parsed, "Roundtrip failed for {:?}", wt);
+            assert_eq!(wt, parsed, "Roundtrip failed for {wt:?}");
         }
     }
 
@@ -351,7 +351,7 @@ mod tests {
     #[test]
     fn test_workspace_type_debug() {
         let wt = WorkspaceType::SocialMedia;
-        let debug_str = format!("{:?}", wt);
+        let debug_str = format!("{wt:?}");
         assert_eq!(debug_str, "SocialMedia");
     }
 }

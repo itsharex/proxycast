@@ -27,11 +27,11 @@ pub enum ConfigError {
 impl std::fmt::Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConfigError::ReadError(msg) => write!(f, "配置读取错误: {}", msg),
-            ConfigError::WriteError(msg) => write!(f, "配置写入错误: {}", msg),
-            ConfigError::ParseError(msg) => write!(f, "YAML 解析错误: {}", msg),
-            ConfigError::SerializeError(msg) => write!(f, "YAML 序列化错误: {}", msg),
-            ConfigError::ValidationError(msg) => write!(f, "配置验证错误: {}", msg),
+            ConfigError::ReadError(msg) => write!(f, "配置读取错误: {msg}"),
+            ConfigError::WriteError(msg) => write!(f, "配置写入错误: {msg}"),
+            ConfigError::ParseError(msg) => write!(f, "YAML 解析错误: {msg}"),
+            ConfigError::SerializeError(msg) => write!(f, "YAML 序列化错误: {msg}"),
+            ConfigError::ValidationError(msg) => write!(f, "配置验证错误: {msg}"),
         }
     }
 }

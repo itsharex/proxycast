@@ -53,7 +53,7 @@ pub async fn start_capture(_app: &AppHandle) -> Result<PathBuf, CaptureError> {
     // 生成临时文件路径
     let temp_dir = std::env::temp_dir();
     let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S_%3f");
-    let filename = format!("proxycast_screenshot_{}.png", timestamp);
+    let filename = format!("proxycast_screenshot_{timestamp}.png");
     let temp_path = temp_dir.join(&filename);
 
     debug!("截图临时文件路径: {:?}", temp_path);
@@ -123,7 +123,7 @@ async fn capture_macos(output_path: &PathBuf) -> Result<(), CaptureError> {
     let output = Command::new("screencapture")
         .args(["-i", "-x", output_path.to_str().unwrap()])
         .output()
-        .map_err(|e| CaptureError::SystemError(format!("执行 screencapture 失败: {}", e)))?;
+        .map_err(|e| CaptureError::SystemError(format!("执行 screencapture 失败: {e}")))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -133,8 +133,7 @@ async fn capture_macos(output_path: &PathBuf) -> Result<(), CaptureError> {
         }
         error!("screencapture 命令失败: {}", stderr);
         return Err(CaptureError::SystemError(format!(
-            "screencapture 失败: {}",
-            stderr
+            "screencapture 失败: {stderr}"
         )));
     }
 
@@ -237,7 +236,7 @@ mod tests {
     fn test_temp_path_generation() {
         let temp_dir = std::env::temp_dir();
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S_%3f");
-        let filename = format!("proxycast_screenshot_{}.png", timestamp);
+        let filename = format!("proxycast_screenshot_{timestamp}.png");
         let temp_path = temp_dir.join(&filename);
 
         assert!(temp_path

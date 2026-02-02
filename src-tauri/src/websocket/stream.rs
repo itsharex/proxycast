@@ -129,7 +129,7 @@ impl StreamForwarder {
                 Err(e) => {
                     return Err(WsError::upstream(
                         Some(self.request_id.clone()),
-                        format!("Stream error: {}", e),
+                        format!("Stream error: {e}"),
                     ));
                 }
             }

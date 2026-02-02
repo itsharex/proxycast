@@ -476,7 +476,7 @@ fn convert_tools(tools: &Option<Vec<Tool>>) -> Option<Vec<CWToolItem>> {
                             name: function.name.clone(),
                             description: if desc.len() > 500 {
                                 let truncated: String = desc.chars().take(497).collect();
-                                format!("{}...", truncated)
+                                format!("{truncated}...")
                             } else {
                                 desc
                             },

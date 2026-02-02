@@ -128,7 +128,7 @@ impl E2ETestContext {
             }),
             error: None,
             metadata: FlowMetadata {
-                provider: provider,
+                provider,
                 provider_id: None,
                 credential_name: Some("test-cred".to_string()),
                 credential_id: Some("test-cred-id".to_string()),

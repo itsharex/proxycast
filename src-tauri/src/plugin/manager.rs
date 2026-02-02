@@ -129,7 +129,7 @@ impl PluginManager {
 
         // 检查是否已加载
         if self.plugins.contains_key(&name) {
-            return Err(PluginError::LoadError(format!("插件 {} 已加载", name)));
+            return Err(PluginError::LoadError(format!("插件 {name} 已加载")));
         }
 
         let mut instance =
@@ -284,7 +284,7 @@ impl PluginManager {
                 }
                 Err(_) => {
                     tracing::warn!("插件 {} on_request 执行超时", plugin_name);
-                    HookResult::failure(format!("执行超时 ({}ms)", timeout_ms), timeout_ms)
+                    HookResult::failure(format!("执行超时 ({timeout_ms}ms)"), timeout_ms)
                 }
             };
 
@@ -338,7 +338,7 @@ impl PluginManager {
                 }
                 Err(_) => {
                     tracing::warn!("插件 {} on_response 执行超时", plugin_name);
-                    HookResult::failure(format!("执行超时 ({}ms)", timeout_ms), timeout_ms)
+                    HookResult::failure(format!("执行超时 ({timeout_ms}ms)"), timeout_ms)
                 }
             };
 
@@ -388,7 +388,7 @@ impl PluginManager {
                 }
                 Err(_) => {
                     tracing::warn!("插件 {} on_error 执行超时", plugin_name);
-                    HookResult::failure(format!("执行超时 ({}ms)", timeout_ms), timeout_ms)
+                    HookResult::failure(format!("执行超时 ({timeout_ms}ms)"), timeout_ms)
                 }
             };
 

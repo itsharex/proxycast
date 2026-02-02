@@ -96,7 +96,7 @@ pub async fn init_connect_state(app_data_dir: PathBuf) -> Result<ConnectState, C
     let registry = Arc::new(RelayRegistry::new(cache_path));
 
     // 尝试从缓存加载，如果失败则从远程加载
-    if let Err(_) = registry.load_from_cache() {
+    if registry.load_from_cache().is_err() {
         tracing::info!("[Connect] 缓存不存在，尝试从远程加载注册表");
         if let Err(e) = registry.load_from_remote().await {
             tracing::warn!("[Connect] 从远程加载注册表失败: {}", e);
@@ -209,7 +209,7 @@ pub async fn save_relay_api_key(
         .get(&relay_id)
         .ok_or_else(|| ConnectError {
             code: "RELAY_NOT_FOUND".to_string(),
-            message: format!("中转商 {} 不在注册表中", relay_id),
+            message: format!("中转商 {relay_id} 不在注册表中"),
         })?;
 
     let protocol = relay_info.api.protocol.to_lowercase();
@@ -223,7 +223,7 @@ pub async fn save_relay_api_key(
     };
 
     // 生成 Provider ID（使用 connect- 前缀 + 中转商 ID）
-    let provider_id = format!("connect-{}", relay_id);
+    let provider_id = format!("connect-{relay_id}");
 
     // 检查 Provider 是否已存在
     let existing_provider = api_key_service
@@ -231,7 +231,7 @@ pub async fn save_relay_api_key(
         .get_provider(&db, &provider_id)
         .map_err(|e| ConnectError {
             code: "GET_PROVIDER_FAILED".to_string(),
-            message: format!("查询 Provider 失败: {}", e),
+            message: format!("查询 Provider 失败: {e}"),
         })?;
 
     let (final_provider_id, is_new_provider) = if existing_provider.is_some() {
@@ -256,7 +256,7 @@ pub async fn save_relay_api_key(
             )
             .map_err(|e| ConnectError {
                 code: "CREATE_PROVIDER_FAILED".to_string(),
-                message: format!("创建 Provider 失败: {}", e),
+                message: format!("创建 Provider 失败: {e}"),
             })?;
 
         tracing::info!(
@@ -275,7 +275,7 @@ pub async fn save_relay_api_key(
         .add_api_key(&db, &final_provider_id, &api_key, key_alias.clone())
         .map_err(|e| ConnectError {
             code: "ADD_API_KEY_FAILED".to_string(),
-            message: format!("添加 API Key 失败: {}", e),
+            message: format!("添加 API Key 失败: {e}"),
         })?;
 
     tracing::info!(

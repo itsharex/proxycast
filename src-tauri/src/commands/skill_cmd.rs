@@ -149,7 +149,7 @@ pub async fn install_skill_for_app(
     let skill = skills
         .iter()
         .find(|s| s.directory == directory)
-        .ok_or_else(|| format!("Skill not found: {}", directory))?;
+        .ok_or_else(|| format!("Skill not found: {directory}"))?;
 
     let repo_owner = skill
         .repo_owner

@@ -32,8 +32,8 @@ impl TimeRange {
 
     /// 检查时间是否在范围内
     pub fn contains(&self, time: &DateTime<Utc>) -> bool {
-        let after_start = self.start.map_or(true, |s| time >= &s);
-        let before_end = self.end.map_or(true, |e| time <= &e);
+        let after_start = self.start.is_none_or(|s| time >= &s);
+        let before_end = self.end.is_none_or(|e| time <= &e);
         after_start && before_end
     }
 }
@@ -50,8 +50,8 @@ pub struct TokenRange {
 impl TokenRange {
     /// 检查 Token 数是否在范围内
     pub fn contains(&self, tokens: u32) -> bool {
-        let above_min = self.min.map_or(true, |m| tokens >= m);
-        let below_max = self.max.map_or(true, |m| tokens <= m);
+        let above_min = self.min.is_none_or(|m| tokens >= m);
+        let below_max = self.max.is_none_or(|m| tokens <= m);
         above_min && below_max
     }
 }
@@ -68,8 +68,8 @@ pub struct LatencyRange {
 impl LatencyRange {
     /// 检查延迟是否在范围内
     pub fn contains(&self, latency_ms: u64) -> bool {
-        let above_min = self.min_ms.map_or(true, |m| latency_ms >= m);
-        let below_max = self.max_ms.map_or(true, |m| latency_ms <= m);
+        let above_min = self.min_ms.is_none_or(|m| latency_ms >= m);
+        let below_max = self.max_ms.is_none_or(|m| latency_ms <= m);
         above_min && below_max
     }
 }
@@ -181,7 +181,7 @@ impl FlowFilter {
             let flow_has_tool_calls = flow
                 .response
                 .as_ref()
-                .map_or(false, |r| !r.tool_calls.is_empty());
+                .is_some_and(|r| !r.tool_calls.is_empty());
             if has_tool_calls != flow_has_tool_calls {
                 return false;
             }
@@ -189,10 +189,7 @@ impl FlowFilter {
 
         // 思维链过滤
         if let Some(has_thinking) = self.has_thinking {
-            let flow_has_thinking = flow
-                .response
-                .as_ref()
-                .map_or(false, |r| r.thinking.is_some());
+            let flow_has_thinking = flow.response.as_ref().is_some_and(|r| r.thinking.is_some());
             if has_thinking != flow_has_thinking {
                 return false;
             }
@@ -402,7 +399,7 @@ impl FlowMemoryStore {
         // 如果已存在，先移除旧的
         if self.flows.contains_key(&id) {
             self.ordered_ids.retain(|i| i != &id);
-            eprintln!("[MEMORY_STORE] 移除旧的 Flow: id={}", id);
+            eprintln!("[MEMORY_STORE] 移除旧的 Flow: id={id}");
         }
 
         // 检查是否需要驱逐
@@ -968,7 +965,7 @@ mod property_tests {
 
             // 添加多个 Flow
             for i in 0..flow_count {
-                let id = format!("flow-{}", i);
+                let id = format!("flow-{i}");
                 let request = LLMRequest {
                     method: "POST".to_string(),
                     path: "/v1/chat/completions".to_string(),
@@ -1011,7 +1008,7 @@ mod property_tests {
             // 添加 max_size + 1 个 Flow
             let total_flows = max_size + 1;
             for i in 0..total_flows {
-                let id = format!("flow-{}", i);
+                let id = format!("flow-{i}");
                 let request = LLMRequest {
                     method: "POST".to_string(),
                     path: "/v1/chat/completions".to_string(),
@@ -1032,7 +1029,7 @@ mod property_tests {
             // 验证最新的 Flow 仍然存在
             for i in 1..total_flows {
                 prop_assert!(
-                    store.contains(&format!("flow-{}", i)),
+                    store.contains(&format!("flow-{i}")),
                     "Flow flow-{} 应该仍然存在",
                     i
                 );
@@ -1087,15 +1084,13 @@ mod property_tests {
             let mut store = FlowMemoryStore::new(100);
 
             // 添加不同 Provider 的 Flow
-            let providers = vec![
-                ProviderType::OpenAI,
+            let providers = [ProviderType::OpenAI,
                 ProviderType::Claude,
                 ProviderType::Gemini,
-                ProviderType::Kiro,
-            ];
+                ProviderType::Kiro];
 
             for (i, p) in providers.iter().enumerate() {
-                let id = format!("flow-{}", i);
+                let id = format!("flow-{i}");
                 let request = LLMRequest {
                     method: "POST".to_string(),
                     path: "/v1/chat/completions".to_string(),
@@ -1103,7 +1098,7 @@ mod property_tests {
                     ..Default::default()
                 };
                 let metadata = FlowMetadata {
-                    provider: p.clone(),
+                    provider: *p,
                     ..Default::default()
                 };
                 let flow = LLMFlow::new(id, FlowType::ChatCompletions, request, metadata);
@@ -1112,7 +1107,7 @@ mod property_tests {
 
             // 按 Provider 过滤
             let filter = FlowFilter {
-                providers: Some(vec![provider.clone()]),
+                providers: Some(vec![provider]),
                 ..Default::default()
             };
 
@@ -1140,15 +1135,13 @@ mod property_tests {
 
             // 添加不同模型的 Flow
             // 使用数字前缀的模型名称，确保不会与随机生成的字母 prefix 冲突
-            let models = vec![
-                format!("{}-model-1", prefix),
-                format!("{}-model-2", prefix),
+            let models = [format!("{prefix}-model-1"),
+                format!("{prefix}-model-2"),
                 "123-non-matching-model".to_string(),
-                "456-another-non-matching".to_string(),
-            ];
+                "456-another-non-matching".to_string()];
 
             for (i, model) in models.iter().enumerate() {
-                let id = format!("flow-{}", i);
+                let id = format!("flow-{i}");
                 let request = LLMRequest {
                     method: "POST".to_string(),
                     path: "/v1/chat/completions".to_string(),
@@ -1161,7 +1154,7 @@ mod property_tests {
             }
 
             // 使用通配符过滤
-            let pattern = format!("{}*", prefix);
+            let pattern = format!("{prefix}*");
             let filter = FlowFilter {
                 models: Some(vec![pattern.clone()]),
                 ..Default::default()
@@ -1233,7 +1226,7 @@ mod property_tests {
 
             // 添加多个 Flow
             for i in 0..count {
-                let id = format!("flow-{:03}", i);
+                let id = format!("flow-{i:03}");
                 let request = LLMRequest::default();
                 let metadata = FlowMetadata::default();
                 let flow = LLMFlow::new(id, FlowType::ChatCompletions, request, metadata);

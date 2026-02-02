@@ -120,7 +120,7 @@ pub async fn delete_asr_credential(id: String) -> Result<(), String> {
         .asr
         .iter()
         .position(|c| c.id == id)
-        .ok_or_else(|| format!("凭证不存在: {}", id))?;
+        .ok_or_else(|| format!("凭证不存在: {id}"))?;
 
     let was_default = config.credential_pool.asr[idx].is_default;
     config.credential_pool.asr.remove(idx);
@@ -143,7 +143,7 @@ pub async fn set_default_asr_credential(id: String) -> Result<(), String> {
     // 检查凭证是否存在
     let exists = config.credential_pool.asr.iter().any(|c| c.id == id);
     if !exists {
-        return Err(format!("凭证不存在: {}", id));
+        return Err(format!("凭证不存在: {id}"));
     }
 
     // 更新默认状态
@@ -166,7 +166,7 @@ pub async fn test_asr_credential(id: String) -> Result<TestResult, String> {
         .asr
         .iter()
         .find(|c| c.id == id)
-        .ok_or_else(|| format!("凭证不存在: {}", id))?;
+        .ok_or_else(|| format!("凭证不存在: {id}"))?;
 
     // 根据 Provider 类型测试
     match credential.provider {

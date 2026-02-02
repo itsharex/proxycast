@@ -8,21 +8,17 @@ use serde::{Deserialize, Serialize};
 /// 降级策略
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum FallbackPolicy {
     /// 不降级，直接失败
     None,
     /// 降级到下一个等级
+    #[default]
     NextTier,
     /// 降级到任意可用模型
     AnyAvailable,
     /// 使用指定的备用模型
     Specific,
-}
-
-impl Default for FallbackPolicy {
-    fn default() -> Self {
-        FallbackPolicy::NextTier
-    }
 }
 
 /// 降级结果
@@ -110,7 +106,7 @@ impl FallbackHandler {
                 model: None,
                 original_tier,
                 fallback_tier: None,
-                reason: format!("降级策略为 None，不进行降级: {}", reason),
+                reason: format!("降级策略为 None，不进行降级: {reason}"),
                 attempts: 0,
             },
 
@@ -131,7 +127,7 @@ impl FallbackHandler {
                                 model: Some(model),
                                 original_tier,
                                 fallback_tier: Some(tier),
-                                reason: format!("从 {} 降级到 {}: {}", original_tier, tier, reason),
+                                reason: format!("从 {original_tier} 降级到 {tier}: {reason}"),
                                 attempts,
                             };
                         }
@@ -143,7 +139,7 @@ impl FallbackHandler {
                     model: None,
                     original_tier,
                     fallback_tier: None,
-                    reason: format!("所有降级等级都没有可用模型: {}", reason),
+                    reason: format!("所有降级等级都没有可用模型: {reason}"),
                     attempts,
                 }
             }
@@ -165,7 +161,7 @@ impl FallbackHandler {
                                 model: Some(model),
                                 original_tier,
                                 fallback_tier: Some(tier),
-                                reason: format!("选择任意可用模型 (等级 {}): {}", tier, reason),
+                                reason: format!("选择任意可用模型 (等级 {tier}): {reason}"),
                                 attempts,
                             };
                         }
@@ -177,7 +173,7 @@ impl FallbackHandler {
                     model: None,
                     original_tier,
                     fallback_tier: None,
-                    reason: format!("没有任何可用模型: {}", reason),
+                    reason: format!("没有任何可用模型: {reason}"),
                     attempts,
                 }
             }
@@ -195,7 +191,7 @@ impl FallbackHandler {
                                 model: Some(model),
                                 original_tier,
                                 fallback_tier: Some(*tier),
-                                reason: format!("使用指定备用模型 {}: {}", fallback_id, reason),
+                                reason: format!("使用指定备用模型 {fallback_id}: {reason}"),
                                 attempts: 1,
                             };
                         }
@@ -206,7 +202,7 @@ impl FallbackHandler {
                         model: None,
                         original_tier,
                         fallback_tier: None,
-                        reason: format!("指定的备用模型 {} 不可用: {}", fallback_id, reason),
+                        reason: format!("指定的备用模型 {fallback_id} 不可用: {reason}"),
                         attempts: 1,
                     }
                 } else {
@@ -215,7 +211,7 @@ impl FallbackHandler {
                         model: None,
                         original_tier,
                         fallback_tier: None,
-                        reason: format!("未配置备用模型: {}", reason),
+                        reason: format!("未配置备用模型: {reason}"),
                         attempts: 0,
                     }
                 }

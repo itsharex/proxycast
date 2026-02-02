@@ -134,7 +134,7 @@ print("OK")
             .args(["-e", swift_code])
             .output()
             .map_err(|e| {
-                BrowserInterceptorError::PlatformError(format!("执行 Swift 脚本失败: {}", e))
+                BrowserInterceptorError::PlatformError(format!("执行 Swift 脚本失败: {e}"))
             })?;
 
         if output.status.success() {
@@ -176,12 +176,11 @@ print("OK")
 import Foundation
 import CoreServices
 
-let bundleId = "{}" as CFString
+let bundleId = "{browser_id}" as CFString
 LSSetDefaultHandlerForURLScheme("http" as CFString, bundleId)
 LSSetDefaultHandlerForURLScheme("https" as CFString, bundleId)
 print("OK")
-"#,
-            browser_id
+"#
         );
 
         let output = Command::new("swift").args(["-e", &swift_code]).output();

@@ -12,41 +12,9 @@ use crate::agent::{
 use crate::database::dao::agent::AgentDao;
 use crate::database::DbConnection;
 use aster::conversation::message::Message;
-use aster::session::SessionManager;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, State};
-
-/// 确保 session 在 Aster 数据库中存在
-/// 如果不存在则创建新的 session
-async fn ensure_session_exists(session_id: &str) -> Result<String, String> {
-    // 尝试获取现有 session
-    match SessionManager::get_session(session_id, false).await {
-        Ok(_) => {
-            tracing::debug!("[AsterAgent] Session 已存在: {}", session_id);
-            Ok(session_id.to_string())
-        }
-        Err(_) => {
-            // Session 不存在，创建新的
-            tracing::info!(
-                "[AsterAgent] Session 不存在，创建新 session: {}",
-                session_id
-            );
-            let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            let session = SessionManager::create_session(
-                working_dir,
-                "New Chat".to_string(),
-                aster::session::SessionType::User,
-            )
-            .await
-            .map_err(|e| format!("创建 session 失败: {}", e))?;
-
-            tracing::info!("[AsterAgent] 创建新 session: {}", session.id);
-            Ok(session.id)
-        }
-    }
-}
 
 /// Aster Agent 状态信息
 #[derive(Debug, Serialize)]
@@ -224,23 +192,54 @@ pub async fn aster_agent_chat_stream(
     );
 
     // 确保 Agent 已初始化（使用带数据库的版本，注入 SessionStore）
-    if !state.is_initialized().await {
+    let is_init = state.is_initialized().await;
+    tracing::warn!("[AsterAgent] Agent 初始化状态: {}", is_init);
+    if !is_init {
+        tracing::warn!("[AsterAgent] Agent 未初始化，开始初始化...");
         state.init_agent_with_db(&db).await?;
+        tracing::warn!("[AsterAgent] Agent 初始化完成");
+    } else {
+        tracing::warn!("[AsterAgent] Agent 已初始化，检查 session_store...");
+        // 检查 session_store 是否存在
+        let agent_arc = state.get_agent_arc();
+        let guard = agent_arc.read().await;
+        if let Some(agent) = guard.as_ref() {
+            let has_store = agent.session_store().is_some();
+            tracing::warn!("[AsterAgent] session_store 存在: {}", has_store);
+        }
     }
 
-    // 确保 session 在数据库中存在
-    // 如果 session 不存在，自动创建
-    let session_id = ensure_session_exists(&request.session_id).await?;
+    // 直接使用前端传递的 session_id
+    // ProxyCastSessionStore 会在 add_message 时自动创建不存在的 session
+    // 同时 get_session 也会自动创建不存在的 session
+    let session_id = &request.session_id;
 
-    // 从数据库读取 session 的 system_prompt
+    // 从 ProxyCast 数据库读取 session 的 system_prompt（如果存在）
     let system_prompt = {
-        let db_conn = db
-            .lock()
-            .map_err(|e| format!("获取数据库连接失败: {}", e))?;
-        let session = AgentDao::get_session(&db_conn, &session_id)
-            .map_err(|e| format!("获取 session 失败: {}", e))?
-            .ok_or_else(|| format!("Session 不存在: {}", session_id))?;
-        session.system_prompt
+        let db_conn = db.lock().map_err(|e| format!("获取数据库连接失败: {e}"))?;
+        match AgentDao::get_session(&db_conn, session_id) {
+            Ok(Some(session)) => {
+                tracing::debug!(
+                    "[AsterAgent] 找到 session，system_prompt: {:?}",
+                    session.system_prompt.as_ref().map(|s| s.len())
+                );
+                session.system_prompt
+            }
+            Ok(None) => {
+                tracing::debug!(
+                    "[AsterAgent] ProxyCast 数据库中未找到 session: {}",
+                    session_id
+                );
+                None
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "[AsterAgent] 读取 session 失败: {}, 继续使用空 system_prompt",
+                    e
+                );
+                None
+            }
+        }
     };
 
     // 如果提供了 Provider 配置，则配置 Provider
@@ -252,7 +251,7 @@ pub async fn aster_agent_chat_stream(
             base_url: provider_config.base_url.clone(),
             credential_uuid: None,
         };
-        state.configure_provider(config, &session_id, &db).await?;
+        state.configure_provider(config, session_id, &db).await?;
     }
 
     // 检查 Provider 是否已配置
@@ -261,13 +260,13 @@ pub async fn aster_agent_chat_stream(
     }
 
     // 创建取消令牌
-    let cancel_token = state.create_cancel_token(&session_id).await;
+    let cancel_token = state.create_cancel_token(session_id).await;
 
     // 创建用户消息
     let user_message = Message::user().with_text(&request.message);
 
     // 创建会话配置，包含 system_prompt
-    let mut session_config_builder = SessionConfigBuilder::new(&session_id);
+    let mut session_config_builder = SessionConfigBuilder::new(session_id);
     if let Some(prompt) = system_prompt {
         session_config_builder = session_config_builder.system_prompt(prompt);
     }
@@ -302,7 +301,7 @@ pub async fn aster_agent_chat_stream(
                     Err(e) => {
                         // 发送错误事件
                         let error_event = TauriAgentEvent::Error {
-                            message: format!("Stream error: {}", e),
+                            message: format!("Stream error: {e}"),
                         };
                         if let Err(emit_err) = app.emit(&request.event_name, &error_event) {
                             tracing::error!("[AsterAgent] 发送错误事件失败: {}", emit_err);
@@ -320,19 +319,19 @@ pub async fn aster_agent_chat_stream(
         Err(e) => {
             // 发送错误事件
             let error_event = TauriAgentEvent::Error {
-                message: format!("Agent error: {}", e),
+                message: format!("Agent error: {e}"),
             };
             if let Err(emit_err) = app.emit(&request.event_name, &error_event) {
                 tracing::error!("[AsterAgent] 发送错误事件失败: {}", emit_err);
             }
-            return Err(format!("Agent error: {}", e));
+            return Err(format!("Agent error: {e}"));
         }
     }
 
     // guard 会在函数结束时自动释放（stream_result 先释放）
 
     // 清理取消令牌
-    state.remove_cancel_token(&session_id).await;
+    state.remove_cancel_token(session_id).await;
 
     Ok(())
 }
@@ -350,26 +349,28 @@ pub async fn aster_agent_stop(
 /// 创建新会话
 #[tauri::command]
 pub async fn aster_session_create(
-    working_dir: Option<String>,
+    db: State<'_, DbConnection>,
     name: Option<String>,
 ) -> Result<String, String> {
     tracing::info!("[AsterAgent] 创建会话: name={:?}", name);
-    let dir = working_dir.map(PathBuf::from);
-    AsterAgentWrapper::create_session(dir, name).await
+    AsterAgentWrapper::create_session_sync(&db, name)
 }
 
 /// 列出所有会话
 #[tauri::command]
-pub async fn aster_session_list() -> Result<Vec<SessionInfo>, String> {
+pub async fn aster_session_list(db: State<'_, DbConnection>) -> Result<Vec<SessionInfo>, String> {
     tracing::info!("[AsterAgent] 列出会话");
-    AsterAgentWrapper::list_sessions().await
+    AsterAgentWrapper::list_sessions_sync(&db)
 }
 
 /// 获取会话详情
 #[tauri::command]
-pub async fn aster_session_get(session_id: String) -> Result<SessionDetail, String> {
+pub async fn aster_session_get(
+    db: State<'_, DbConnection>,
+    session_id: String,
+) -> Result<SessionDetail, String> {
     tracing::info!("[AsterAgent] 获取会话: {}", session_id);
-    AsterAgentWrapper::get_session(&session_id).await
+    AsterAgentWrapper::get_session_sync(&db, &session_id)
 }
 
 /// 确认权限请求

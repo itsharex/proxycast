@@ -278,16 +278,15 @@ impl ShellController {
     /// _Requirements: 16.6_
     fn should_run(&self, block_meta: &BlockMeta) -> bool {
         // 如果是 cmd 模式且设置了 runonce，检查是否已运行过
-        if self.controller_type == "cmd" {
-            if block_meta.cmd_run_once.unwrap_or(false) {
-                if self.has_run.load(Ordering::SeqCst) {
-                    tracing::debug!(
-                        "[ShellController] cmd:runonce 已运行过，跳过: block_id={}",
-                        self.block_id
-                    );
-                    return false;
-                }
-            }
+        if self.controller_type == "cmd"
+            && block_meta.cmd_run_once.unwrap_or(false)
+            && self.has_run.load(Ordering::SeqCst)
+        {
+            tracing::debug!(
+                "[ShellController] cmd:runonce 已运行过，跳过: block_id={}",
+                self.block_id
+            );
+            return false;
         }
         true
     }
@@ -575,7 +574,7 @@ impl BlockController for ShellController {
             sender
                 .send(input.clone())
                 .await
-                .map_err(|e| TerminalError::WriteFailed(format!("发送输入失败: {}", e)))?;
+                .map_err(|e| TerminalError::WriteFailed(format!("发送输入失败: {e}")))?;
             Ok(())
         } else {
             Err(TerminalError::SessionClosed)

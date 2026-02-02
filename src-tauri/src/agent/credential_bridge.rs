@@ -35,11 +35,11 @@ pub enum CredentialBridgeError {
 impl std::fmt::Display for CredentialBridgeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NoCredentials(msg) => write!(f, "没有可用凭证: {}", msg),
-            Self::UnsupportedCredentialType(msg) => write!(f, "不支持的凭证类型: {}", msg),
-            Self::ProviderCreationFailed(msg) => write!(f, "Provider 创建失败: {}", msg),
-            Self::TokenRefreshFailed(msg) => write!(f, "Token 刷新失败: {}", msg),
-            Self::DatabaseError(msg) => write!(f, "数据库错误: {}", msg),
+            Self::NoCredentials(msg) => write!(f, "没有可用凭证: {msg}"),
+            Self::UnsupportedCredentialType(msg) => write!(f, "不支持的凭证类型: {msg}"),
+            Self::ProviderCreationFailed(msg) => write!(f, "Provider 创建失败: {msg}"),
+            Self::TokenRefreshFailed(msg) => write!(f, "Token 刷新失败: {msg}"),
+            Self::DatabaseError(msg) => write!(f, "数据库错误: {msg}"),
         }
     }
 }
@@ -112,11 +112,10 @@ impl CredentialBridge {
                 None,
             )
             .await
-            .map_err(|e| CredentialBridgeError::DatabaseError(e))?
+            .map_err(CredentialBridgeError::DatabaseError)?
             .ok_or_else(|| {
                 CredentialBridgeError::NoCredentials(format!(
-                    "没有找到 {} 类型的可用凭证",
-                    provider_type
+                    "没有找到 {provider_type} 类型的可用凭证"
                 ))
             })?;
 
@@ -229,7 +228,7 @@ impl CredentialBridge {
             .load_credentials_from_path(creds_path)
             .await
             .map_err(|e| {
-                CredentialBridgeError::TokenRefreshFailed(format!("加载 Kiro 凭证失败: {}", e))
+                CredentialBridgeError::TokenRefreshFailed(format!("加载 Kiro 凭证失败: {e}"))
             })?;
 
         // 检查 token 是否过期，如果过期则刷新
@@ -238,14 +237,14 @@ impl CredentialBridge {
             self.pool_service
                 .refresh_kiro_token(creds_path)
                 .await
-                .map_err(|e| CredentialBridgeError::TokenRefreshFailed(e))?;
+                .map_err(CredentialBridgeError::TokenRefreshFailed)?;
 
             // 重新加载凭证
             provider
                 .load_credentials_from_path(creds_path)
                 .await
                 .map_err(|e| {
-                    CredentialBridgeError::TokenRefreshFailed(format!("重新加载凭证失败: {}", e))
+                    CredentialBridgeError::TokenRefreshFailed(format!("重新加载凭证失败: {e}"))
                 })?;
         }
 
@@ -257,12 +256,11 @@ impl CredentialBridge {
     /// 获取通用 OAuth Token
     async fn get_oauth_token(&self, creds_path: &str) -> Result<String, CredentialBridgeError> {
         let content = std::fs::read_to_string(creds_path).map_err(|e| {
-            CredentialBridgeError::TokenRefreshFailed(format!("读取凭证文件失败: {}", e))
+            CredentialBridgeError::TokenRefreshFailed(format!("读取凭证文件失败: {e}"))
         })?;
 
-        let creds: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
-            CredentialBridgeError::TokenRefreshFailed(format!("解析凭证失败: {}", e))
-        })?;
+        let creds: serde_json::Value = serde_json::from_str(&content)
+            .map_err(|e| CredentialBridgeError::TokenRefreshFailed(format!("解析凭证失败: {e}")))?;
 
         creds["access_token"]
             .as_str()
@@ -281,11 +279,11 @@ impl CredentialBridge {
             .load_credentials_from_path(creds_path)
             .await
             .map_err(|e| {
-                CredentialBridgeError::TokenRefreshFailed(format!("加载 Codex 凭证失败: {}", e))
+                CredentialBridgeError::TokenRefreshFailed(format!("加载 Codex 凭证失败: {e}"))
             })?;
 
         provider.ensure_valid_token().await.map_err(|e| {
-            CredentialBridgeError::TokenRefreshFailed(format!("获取 Codex token 失败: {}", e))
+            CredentialBridgeError::TokenRefreshFailed(format!("获取 Codex token 失败: {e}"))
         })
     }
 
@@ -293,7 +291,7 @@ impl CredentialBridge {
     pub fn record_usage(&self, db: &DbConnection, uuid: &str) -> Result<(), CredentialBridgeError> {
         self.pool_service
             .record_usage(db, uuid)
-            .map_err(|e| CredentialBridgeError::DatabaseError(e))
+            .map_err(CredentialBridgeError::DatabaseError)
     }
 
     /// 标记凭证为健康
@@ -305,7 +303,7 @@ impl CredentialBridge {
     ) -> Result<(), CredentialBridgeError> {
         self.pool_service
             .mark_healthy(db, uuid, model)
-            .map_err(|e| CredentialBridgeError::DatabaseError(e))
+            .map_err(CredentialBridgeError::DatabaseError)
     }
 
     /// 标记凭证为不健康
@@ -317,7 +315,7 @@ impl CredentialBridge {
     ) -> Result<(), CredentialBridgeError> {
         self.pool_service
             .mark_unhealthy(db, uuid, error)
-            .map_err(|e| CredentialBridgeError::DatabaseError(e))
+            .map_err(CredentialBridgeError::DatabaseError)
     }
 }
 
@@ -332,14 +330,14 @@ pub async fn create_aster_provider(
 
     // 创建 ModelConfig
     let model_config = ModelConfig::new(&config.model_name).map_err(|e| {
-        CredentialBridgeError::ProviderCreationFailed(format!("创建 ModelConfig 失败: {}", e))
+        CredentialBridgeError::ProviderCreationFailed(format!("创建 ModelConfig 失败: {e}"))
     })?;
 
     // 创建 Provider
     aster::providers::create(&config.provider_name, model_config)
         .await
         .map_err(|e| {
-            CredentialBridgeError::ProviderCreationFailed(format!("创建 Provider 失败: {}", e))
+            CredentialBridgeError::ProviderCreationFailed(format!("创建 Provider 失败: {e}"))
         })
 }
 

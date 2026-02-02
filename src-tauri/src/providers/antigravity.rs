@@ -187,13 +187,13 @@ impl TokenRefreshError {
                 "Antigravity 授权已过期，请重新登录授权".to_string()
             }
             TokenRefreshError::NetworkError { message } => {
-                format!("网络连接失败: {}", message)
+                format!("网络连接失败: {message}")
             }
             TokenRefreshError::ServerError { message } => {
-                format!("Google 服务暂时不可用: {}", message)
+                format!("Google 服务暂时不可用: {message}")
             }
             TokenRefreshError::Unknown { message } => {
-                format!("Token 刷新失败: {}", message)
+                format!("Token 刷新失败: {message}")
             }
         }
     }
@@ -285,7 +285,7 @@ fn generate_session_id() -> String {
     let n: u64 = u64::from_le_bytes([
         bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
     ]) % 9_000_000_000_000_000_000;
-    format!("-{}", n)
+    format!("-{n}")
 }
 
 /// 生成随机项目 ID
@@ -297,7 +297,7 @@ fn generate_project_id() -> String {
     let adj = adjectives[(bytes[0] as usize) % adjectives.len()];
     let noun = nouns[(bytes[1] as usize) % nouns.len()];
     let random_part: String = uuid.to_string()[..5].to_lowercase();
-    format!("{}-{}-{}", adj, noun, random_part)
+    format!("{adj}-{noun}-{random_part}")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -624,14 +624,14 @@ impl AntigravityProvider {
         // 服务器错误 (5xx)
         if status >= 500 {
             return TokenRefreshError::ServerError {
-                message: format!("HTTP {}: {}", status, body),
+                message: format!("HTTP {status}: {body}"),
             };
         }
 
         // 其他客户端错误
         if status >= 400 {
             return TokenRefreshError::Unknown {
-                message: format!("HTTP {}: {}", status, body),
+                message: format!("HTTP {status}: {body}"),
             };
         }
 
@@ -728,7 +728,7 @@ impl AntigravityProvider {
                             }
                             Err(e) => {
                                 last_error = Some(TokenRefreshError::Unknown {
-                                    message: format!("解析响应失败: {}", e),
+                                    message: format!("解析响应失败: {e}"),
                                 });
                             }
                         }
@@ -850,12 +850,12 @@ impl AntigravityProvider {
             .as_ref()
             .ok_or_else(|| AntigravityApiError::new(401, "No access token"))?;
 
-        let url = format!("{}/{ANTIGRAVITY_API_VERSION}:{method}", base_url);
+        let url = format!("{base_url}/{ANTIGRAVITY_API_VERSION}:{method}");
 
         // 打印详细的请求信息
         eprintln!("========== [ANTIGRAVITY_API] 请求详情 ==========");
-        eprintln!("[ANTIGRAVITY_API] URL: {}", url);
-        eprintln!("[ANTIGRAVITY_API] Method: {}", method);
+        eprintln!("[ANTIGRAVITY_API] URL: {url}");
+        eprintln!("[ANTIGRAVITY_API] Method: {method}");
         eprintln!(
             "[ANTIGRAVITY_API] Token (前20字符): {}...",
             &token[..token.len().min(20)]
@@ -875,33 +875,33 @@ impl AntigravityProvider {
             .send()
             .await
             .map_err(|e| {
-                eprintln!("[ANTIGRAVITY_API] 网络错误: {}", e);
-                AntigravityApiError::new(503, format!("Network error: {}", e))
+                eprintln!("[ANTIGRAVITY_API] 网络错误: {e}");
+                AntigravityApiError::new(503, format!("Network error: {e}"))
             })?;
 
         let status = resp.status();
         let status_code = status.as_u16();
-        eprintln!("[ANTIGRAVITY_API] 响应状态码: {}", status);
+        eprintln!("[ANTIGRAVITY_API] 响应状态码: {status}");
 
         if !status.is_success() {
             let body_text = resp.text().await.unwrap_or_default();
-            eprintln!("[ANTIGRAVITY_API] 错误响应体: {}", body_text);
+            eprintln!("[ANTIGRAVITY_API] 错误响应体: {body_text}");
             eprintln!("========== [ANTIGRAVITY_API] 请求失败 ==========");
             return Err(AntigravityApiError::with_body(
                 status_code,
-                format!("API call failed: {}", status),
+                format!("API call failed: {status}"),
                 body_text,
             ));
         }
 
-        let response_text = resp.text().await.map_err(|e| {
-            AntigravityApiError::new(500, format!("Failed to read response: {}", e))
-        })?;
-        eprintln!("[ANTIGRAVITY_API] 响应体: {}", response_text);
+        let response_text = resp
+            .text()
+            .await
+            .map_err(|e| AntigravityApiError::new(500, format!("Failed to read response: {e}")))?;
+        eprintln!("[ANTIGRAVITY_API] 响应体: {response_text}");
 
-        let data: serde_json::Value = serde_json::from_str(&response_text).map_err(|e| {
-            AntigravityApiError::new(500, format!("Failed to parse response: {}", e))
-        })?;
+        let data: serde_json::Value = serde_json::from_str(&response_text)
+            .map_err(|e| AntigravityApiError::new(500, format!("Failed to parse response: {e}")))?;
 
         eprintln!("========== [ANTIGRAVITY_API] 请求成功 ==========");
         Ok(data)
@@ -1058,17 +1058,17 @@ impl AntigravityProvider {
         request_body: &serde_json::Value,
     ) -> Result<serde_json::Value, AntigravityApiError> {
         eprintln!("========== [ANTIGRAVITY_GENERATE] 开始生成内容 ==========");
-        eprintln!("[ANTIGRAVITY_GENERATE] 模型: {}", model);
+        eprintln!("[ANTIGRAVITY_GENERATE] 模型: {model}");
         eprintln!(
             "[ANTIGRAVITY_GENERATE] 请求体: {}",
             serde_json::to_string_pretty(request_body).unwrap_or_default()
         );
 
         let project_id = self.project_id.clone().unwrap_or_else(generate_project_id);
-        eprintln!("[ANTIGRAVITY_GENERATE] 项目ID: {}", project_id);
+        eprintln!("[ANTIGRAVITY_GENERATE] 项目ID: {project_id}");
 
         let actual_model = alias_to_model_name(model);
-        eprintln!("[ANTIGRAVITY_GENERATE] 实际模型名: {}", actual_model);
+        eprintln!("[ANTIGRAVITY_GENERATE] 实际模型名: {actual_model}");
 
         let payload = self.build_antigravity_request(&actual_model, &project_id, request_body);
         eprintln!(
@@ -1176,7 +1176,7 @@ pub struct AntigravityOAuthResult {
 /// 生成 OAuth 授权 URL
 pub fn generate_auth_url(port: u16, state: &str) -> String {
     let scopes = OAUTH_SCOPES.join(" ");
-    let redirect_uri = format!("http://localhost:{}/oauth-callback", port);
+    let redirect_uri = format!("http://localhost:{port}/oauth-callback");
 
     let params = [
         ("access_type", "offline"),
@@ -1194,7 +1194,7 @@ pub fn generate_auth_url(port: u16, state: &str) -> String {
         .collect::<Vec<_>>()
         .join("&");
 
-    format!("https://accounts.google.com/o/oauth2/v2/auth?{}", query)
+    format!("https://accounts.google.com/o/oauth2/v2/auth?{query}")
 }
 
 /// 用授权码交换 Token
@@ -1220,7 +1220,7 @@ pub async fn exchange_code_for_token(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Token 交换失败: {} - {}", status, body).into());
+        return Err(format!("Token 交换失败: {status} - {body}").into());
     }
 
     let data: serde_json::Value = resp.json().await?;
@@ -1234,7 +1234,7 @@ pub async fn fetch_user_email(
 ) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
     let resp = client
         .get("https://www.googleapis.com/oauth2/v2/userinfo")
-        .header("Authorization", format!("Bearer {}", access_token))
+        .header("Authorization", format!("Bearer {access_token}"))
         .send()
         .await?;
 
@@ -1268,7 +1268,7 @@ pub async fn fetch_project_id_for_oauth(
 
     let resp = client
         .post("https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:loadCodeAssist")
-        .header("Authorization", format!("Bearer {}", access_token))
+        .header("Authorization", format!("Bearer {access_token}"))
         .header("User-Agent", "antigravity/1.11.9 windows/amd64")
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({ "metadata": { "ideType": "ANTIGRAVITY" } }))
@@ -1320,7 +1320,7 @@ pub async fn fetch_project_id_for_oauth(
             status,
             body
         );
-        Err(format!("loadCodeAssist 请求失败: {} - {}", status, body).into())
+        Err(format!("loadCodeAssist 请求失败: {status} - {body}").into())
     }
 }
 
@@ -1410,7 +1410,7 @@ pub async fn start_oauth_server_and_get_url(
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let port = listener.local_addr()?.port();
 
-    let redirect_uri = format!("http://localhost:{}/oauth-callback", port);
+    let redirect_uri = format!("http://localhost:{port}/oauth-callback");
     let redirect_uri_clone = redirect_uri.clone();
 
     // 生成授权 URL
@@ -1440,7 +1440,7 @@ pub async fn start_oauth_server_and_get_url(
                 if let Some(err) = error {
                     let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", err);
                     if let Some(sender) = tx.lock().await.take() {
-                        let _ = sender.send(Err(format!("OAuth 错误: {}", err)));
+                        let _ = sender.send(Err(format!("OAuth 错误: {err}")));
                     }
                     return Html(html);
                 }
@@ -1522,7 +1522,7 @@ pub async fn start_oauth_server_and_get_url(
                     expires_in,
                     timestamp: Some(now.timestamp_millis()),
                     enable: Some(true),
-                    project_id: project_id,
+                    project_id,
                     email: email.clone(),
                 };
 
@@ -1534,7 +1534,7 @@ pub async fn start_oauth_server_and_get_url(
                     .join("antigravity");
 
                 if let Err(e) = std::fs::create_dir_all(&creds_dir) {
-                    let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("创建目录失败: {}", e));
+                    let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("创建目录失败: {e}"));
                     if let Some(sender) = tx.lock().await.take() {
                         let _ = sender.send(Err(e.to_string()));
                     }
@@ -1548,7 +1548,7 @@ pub async fn start_oauth_server_and_get_url(
                 let creds_json = match serde_json::to_string_pretty(&credentials) {
                     Ok(json) => json,
                     Err(e) => {
-                        let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("序列化失败: {}", e));
+                        let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("序列化失败: {e}"));
                         if let Some(sender) = tx.lock().await.take() {
                             let _ = sender.send(Err(e.to_string()));
                         }
@@ -1557,7 +1557,7 @@ pub async fn start_oauth_server_and_get_url(
                 };
 
                 if let Err(e) = std::fs::write(&creds_path, &creds_json) {
-                    let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("保存凭证失败: {}", e));
+                    let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("保存凭证失败: {e}"));
                     if let Some(sender) = tx.lock().await.take() {
                         let _ = sender.send(Err(e.to_string()));
                     }
@@ -1607,7 +1607,7 @@ pub async fn start_oauth_server_and_get_url(
             server_result = server => {
                 match server_result {
                     Ok(_) => Err("服务器意外关闭".into()),
-                    Err(e) => Err(format!("服务器错误: {}", e).into()),
+                    Err(e) => Err(format!("服务器错误: {e}").into()),
                 }
             }
         }
@@ -1638,9 +1638,9 @@ pub async fn start_oauth_login_with_port(
     let tx = Arc::new(tokio::sync::Mutex::new(Some(tx)));
 
     // 绑定到指定端口
-    let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
+    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).await?;
 
-    let redirect_uri = format!("http://localhost:{}/oauth-callback", port);
+    let redirect_uri = format!("http://localhost:{port}/oauth-callback");
     let redirect_uri_clone = redirect_uri.clone();
 
     // 构建路由
@@ -1661,7 +1661,7 @@ pub async fn start_oauth_login_with_port(
                 if let Some(err) = error {
                     let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", err);
                     if let Some(sender) = tx.lock().await.take() {
-                        let _ = sender.send(Err(format!("OAuth 错误: {}", err)));
+                        let _ = sender.send(Err(format!("OAuth 错误: {err}")));
                     }
                     return Html(html);
                 }
@@ -1743,7 +1743,7 @@ pub async fn start_oauth_login_with_port(
                     expires_in,
                     timestamp: Some(now.timestamp_millis()),
                     enable: Some(true),
-                    project_id: project_id,
+                    project_id,
                     email: email.clone(),
                 };
 
@@ -1755,7 +1755,7 @@ pub async fn start_oauth_login_with_port(
                     .join("antigravity");
 
                 if let Err(e) = std::fs::create_dir_all(&creds_dir) {
-                    let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("创建目录失败: {}", e));
+                    let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("创建目录失败: {e}"));
                     if let Some(sender) = tx.lock().await.take() {
                         let _ = sender.send(Err(e.to_string()));
                     }
@@ -1769,7 +1769,7 @@ pub async fn start_oauth_login_with_port(
                 let creds_json = match serde_json::to_string_pretty(&credentials) {
                     Ok(json) => json,
                     Err(e) => {
-                        let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("序列化失败: {}", e));
+                        let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("序列化失败: {e}"));
                         if let Some(sender) = tx.lock().await.take() {
                             let _ = sender.send(Err(e.to_string()));
                         }
@@ -1778,7 +1778,7 @@ pub async fn start_oauth_login_with_port(
                 };
 
                 if let Err(e) = std::fs::write(&creds_path, &creds_json) {
-                    let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("保存凭证失败: {}", e));
+                    let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("保存凭证失败: {e}"));
                     if let Some(sender) = tx.lock().await.take() {
                         let _ = sender.send(Err(e.to_string()));
                     }
@@ -1826,7 +1826,7 @@ pub async fn start_oauth_login_with_port(
         server_result = server => {
             match server_result {
                 Ok(_) => Err("服务器意外关闭".into()),
-                Err(e) => Err(format!("服务器错误: {}", e).into()),
+                Err(e) => Err(format!("服务器错误: {e}").into()),
             }
         }
     }
@@ -1857,7 +1857,7 @@ pub async fn start_oauth_login(
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let port = listener.local_addr()?.port();
 
-    let redirect_uri = format!("http://localhost:{}/oauth-callback", port);
+    let redirect_uri = format!("http://localhost:{port}/oauth-callback");
     let redirect_uri_clone = redirect_uri.clone();
 
     // 构建路由
@@ -1878,7 +1878,7 @@ pub async fn start_oauth_login(
                 if let Some(err) = error {
                     let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", err);
                     if let Some(sender) = tx.lock().await.take() {
-                        let _ = sender.send(Err(format!("OAuth 错误: {}", err)));
+                        let _ = sender.send(Err(format!("OAuth 错误: {err}")));
                     }
                     return Html(html);
                 }
@@ -1969,7 +1969,7 @@ pub async fn start_oauth_login(
                     expires_in,
                     timestamp: Some(now.timestamp_millis()),
                     enable: Some(true),
-                    project_id: project_id,
+                    project_id,
                     email: email.clone(),
                 };
 
@@ -1981,7 +1981,7 @@ pub async fn start_oauth_login(
                     .join("antigravity");
 
                 if let Err(e) = std::fs::create_dir_all(&creds_dir) {
-                    let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("创建目录失败: {}", e));
+                    let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("创建目录失败: {e}"));
                     if let Some(sender) = tx.lock().await.take() {
                         let _ = sender.send(Err(e.to_string()));
                     }
@@ -1995,7 +1995,7 @@ pub async fn start_oauth_login(
                 let creds_json = match serde_json::to_string_pretty(&credentials) {
                     Ok(json) => json,
                     Err(e) => {
-                        let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("序列化失败: {}", e));
+                        let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("序列化失败: {e}"));
                         if let Some(sender) = tx.lock().await.take() {
                             let _ = sender.send(Err(e.to_string()));
                         }
@@ -2004,7 +2004,7 @@ pub async fn start_oauth_login(
                 };
 
                 if let Err(e) = std::fs::write(&creds_path, &creds_json) {
-                    let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("保存凭证失败: {}", e));
+                    let html = OAUTH_ERROR_HTML.replace("ERROR_PLACEHOLDER", &format!("保存凭证失败: {e}"));
                     if let Some(sender) = tx.lock().await.take() {
                         let _ = sender.send(Err(e.to_string()));
                     }
@@ -2063,7 +2063,7 @@ pub async fn start_oauth_login(
         server_result = server => {
             match server_result {
                 Ok(_) => Err("服务器意外关闭".into()),
-                Err(e) => Err(format!("服务器错误: {}", e).into()),
+                Err(e) => Err(format!("服务器错误: {e}").into()),
             }
         }
     }
@@ -2160,14 +2160,11 @@ impl StreamingProvider for AntigravityProvider {
         let mut last_error: Option<ProviderError> = None;
 
         for base_url in &self.base_urls {
-            let url = format!(
-                "{}/{ANTIGRAVITY_API_VERSION}:streamGenerateContent",
-                base_url
-            );
+            let url = format!("{base_url}/{ANTIGRAVITY_API_VERSION}:streamGenerateContent");
 
             eprintln!("[ANTIGRAVITY_STREAM] ========== 发起 HTTP 请求 ==========");
-            eprintln!("[ANTIGRAVITY_STREAM] URL: {}", url);
-            eprintln!("[ANTIGRAVITY_STREAM] Model: {}", actual_model);
+            eprintln!("[ANTIGRAVITY_STREAM] URL: {url}");
+            eprintln!("[ANTIGRAVITY_STREAM] Model: {actual_model}");
             eprintln!(
                 "[ANTIGRAVITY_STREAM] Token 前20字符: {}...",
                 &token[..20.min(token.len())]
@@ -2181,7 +2178,7 @@ impl StreamingProvider for AntigravityProvider {
             let result = self
                 .client
                 .post(&url)
-                .header("Authorization", format!("Bearer {}", token))
+                .header("Authorization", format!("Bearer {token}"))
                 .header("Content-Type", "application/json")
                 .header("Accept", "text/event-stream")
                 .header("User-Agent", "antigravity/1.11.9 windows/amd64")
@@ -2192,7 +2189,7 @@ impl StreamingProvider for AntigravityProvider {
             match result {
                 Ok(resp) => {
                     let status = resp.status();
-                    eprintln!("[ANTIGRAVITY_STREAM] HTTP 响应状态: {}", status);
+                    eprintln!("[ANTIGRAVITY_STREAM] HTTP 响应状态: {status}");
                     tracing::info!("[ANTIGRAVITY_STREAM] HTTP 响应状态: {}", status);
 
                     if status.is_success() {
@@ -2218,8 +2215,7 @@ impl StreamingProvider for AntigravityProvider {
                 }
                 Err(e) => {
                     eprintln!(
-                        "[ANTIGRAVITY_STREAM] ✗ 连接失败\n  Base URL: {}\n  Error: {}",
-                        base_url, e
+                        "[ANTIGRAVITY_STREAM] ✗ 连接失败\n  Base URL: {base_url}\n  Error: {e}"
                     );
                     tracing::error!(
                         "[ANTIGRAVITY_STREAM] ✗ 连接失败\n  Base URL: {}\n  Error: {}",
@@ -2544,7 +2540,7 @@ mod tests {
         ];
 
         for error in errors {
-            let display = format!("{}", error);
+            let display = format!("{error}");
             assert!(!display.is_empty());
         }
     }

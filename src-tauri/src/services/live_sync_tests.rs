@@ -143,19 +143,18 @@ mod tests {
             for (i, test_data) in test_cases.iter().enumerate() {
                 // 写入
                 write_json_file_atomic(&test_file, test_data)
-                    .unwrap_or_else(|e| panic!("Write should succeed for case {}: {}", i, e));
+                    .unwrap_or_else(|e| panic!("Write should succeed for case {i}: {e}"));
 
                 // 读取
                 let content = fs::read_to_string(&test_file)
-                    .unwrap_or_else(|e| panic!("Read should succeed for case {}: {}", i, e));
+                    .unwrap_or_else(|e| panic!("Read should succeed for case {i}: {e}"));
                 let parsed: serde_json::Value = serde_json::from_str(&content)
-                    .unwrap_or_else(|e| panic!("Parse should succeed for case {}: {}", i, e));
+                    .unwrap_or_else(|e| panic!("Parse should succeed for case {i}: {e}"));
 
                 // 验证一致性
                 assert_eq!(
                     &parsed, test_data,
-                    "Roundtrip should preserve data for case {}",
-                    i
+                    "Roundtrip should preserve data for case {i}"
                 );
             }
         }

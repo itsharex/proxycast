@@ -327,7 +327,7 @@ impl AnthropicSseGenerator {
                 }
             }
         });
-        format!("event: message_start\ndata: {}\n\n", event)
+        format!("event: message_start\ndata: {event}\n\n")
     }
 
     /// 创建文本类型的 content_block_start 事件
@@ -340,7 +340,7 @@ impl AnthropicSseGenerator {
                 "text": ""
             }
         });
-        format!("event: content_block_start\ndata: {}\n\n", event)
+        format!("event: content_block_start\ndata: {event}\n\n")
     }
 
     /// 创建工具调用类型的 content_block_start 事件
@@ -355,7 +355,7 @@ impl AnthropicSseGenerator {
                 "input": {}
             }
         });
-        format!("event: content_block_start\ndata: {}\n\n", event)
+        format!("event: content_block_start\ndata: {event}\n\n")
     }
 
     /// 创建文本增量事件
@@ -368,7 +368,7 @@ impl AnthropicSseGenerator {
                 "text": text
             }
         });
-        format!("event: content_block_delta\ndata: {}\n\n", event)
+        format!("event: content_block_delta\ndata: {event}\n\n")
     }
 
     /// 创建工具调用输入增量事件
@@ -381,7 +381,7 @@ impl AnthropicSseGenerator {
                 "partial_json": partial_json
             }
         });
-        format!("event: content_block_delta\ndata: {}\n\n", event)
+        format!("event: content_block_delta\ndata: {event}\n\n")
     }
 
     /// 创建 content_block_stop 事件
@@ -390,7 +390,7 @@ impl AnthropicSseGenerator {
             "type": "content_block_stop",
             "index": index
         });
-        format!("event: content_block_stop\ndata: {}\n\n", event)
+        format!("event: content_block_stop\ndata: {event}\n\n")
     }
 
     /// 创建 message_delta 事件
@@ -411,7 +411,7 @@ impl AnthropicSseGenerator {
                 "output_tokens": self.output_tokens
             }
         });
-        format!("event: message_delta\ndata: {}\n\n", event)
+        format!("event: message_delta\ndata: {event}\n\n")
     }
 
     /// 创建 message_stop 事件
@@ -419,7 +419,7 @@ impl AnthropicSseGenerator {
         let event = serde_json::json!({
             "type": "message_stop"
         });
-        format!("event: message_stop\ndata: {}\n\n", event)
+        format!("event: message_stop\ndata: {event}\n\n")
     }
 }
 

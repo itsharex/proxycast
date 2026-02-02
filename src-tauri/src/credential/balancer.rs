@@ -181,7 +181,7 @@ impl LoadBalancer {
         let client = self
             .proxy_factory
             .create_client(credential.proxy_url())
-            .map_err(|e| PoolError::CredentialNotFound(format!("代理配置错误: {}", e)))?;
+            .map_err(|e| PoolError::CredentialNotFound(format!("代理配置错误: {e}")))?;
 
         Ok(CredentialSelection { credential, client })
     }
@@ -200,7 +200,7 @@ impl LoadBalancer {
     ) -> Result<Client, PoolError> {
         self.proxy_factory
             .create_client(credential.proxy_url())
-            .map_err(|e| PoolError::CredentialNotFound(format!("代理配置错误: {}", e)))
+            .map_err(|e| PoolError::CredentialNotFound(format!("代理配置错误: {e}")))
     }
 
     /// 选择下一个可用凭证，支持代理失败时的故障转移
@@ -468,7 +468,7 @@ mod balancer_tests {
             id.to_string(),
             provider,
             CredentialData::ApiKey {
-                key: format!("key-{}", id),
+                key: format!("key-{id}"),
                 base_url: None,
             },
         )

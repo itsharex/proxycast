@@ -214,9 +214,9 @@ pub async fn handle_command(
                     updated_at: now,
                 };
 
-                let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+                let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
                 AgentDao::create_session(&conn, &session)
-                    .map_err(|e| format!("创建会话失败: {}", e))?;
+                    .map_err(|e| format!("创建会话失败: {e}"))?;
 
                 Ok(serde_json::json!({
                     "session_id": session_id,
@@ -234,9 +234,9 @@ pub async fn handle_command(
             if let Some(db) = &state.db {
                 use crate::database::dao::agent::AgentDao;
 
-                let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+                let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
                 let sessions = AgentDao::list_sessions(&conn)
-                    .map_err(|e| format!("获取会话列表失败: {}", e))?;
+                    .map_err(|e| format!("获取会话列表失败: {e}"))?;
 
                 let result: Vec<serde_json::Value> = sessions
                     .into_iter()
@@ -269,10 +269,10 @@ pub async fn handle_command(
             if let Some(db) = &state.db {
                 use crate::database::dao::agent::AgentDao;
 
-                let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+                let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
                 let session = AgentDao::get_session(&conn, &session_id)
-                    .map_err(|e| format!("获取会话失败: {}", e))?
-                    .ok_or_else(|| "会话不存在")?;
+                    .map_err(|e| format!("获取会话失败: {e}"))?
+                    .ok_or("会话不存在")?;
 
                 let messages_count = AgentDao::get_message_count(&conn, &session_id).unwrap_or(0);
 
@@ -299,9 +299,9 @@ pub async fn handle_command(
             if let Some(db) = &state.db {
                 use crate::database::dao::agent::AgentDao;
 
-                let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+                let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
                 AgentDao::delete_session(&conn, &session_id)
-                    .map_err(|e| format!("删除会话失败: {}", e))?;
+                    .map_err(|e| format!("删除会话失败: {e}"))?;
 
                 Ok(serde_json::json!({ "success": true }))
             } else {
@@ -319,9 +319,9 @@ pub async fn handle_command(
             if let Some(db) = &state.db {
                 use crate::database::dao::agent::AgentDao;
 
-                let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+                let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
                 let messages = AgentDao::get_messages(&conn, &session_id)
-                    .map_err(|e| format!("获取消息失败: {}", e))?;
+                    .map_err(|e| format!("获取消息失败: {e}"))?;
 
                 Ok(serde_json::to_value(messages)?)
             } else {
@@ -330,8 +330,7 @@ pub async fn handle_command(
         }
 
         _ => Err(format!(
-            "[DevBridge] 未知命令: '{}'. 如需此命令，请将其添加到 dispatcher.rs 的 handle_command 函数中。",
-            cmd
+            "[DevBridge] 未知命令: '{cmd}'. 如需此命令，请将其添加到 dispatcher.rs 的 handle_command 函数中。"
         )
         .into()),
     }

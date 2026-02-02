@@ -224,7 +224,7 @@ impl ShellProc {
         let app_data_dir = app_handle
             .path()
             .app_data_dir()
-            .map_err(|e| TerminalError::Internal(format!("获取应用数据目录失败: {}", e)))?;
+            .map_err(|e| TerminalError::Internal(format!("获取应用数据目录失败: {e}")))?;
 
         // 使用 ShellLaunchBuilder 构建启动配置
         let builder = ShellLaunchBuilder::new(&app_data_dir, block_id.to_string());

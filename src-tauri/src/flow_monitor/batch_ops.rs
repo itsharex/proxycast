@@ -318,13 +318,13 @@ impl BatchOperations {
             Ok(Some(_)) => {}
             Ok(None) => {
                 for flow_id in flow_ids {
-                    result.record_failure(flow_id, format!("会话不存在: {}", session_id));
+                    result.record_failure(flow_id, format!("会话不存在: {session_id}"));
                 }
                 return;
             }
             Err(e) => {
                 for flow_id in flow_ids {
-                    result.record_failure(flow_id, format!("查询会话失败: {}", e));
+                    result.record_failure(flow_id, format!("查询会话失败: {e}"));
                 }
                 return;
             }
@@ -344,7 +344,7 @@ impl BatchOperations {
                     result.record_success();
                 }
                 Err(e) => {
-                    result.record_failure(flow_id, format!("添加到会话失败: {}", e));
+                    result.record_failure(flow_id, format!("添加到会话失败: {e}"));
                 }
             }
         }
@@ -404,7 +404,7 @@ mod property_tests {
                 // 创建测试 Flow
                 let mut flow_ids = Vec::new();
                 for i in 0..flow_count {
-                    let id = create_test_flow(&monitor, &format!("flow-{}", i)).await;
+                    let id = create_test_flow(&monitor, &format!("flow-{i}")).await;
                     flow_ids.push(id);
                 }
 
@@ -446,14 +446,14 @@ mod property_tests {
                 // 创建有效的 Flow
                 let mut valid_flow_ids = Vec::new();
                 for i in 0..valid_flow_count {
-                    let id = create_test_flow(&monitor, &format!("valid-flow-{}", i)).await;
+                    let id = create_test_flow(&monitor, &format!("valid-flow-{i}")).await;
                     valid_flow_ids.push(id);
                 }
 
                 // 创建无效的 Flow ID（不存在的）
                 let mut invalid_flow_ids = Vec::new();
                 for i in 0..invalid_flow_count {
-                    invalid_flow_ids.push(format!("invalid-flow-{}", i));
+                    invalid_flow_ids.push(format!("invalid-flow-{i}"));
                 }
 
                 // 混合有效和无效的 Flow ID
@@ -512,18 +512,18 @@ mod property_tests {
                 // 创建有效的 Flow
                 let mut valid_flow_ids = Vec::new();
                 for i in 0..valid_flow_count {
-                    let id = create_test_flow(&monitor, &format!("valid-flow-{}", i)).await;
+                    let id = create_test_flow(&monitor, &format!("valid-flow-{i}")).await;
                     valid_flow_ids.push(id);
                 }
 
                 // 创建无效的 Flow ID
                 let mut invalid_flow_ids = Vec::new();
                 for i in 0..invalid_flow_count {
-                    invalid_flow_ids.push(format!("invalid-flow-{}", i));
+                    invalid_flow_ids.push(format!("invalid-flow-{i}"));
                 }
 
                 // 创建标签列表
-                let tags: Vec<String> = (0..tag_count).map(|i| format!("tag-{}", i)).collect();
+                let tags: Vec<String> = (0..tag_count).map(|i| format!("tag-{i}")).collect();
 
                 // 混合有效和无效的 Flow ID
                 let mut all_flow_ids = valid_flow_ids.clone();

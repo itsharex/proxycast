@@ -141,7 +141,7 @@ async fn start_server_async(
                             "iflow" => "iFlow",
                             _ => &provider_overview.provider_type,
                         };
-                        loaded_types.push(format!("{} ({} 个)", provider_name, count));
+                        loaded_types.push(format!("{provider_name} ({count} 个)"));
                     }
                 }
 
@@ -159,7 +159,7 @@ async fn start_server_async(
             Err(e) => {
                 logs.write()
                     .await
-                    .add("warn", &format!("[启动] 获取凭证池信息失败: {}", e));
+                    .add("warn", &format!("[启动] 获取凭证池信息失败: {e}"));
             }
         }
 
@@ -203,7 +203,7 @@ async fn start_server_async(
                     .await
                     .add("info", &format!("[启动] 服务器已启动: {host}:{port}"));
                 server_started = true;
-                server_address = format!("{}:{}", host, port);
+                server_address = format!("{host}:{port}");
             }
             Err(e) => {
                 logs.write()

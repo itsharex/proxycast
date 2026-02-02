@@ -52,10 +52,8 @@ pub async fn init_orchestrator(
 
     // 从数据库加载凭证并同步到 orchestrator
     let credentials = {
-        let conn = db
-            .lock()
-            .map_err(|e| format!("获取数据库连接失败: {}", e))?;
-        ProviderPoolDao::get_all(&conn).map_err(|e| format!("获取凭证列表失败: {}", e))?
+        let conn = db.lock().map_err(|e| format!("获取数据库连接失败: {e}"))?;
+        ProviderPoolDao::get_all(&conn).map_err(|e| format!("获取凭证列表失败: {e}"))?
     };
 
     // 转换凭证格式
@@ -226,7 +224,7 @@ pub async fn get_tier_models(tier: String) -> Result<Vec<AvailableModel>, String
     let orchestrator = get_global_orchestrator().ok_or("编排器未初始化")?;
 
     let service_tier =
-        ServiceTier::from_str(&tier).ok_or_else(|| format!("无效的服务等级: {}", tier))?;
+        ServiceTier::from_str(&tier).ok_or_else(|| format!("无效的服务等级: {tier}"))?;
 
     Ok(orchestrator.get_models(service_tier).await)
 }
@@ -408,7 +406,7 @@ pub async fn select_model_for_task(tier: String, task: String) -> Result<Selecti
     let orchestrator = get_global_orchestrator().ok_or("编排器未初始化")?;
 
     let service_tier =
-        ServiceTier::from_str(&tier).ok_or_else(|| format!("无效的服务等级: {}", tier))?;
+        ServiceTier::from_str(&tier).ok_or_else(|| format!("无效的服务等级: {tier}"))?;
 
     let task_hint = match task.to_lowercase().as_str() {
         "coding" => TaskHint::Coding,
@@ -445,7 +443,7 @@ pub fn list_service_tiers() -> Vec<ServiceTierInfo> {
     ServiceTier::all()
         .iter()
         .map(|t| ServiceTierInfo {
-            id: format!("{:?}", t).to_lowercase(),
+            id: format!("{t:?}").to_lowercase(),
             display_name: t.display_name().to_string(),
             description: t.description().to_string(),
             level: t.level(),

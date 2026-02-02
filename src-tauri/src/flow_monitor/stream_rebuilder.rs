@@ -38,7 +38,7 @@ pub enum StreamRebuilderError {
 // ============================================================================
 
 /// 流式响应格式
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum StreamFormat {
     /// OpenAI 格式 (data: {...})
     OpenAI,
@@ -47,13 +47,8 @@ pub enum StreamFormat {
     /// Gemini 格式
     Gemini,
     /// 未知格式
+    #[default]
     Unknown,
-}
-
-impl Default for StreamFormat {
-    fn default() -> Self {
-        StreamFormat::Unknown
-    }
 }
 
 // ============================================================================
@@ -313,10 +308,7 @@ impl StreamRebuilder {
     ) -> Result<(), StreamRebuilderError> {
         let index = tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
 
-        let builder = self
-            .tool_calls_buffer
-            .entry(index)
-            .or_insert_with(ToolCallBuilder::new);
+        let builder = self.tool_calls_buffer.entry(index).or_default();
 
         // 提取 ID
         if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
@@ -493,10 +485,7 @@ impl StreamRebuilder {
             match block_type {
                 "tool_use" => {
                     // 工具调用开始
-                    let builder = self
-                        .tool_calls_buffer
-                        .entry(index)
-                        .or_insert_with(ToolCallBuilder::new);
+                    let builder = self.tool_calls_buffer.entry(index).or_default();
                     builder.id = content_block
                         .get("id")
                         .and_then(|v| v.as_str())
@@ -683,10 +672,7 @@ impl StreamRebuilder {
         chunk: &mut StreamChunk,
     ) -> Result<(), StreamRebuilderError> {
         let index = self.tool_calls_buffer.len() as u32;
-        let builder = self
-            .tool_calls_buffer
-            .entry(index)
-            .or_insert_with(ToolCallBuilder::new);
+        let builder = self.tool_calls_buffer.entry(index).or_default();
 
         // Gemini 的函数调用通常是完整的，不是增量的
         if let Some(name) = function_call.get("name").and_then(|v| v.as_str()) {
@@ -868,7 +854,7 @@ impl StreamRebuilder {
             "choices": [{
                 "index": 0,
                 "message": message,
-                "finish_reason": self.stop_reason.as_ref().map(|r| format!("{:?}", r).to_lowercase()),
+                "finish_reason": self.stop_reason.as_ref().map(|r| format!("{r:?}").to_lowercase()),
             }],
             "usage": {
                 "prompt_tokens": self.usage.input_tokens,
@@ -1297,9 +1283,9 @@ mod property_tests {
             prop::option::of("[a-zA-Z0-9_]{1,20}"), // argument value
         )
             .prop_map(|(name, id_suffix, arg_value)| {
-                let id = format!("call_{}", id_suffix);
+                let id = format!("call_{id_suffix}");
                 let args = match arg_value {
-                    Some(val) => format!(r#"{{"value":"{}"}}"#, val),
+                    Some(val) => format!(r#"{{"value":"{val}"}}"#),
                     None => "{}".to_string(),
                 };
                 (id, name, args)
@@ -1317,8 +1303,7 @@ mod property_tests {
 
         // 初始 chunk
         chunks.push(format!(
-            r#"{{"id":"{}","object":"chat.completion.chunk","created":1234567890,"model":"{}","choices":[{{"index":0,"delta":{{"role":"assistant","content":""}},"finish_reason":null}}]}}"#,
-            id, model
+            r#"{{"id":"{id}","object":"chat.completion.chunk","created":1234567890,"model":"{model}","choices":[{{"index":0,"delta":{{"role":"assistant","content":""}},"finish_reason":null}}]}}"#
         ));
 
         // 内容 chunks（每个字符一个 chunk）
@@ -1330,8 +1315,7 @@ mod property_tests {
                 _ => ch.to_string(),
             };
             chunks.push(format!(
-                r#"{{"id":"{}","object":"chat.completion.chunk","created":1234567890,"model":"{}","choices":[{{"index":0,"delta":{{"content":"{}"}},"finish_reason":null}}]}}"#,
-                id, model, escaped
+                r#"{{"id":"{id}","object":"chat.completion.chunk","created":1234567890,"model":"{model}","choices":[{{"index":0,"delta":{{"content":"{escaped}"}},"finish_reason":null}}]}}"#
             ));
         }
 
@@ -1339,15 +1323,13 @@ mod property_tests {
         for (idx, (call_id, name, args)) in tool_calls.iter().enumerate() {
             // 工具调用开始
             chunks.push(format!(
-                r#"{{"id":"{}","object":"chat.completion.chunk","created":1234567890,"model":"{}","choices":[{{"index":0,"delta":{{"tool_calls":[{{"index":{},"id":"{}","type":"function","function":{{"name":"{}","arguments":""}}}}]}},"finish_reason":null}}]}}"#,
-                id, model, idx, call_id, name
+                r#"{{"id":"{id}","object":"chat.completion.chunk","created":1234567890,"model":"{model}","choices":[{{"index":0,"delta":{{"tool_calls":[{{"index":{idx},"id":"{call_id}","type":"function","function":{{"name":"{name}","arguments":""}}}}]}},"finish_reason":null}}]}}"#
             ));
 
             // 工具调用参数（一次性发送，避免分块导致的转义问题）
             let args_escaped = args.replace('\\', "\\\\").replace('"', "\\\"");
             chunks.push(format!(
-                r#"{{"id":"{}","object":"chat.completion.chunk","created":1234567890,"model":"{}","choices":[{{"index":0,"delta":{{"tool_calls":[{{"index":{},"function":{{"arguments":"{}"}}}}]}},"finish_reason":null}}]}}"#,
-                id, model, idx, args_escaped
+                r#"{{"id":"{id}","object":"chat.completion.chunk","created":1234567890,"model":"{model}","choices":[{{"index":0,"delta":{{"tool_calls":[{{"index":{idx},"function":{{"arguments":"{args_escaped}"}}}}]}},"finish_reason":null}}]}}"#
             ));
         }
 
@@ -1358,8 +1340,7 @@ mod property_tests {
             "tool_calls"
         };
         chunks.push(format!(
-            r#"{{"id":"{}","object":"chat.completion.chunk","created":1234567890,"model":"{}","choices":[{{"index":0,"delta":{{}},"finish_reason":"{}"}}]}}"#,
-            id, model, finish_reason
+            r#"{{"id":"{id}","object":"chat.completion.chunk","created":1234567890,"model":"{model}","choices":[{{"index":0,"delta":{{}},"finish_reason":"{finish_reason}"}}]}}"#
         ));
 
         // [DONE] 信号
@@ -1381,8 +1362,7 @@ mod property_tests {
         events.push((
             "message_start".to_string(),
             format!(
-                r#"{{"type":"message_start","message":{{"id":"{}","type":"message","role":"assistant","model":"{}","usage":{{"input_tokens":10}}}}}}"#,
-                id, model
+                r#"{{"type":"message_start","message":{{"id":"{id}","type":"message","role":"assistant","model":"{model}","usage":{{"input_tokens":10}}}}}}"#
             ),
         ));
 
@@ -1404,8 +1384,7 @@ mod property_tests {
                 events.push((
                     "content_block_delta".to_string(),
                     format!(
-                        r#"{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{}"}}}}"#,
-                        escaped
+                        r#"{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{escaped}"}}}}"#
                     ),
                 ));
             }
@@ -1423,8 +1402,7 @@ mod property_tests {
             events.push((
                 "content_block_start".to_string(),
                 format!(
-                    r#"{{"type":"content_block_start","index":{},"content_block":{{"type":"tool_use","id":"{}","name":"{}"}}}}"#,
-                    block_idx, call_id, name
+                    r#"{{"type":"content_block_start","index":{block_idx},"content_block":{{"type":"tool_use","id":"{call_id}","name":"{name}"}}}}"#
                 ),
             ));
 
@@ -1433,14 +1411,13 @@ mod property_tests {
             events.push((
                 "content_block_delta".to_string(),
                 format!(
-                    r#"{{"type":"content_block_delta","index":{},"delta":{{"type":"input_json_delta","partial_json":"{}"}}}}"#,
-                    block_idx, args_escaped
+                    r#"{{"type":"content_block_delta","index":{block_idx},"delta":{{"type":"input_json_delta","partial_json":"{args_escaped}"}}}}"#
                 ),
             ));
 
             events.push((
                 "content_block_stop".to_string(),
-                format!(r#"{{"type":"content_block_stop","index":{}}}"#, block_idx),
+                format!(r#"{{"type":"content_block_stop","index":{block_idx}}}"#),
             ));
         }
 
@@ -1453,8 +1430,7 @@ mod property_tests {
         events.push((
             "message_delta".to_string(),
             format!(
-                r#"{{"type":"message_delta","delta":{{"stop_reason":"{}"}},"usage":{{"output_tokens":20}}}}"#,
-                stop_reason
+                r#"{{"type":"message_delta","delta":{{"stop_reason":"{stop_reason}"}},"usage":{{"output_tokens":20}}}}"#
             ),
         ));
 
@@ -1479,8 +1455,7 @@ mod property_tests {
                 .replace('"', "\\\"")
                 .replace('\n', "\\n");
             chunks.push(format!(
-                r#"{{"candidates":[{{"content":{{"parts":[{{"text":"{}"}}],"role":"model"}},"index":0}}]}}"#,
-                escaped
+                r#"{{"candidates":[{{"content":{{"parts":[{{"text":"{escaped}"}}],"role":"model"}},"index":0}}]}}"#
             ));
         }
 

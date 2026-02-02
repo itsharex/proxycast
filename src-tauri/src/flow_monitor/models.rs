@@ -70,9 +70,10 @@ impl LLMFlow {
 }
 
 /// 流类型
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum FlowType {
     /// OpenAI Chat Completions
+    #[default]
     ChatCompletions,
     /// Anthropic Messages
     AnthropicMessages,
@@ -84,16 +85,11 @@ pub enum FlowType {
     Other(String),
 }
 
-impl Default for FlowType {
-    fn default() -> Self {
-        FlowType::ChatCompletions
-    }
-}
-
 /// 流状态
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum FlowState {
     /// 等待响应
+    #[default]
     Pending,
     /// 正在流式传输
     Streaming,
@@ -103,12 +99,6 @@ pub enum FlowState {
     Failed,
     /// 已取消
     Cancelled,
-}
-
-impl Default for FlowState {
-    fn default() -> Self {
-        FlowState::Pending
-    }
 }
 
 // ============================================================================
@@ -193,10 +183,12 @@ impl Default for Message {
 /// 消息角色
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum MessageRole {
     /// 系统消息
     System,
     /// 用户消息
+    #[default]
     User,
     /// 助手消息
     Assistant,
@@ -204,12 +196,6 @@ pub enum MessageRole {
     Tool,
     /// 函数消息（兼容旧版 OpenAI API）
     Function,
-}
-
-impl Default for MessageRole {
-    fn default() -> Self {
-        MessageRole::User
-    }
 }
 
 /// 消息内容（支持多模态）
@@ -736,6 +722,7 @@ impl FlowError {
 /// 错误类型
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum FlowErrorType {
     /// 网络错误
     Network,
@@ -758,13 +745,8 @@ pub enum FlowErrorType {
     /// 请求被取消（用户拦截后取消）
     Cancelled,
     /// 其他错误
+    #[default]
     Other,
-}
-
-impl Default for FlowErrorType {
-    fn default() -> Self {
-        FlowErrorType::Other
-    }
 }
 
 impl FlowErrorType {

@@ -901,7 +901,7 @@ mod property_tests {
             let mut added_bookmarks = Vec::new();
             for (i, (flow_id, name, group)) in bookmarks.iter().enumerate() {
                 // 确保 flow_id 唯一
-                let unique_flow_id = format!("{}_{}", flow_id, i);
+                let unique_flow_id = format!("{flow_id}_{i}");
                 let bookmark = manager1.add(&unique_flow_id, name.as_deref(), group.as_deref()).unwrap();
                 added_bookmarks.push(bookmark);
             }
@@ -984,7 +984,7 @@ mod property_tests {
             // 添加所有书签
             let mut added_ids = Vec::new();
             for (i, (flow_id, name, group)) in bookmarks.iter().enumerate() {
-                let unique_flow_id = format!("{}_{}", flow_id, i);
+                let unique_flow_id = format!("{flow_id}_{i}");
                 let bookmark = manager.add(&unique_flow_id, name.as_deref(), group.as_deref()).unwrap();
                 added_ids.push(bookmark.id);
             }

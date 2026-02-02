@@ -53,14 +53,17 @@ pub struct SendMessageRequest {
     pub message: String,
     /// 事件名称（用于前端监听）
     pub event_name: String,
-    /// 图片输入（可选）
+    /// 图片输入（可选，用于多模态对话）
+    /// TODO: 实现图片处理逻辑，将图片转换为 Aster Message 的 ImageContent
     pub images: Option<Vec<ImageInput>>,
 }
 
 /// 图片输入
 #[derive(Debug, Deserialize)]
 pub struct ImageInput {
+    /// Base64 编码的图片数据
     pub data: String,
+    /// 图片 MIME 类型，如 "image/png", "image/jpeg"
     pub media_type: String,
 }
 
@@ -122,8 +125,8 @@ pub async fn chat_create_session(
 
     // 保存到数据库
     {
-        let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
-        ChatDao::create_session(&conn, &session).map_err(|e| format!("创建会话失败: {}", e))?;
+        let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
+        ChatDao::create_session(&conn, &session).map_err(|e| format!("创建会话失败: {e}"))?;
     }
 
     // 初始化 Aster Agent（如果是 Agent 或 Creator 模式）
@@ -155,10 +158,10 @@ pub async fn chat_list_sessions(
     db: State<'_, DbConnection>,
     mode: Option<ChatMode>,
 ) -> Result<Vec<SessionResponse>, String> {
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
     let sessions =
-        ChatDao::list_sessions(&conn, mode).map_err(|e| format!("获取会话列表失败: {}", e))?;
+        ChatDao::list_sessions(&conn, mode).map_err(|e| format!("获取会话列表失败: {e}"))?;
 
     let mut result: Vec<SessionResponse> = Vec::new();
     for session in sessions {
@@ -177,10 +180,10 @@ pub async fn chat_get_session(
     db: State<'_, DbConnection>,
     session_id: String,
 ) -> Result<SessionResponse, String> {
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
     let session = ChatDao::get_session(&conn, &session_id)
-        .map_err(|e| format!("获取会话失败: {}", e))?
+        .map_err(|e| format!("获取会话失败: {e}"))?
         .ok_or_else(|| "会话不存在".to_string())?;
 
     let message_count = ChatDao::get_message_count(&conn, &session_id).unwrap_or(0);
@@ -196,10 +199,10 @@ pub async fn chat_delete_session(
     db: State<'_, DbConnection>,
     session_id: String,
 ) -> Result<bool, String> {
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
     let deleted =
-        ChatDao::delete_session(&conn, &session_id).map_err(|e| format!("删除会话失败: {}", e))?;
+        ChatDao::delete_session(&conn, &session_id).map_err(|e| format!("删除会话失败: {e}"))?;
 
     if deleted {
         tracing::info!("[UnifiedChat] 删除会话: id={}", session_id);
@@ -215,10 +218,10 @@ pub async fn chat_rename_session(
     session_id: String,
     title: String,
 ) -> Result<(), String> {
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
     ChatDao::update_title(&conn, &session_id, &title)
-        .map_err(|e| format!("重命名会话失败: {}", e))?;
+        .map_err(|e| format!("重命名会话失败: {e}"))?;
 
     tracing::info!(
         "[UnifiedChat] 重命名会话: id={}, title={}",
@@ -240,10 +243,10 @@ pub async fn chat_get_messages(
     session_id: String,
     limit: Option<i32>,
 ) -> Result<Vec<ChatMessage>, String> {
-    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
 
     let messages = ChatDao::get_messages(&conn, &session_id, limit)
-        .map_err(|e| format!("获取消息失败: {}", e))?;
+        .map_err(|e| format!("获取消息失败: {e}"))?;
 
     Ok(messages)
 }
@@ -258,17 +261,37 @@ pub async fn chat_send_message(
     agent_state: State<'_, AsterAgentState>,
     request: SendMessageRequest,
 ) -> Result<(), String> {
+    let image_count = request.images.as_ref().map(|v| v.len()).unwrap_or(0);
     tracing::info!(
-        "[UnifiedChat] 发送消息: session={}, event={}",
+        "[UnifiedChat] 发送消息: session={}, event={}, images={}",
         request.session_id,
-        request.event_name
+        request.event_name,
+        image_count
     );
+
+    // TODO: 实现图片处理逻辑，将图片转换为 Aster Message 的 ImageContent
+    if let Some(images) = &request.images {
+        for (i, img) in images.iter().enumerate() {
+            tracing::debug!(
+                "[UnifiedChat] 图片 {}: media_type={}, data_len={}",
+                i,
+                img.media_type,
+                img.data.len()
+            );
+        }
+        if !images.is_empty() {
+            tracing::warn!(
+                "[UnifiedChat] 图片输入暂未实现，忽略 {} 张图片",
+                images.len()
+            );
+        }
+    }
 
     // 获取会话信息
     let session = {
-        let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
         ChatDao::get_session(&conn, &request.session_id)
-            .map_err(|e| format!("获取会话失败: {}", e))?
+            .map_err(|e| format!("获取会话失败: {e}"))?
             .ok_or_else(|| "会话不存在".to_string())?
     };
 
@@ -328,7 +351,7 @@ async fn send_message_with_aster(
 
     // 构建消息（如果有 system_prompt 且是第一条消息，注入到消息前面）
     let final_message = if let Some(prompt) = system_prompt {
-        format!("{}\n\n{}", prompt, message)
+        format!("{prompt}\n\n{message}")
     } else {
         message.to_string()
     };
@@ -360,7 +383,7 @@ async fn send_message_with_aster(
                     }
                     Err(e) => {
                         let error_event = TauriAgentEvent::Error {
-                            message: format!("流错误: {}", e),
+                            message: format!("流错误: {e}"),
                         };
                         let _ = app.emit(event_name, &error_event);
                     }
@@ -373,10 +396,10 @@ async fn send_message_with_aster(
         }
         Err(e) => {
             let error_event = TauriAgentEvent::Error {
-                message: format!("Agent 错误: {}", e),
+                message: format!("Agent 错误: {e}"),
             };
             let _ = app.emit(event_name, &error_event);
-            return Err(format!("Agent 错误: {}", e));
+            return Err(format!("Agent 错误: {e}"));
         }
     }
 

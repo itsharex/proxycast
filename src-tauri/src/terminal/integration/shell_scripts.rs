@@ -308,7 +308,7 @@ impl ShellScripts {
     fn ensure_integration_dir(&self) -> Result<(), TerminalError> {
         if !self.integration_dir.exists() {
             fs::create_dir_all(&self.integration_dir)
-                .map_err(|e| TerminalError::Internal(format!("创建集成脚本目录失败: {}", e)))?;
+                .map_err(|e| TerminalError::Internal(format!("创建集成脚本目录失败: {e}")))?;
         }
         Ok(())
     }
@@ -348,11 +348,11 @@ impl ShellScripts {
     fn install_bash_scripts(&self) -> Result<(), TerminalError> {
         let bash_dir = self.integration_dir.join("bash");
         fs::create_dir_all(&bash_dir)
-            .map_err(|e| TerminalError::Internal(format!("创建 bash 目录失败: {}", e)))?;
+            .map_err(|e| TerminalError::Internal(format!("创建 bash 目录失败: {e}")))?;
 
         let script_path = bash_dir.join("proxycast.bash");
         fs::write(&script_path, BASH_INTEGRATION_SCRIPT)
-            .map_err(|e| TerminalError::Internal(format!("写入 bash 脚本失败: {}", e)))?;
+            .map_err(|e| TerminalError::Internal(format!("写入 bash 脚本失败: {e}")))?;
 
         tracing::debug!("[ShellScripts] Bash 脚本已安装: {}", script_path.display());
 
@@ -365,17 +365,17 @@ impl ShellScripts {
     fn install_zsh_scripts(&self) -> Result<(), TerminalError> {
         let zsh_dir = self.integration_dir.join("zsh");
         fs::create_dir_all(&zsh_dir)
-            .map_err(|e| TerminalError::Internal(format!("创建 zsh 目录失败: {}", e)))?;
+            .map_err(|e| TerminalError::Internal(format!("创建 zsh 目录失败: {e}")))?;
 
         // 写入 .zshenv
         let zshenv_path = zsh_dir.join(".zshenv");
         fs::write(&zshenv_path, ZSH_ZSHENV_SCRIPT)
-            .map_err(|e| TerminalError::Internal(format!("写入 .zshenv 失败: {}", e)))?;
+            .map_err(|e| TerminalError::Internal(format!("写入 .zshenv 失败: {e}")))?;
 
         // 写入 .zshrc
         let zshrc_path = zsh_dir.join(".zshrc");
         fs::write(&zshrc_path, ZSH_INTEGRATION_SCRIPT)
-            .map_err(|e| TerminalError::Internal(format!("写入 .zshrc 失败: {}", e)))?;
+            .map_err(|e| TerminalError::Internal(format!("写入 .zshrc 失败: {e}")))?;
 
         tracing::debug!("[ShellScripts] Zsh 脚本已安装: {}", zsh_dir.display());
 
@@ -388,11 +388,11 @@ impl ShellScripts {
     fn install_fish_scripts(&self) -> Result<(), TerminalError> {
         let fish_dir = self.integration_dir.join("fish");
         fs::create_dir_all(&fish_dir)
-            .map_err(|e| TerminalError::Internal(format!("创建 fish 目录失败: {}", e)))?;
+            .map_err(|e| TerminalError::Internal(format!("创建 fish 目录失败: {e}")))?;
 
         let script_path = fish_dir.join("proxycast.fish");
         fs::write(&script_path, FISH_INTEGRATION_SCRIPT)
-            .map_err(|e| TerminalError::Internal(format!("写入 fish 脚本失败: {}", e)))?;
+            .map_err(|e| TerminalError::Internal(format!("写入 fish 脚本失败: {e}")))?;
 
         tracing::debug!("[ShellScripts] Fish 脚本已安装: {}", script_path.display());
 
@@ -403,11 +403,11 @@ impl ShellScripts {
     fn install_pwsh_scripts(&self) -> Result<(), TerminalError> {
         let pwsh_dir = self.integration_dir.join("pwsh");
         fs::create_dir_all(&pwsh_dir)
-            .map_err(|e| TerminalError::Internal(format!("创建 pwsh 目录失败: {}", e)))?;
+            .map_err(|e| TerminalError::Internal(format!("创建 pwsh 目录失败: {e}")))?;
 
         let script_path = pwsh_dir.join("proxycast.ps1");
         fs::write(&script_path, PWSH_INTEGRATION_SCRIPT)
-            .map_err(|e| TerminalError::Internal(format!("写入 pwsh 脚本失败: {}", e)))?;
+            .map_err(|e| TerminalError::Internal(format!("写入 pwsh 脚本失败: {e}")))?;
 
         tracing::debug!(
             "[ShellScripts] PowerShell 脚本已安装: {}",
@@ -690,7 +690,7 @@ impl ShellLaunchBuilder {
         Ok(config
             .arg("-NoExit")
             .arg("-Command")
-            .arg(format!(". '{}'", script_path_str)))
+            .arg(format!(". '{script_path_str}'")))
     }
 }
 

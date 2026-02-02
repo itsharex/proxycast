@@ -187,7 +187,7 @@ fn generate_random_session_id() -> String {
     let n: u64 = u64::from_le_bytes([
         bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
     ]) % 9_000_000_000_000_000_000;
-    format!("-{}", n)
+    format!("-{n}")
 }
 
 /// 获取默认安全设置
@@ -292,15 +292,15 @@ pub fn convert_openai_to_antigravity_with_context(
 ) -> serde_json::Value {
     eprintln!("========== [CONVERT] OpenAI -> Antigravity 转换开始 ==========");
     eprintln!("[CONVERT] 原始模型: {}", request.model);
-    eprintln!("[CONVERT] 项目ID: {}", project_id);
+    eprintln!("[CONVERT] 项目ID: {project_id}");
     eprintln!("[CONVERT] 消息数量: {}", request.messages.len());
     eprintln!("[CONVERT] 流式: {}", request.stream);
 
     let actual_model = model_mapping(&request.model);
-    eprintln!("[CONVERT] 映射后模型: {}", actual_model);
+    eprintln!("[CONVERT] 映射后模型: {actual_model}");
 
     let supports_thinking = model_supports_thinking(actual_model);
-    eprintln!("[CONVERT] 支持思维链: {}", supports_thinking);
+    eprintln!("[CONVERT] 支持思维链: {supports_thinking}");
 
     let mut contents: Vec<GeminiContent> = Vec::new();
     let mut system_instruction: Option<GeminiContent> = None;
@@ -575,15 +575,9 @@ pub fn convert_openai_to_antigravity_with_context(
             "[ANTIGRAVITY] 图片生成模型 {} 已启用 IMAGE 响应模态",
             actual_model
         );
-        eprintln!(
-            "[ANTIGRAVITY] 图片生成模型 {} 已启用 IMAGE 响应模态",
-            actual_model
-        );
+        eprintln!("[ANTIGRAVITY] 图片生成模型 {actual_model} 已启用 IMAGE 响应模态");
     } else {
-        eprintln!(
-            "[ANTIGRAVITY] 模型 {} 不是图片生成模型，不启用 IMAGE 响应模态",
-            actual_model
-        );
+        eprintln!("[ANTIGRAVITY] 模型 {actual_model} 不是图片生成模型，不启用 IMAGE 响应模态");
     }
 
     // 处理 reasoning_effort（思维链配置）
@@ -690,7 +684,7 @@ pub fn convert_openai_to_antigravity_with_context(
 
     // 使用 SessionManager 生成稳定的会话 ID
     let session_id = SessionManager::extract_session_id(request);
-    eprintln!("[CONVERT] 生成的稳定 SessionId: {}", session_id);
+    eprintln!("[CONVERT] 生成的稳定 SessionId: {session_id}");
 
     let inner = AntigravityRequestInner {
         contents,
@@ -950,11 +944,11 @@ pub fn convert_antigravity_to_openai_response(
                                 .unwrap_or("image/png");
 
                             // 将图片作为 data URL 添加到内容中
-                            let image_url = format!("data:{};base64,{}", mime_type, data);
+                            let image_url = format!("data:{mime_type};base64,{data}");
                             if !content.is_empty() {
                                 content.push_str("\n\n");
                             }
-                            content.push_str(&format!("![image]({})", image_url));
+                            content.push_str(&format!("![image]({image_url})"));
                         }
                     }
                 }
@@ -1181,7 +1175,7 @@ pub fn convert_antigravity_image_response(
                                 }
                             } else {
                                 // 构建 data URL
-                                let data_url = format!("data:{};base64,{}", mime_type, data);
+                                let data_url = format!("data:{mime_type};base64,{data}");
                                 ImageData {
                                     b64_json: None,
                                     url: Some(data_url),
@@ -1532,7 +1526,7 @@ mod image_property_tests {
 
             let result = convert_antigravity_image_response(&antigravity_resp, &response_format).unwrap();
 
-            prop_assert!(result.data.len() >= 1);
+            prop_assert!(!result.data.is_empty());
 
             if response_format == "b64_json" {
                 // b64_json 格式
@@ -1546,7 +1540,7 @@ mod image_property_tests {
 
                 // 验证 data URL 格式
                 let url = result.data[0].url.as_ref().unwrap();
-                let expected_url = format!("data:{};base64,{}", mime_type, base64_data);
+                let expected_url = format!("data:{mime_type};base64,{base64_data}");
                 prop_assert_eq!(url, &expected_url);
             }
         }

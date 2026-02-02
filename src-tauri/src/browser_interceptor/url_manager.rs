@@ -50,7 +50,7 @@ impl UrlManager {
         // 添加到当前拦截列表
         {
             let mut urls = self.intercepted_urls.write().map_err(|e| {
-                BrowserInterceptorError::StateError(format!("添加拦截 URL 失败: {}", e))
+                BrowserInterceptorError::StateError(format!("添加拦截 URL 失败: {e}"))
             })?;
             urls.insert(id.clone(), intercepted_url.clone());
         }
@@ -58,7 +58,7 @@ impl UrlManager {
         // 添加到历史记录
         {
             let mut history = self.history.write().map_err(|e| {
-                BrowserInterceptorError::StateError(format!("添加历史记录失败: {}", e))
+                BrowserInterceptorError::StateError(format!("添加历史记录失败: {e}"))
             })?;
 
             history.push(intercepted_url);
@@ -82,9 +82,10 @@ impl UrlManager {
 
     /// 获取所有当前拦截的 URL
     pub fn get_intercepted_urls(&self) -> Result<Vec<InterceptedUrl>> {
-        let urls = self.intercepted_urls.read().map_err(|e| {
-            BrowserInterceptorError::StateError(format!("读取拦截 URL 失败: {}", e))
-        })?;
+        let urls = self
+            .intercepted_urls
+            .read()
+            .map_err(|e| BrowserInterceptorError::StateError(format!("读取拦截 URL 失败: {e}")))?;
 
         let mut result: Vec<InterceptedUrl> = urls.values().cloned().collect();
         result.sort_by(|a, b| b.timestamp.cmp(&a.timestamp)); // 按时间倒序排列
@@ -94,18 +95,20 @@ impl UrlManager {
 
     /// 获取指定 ID 的拦截 URL
     pub fn get_intercepted_url(&self, id: &str) -> Result<Option<InterceptedUrl>> {
-        let urls = self.intercepted_urls.read().map_err(|e| {
-            BrowserInterceptorError::StateError(format!("读取拦截 URL 失败: {}", e))
-        })?;
+        let urls = self
+            .intercepted_urls
+            .read()
+            .map_err(|e| BrowserInterceptorError::StateError(format!("读取拦截 URL 失败: {e}")))?;
 
         Ok(urls.get(id).cloned())
     }
 
     /// 标记 URL 为已复制
     pub fn mark_as_copied(&self, id: &str) -> Result<()> {
-        let mut urls = self.intercepted_urls.write().map_err(|e| {
-            BrowserInterceptorError::StateError(format!("更新拦截 URL 失败: {}", e))
-        })?;
+        let mut urls = self
+            .intercepted_urls
+            .write()
+            .map_err(|e| BrowserInterceptorError::StateError(format!("更新拦截 URL 失败: {e}")))?;
 
         if let Some(url) = urls.get_mut(id) {
             url.copied = true;
@@ -117,9 +120,10 @@ impl UrlManager {
 
     /// 标记 URL 为已在浏览器中打开
     pub fn mark_as_opened(&self, id: &str) -> Result<()> {
-        let mut urls = self.intercepted_urls.write().map_err(|e| {
-            BrowserInterceptorError::StateError(format!("更新拦截 URL 失败: {}", e))
-        })?;
+        let mut urls = self
+            .intercepted_urls
+            .write()
+            .map_err(|e| BrowserInterceptorError::StateError(format!("更新拦截 URL 失败: {e}")))?;
 
         if let Some(url) = urls.get_mut(id) {
             url.opened_in_browser = true;
@@ -131,16 +135,17 @@ impl UrlManager {
 
     /// 忽略（移除）指定的 URL
     pub fn dismiss_url(&self, id: &str) -> Result<()> {
-        let mut urls = self.intercepted_urls.write().map_err(|e| {
-            BrowserInterceptorError::StateError(format!("移除拦截 URL 失败: {}", e))
-        })?;
+        let mut urls = self
+            .intercepted_urls
+            .write()
+            .map_err(|e| BrowserInterceptorError::StateError(format!("移除拦截 URL 失败: {e}")))?;
 
         if let Some(mut url) = urls.remove(id) {
             url.dismissed = true;
 
             // 更新历史记录中的状态
             let mut history = self.history.write().map_err(|e| {
-                BrowserInterceptorError::StateError(format!("更新历史记录失败: {}", e))
+                BrowserInterceptorError::StateError(format!("更新历史记录失败: {e}"))
             })?;
 
             if let Some(history_url) = history.iter_mut().find(|u| u.id == id) {
@@ -155,9 +160,10 @@ impl UrlManager {
 
     /// 清除所有当前拦截的 URL
     pub fn clear_intercepted_urls(&self) -> Result<()> {
-        let mut urls = self.intercepted_urls.write().map_err(|e| {
-            BrowserInterceptorError::StateError(format!("清除拦截 URL 失败: {}", e))
-        })?;
+        let mut urls = self
+            .intercepted_urls
+            .write()
+            .map_err(|e| BrowserInterceptorError::StateError(format!("清除拦截 URL 失败: {e}")))?;
 
         let count = urls.len();
         urls.clear();
@@ -171,7 +177,7 @@ impl UrlManager {
         let history = self
             .history
             .read()
-            .map_err(|e| BrowserInterceptorError::StateError(format!("读取历史记录失败: {}", e)))?;
+            .map_err(|e| BrowserInterceptorError::StateError(format!("读取历史记录失败: {e}")))?;
 
         let mut result = history.clone();
         result.sort_by(|a, b| b.timestamp.cmp(&a.timestamp)); // 按时间倒序排列
@@ -188,7 +194,7 @@ impl UrlManager {
         let history = self
             .history
             .read()
-            .map_err(|e| BrowserInterceptorError::StateError(format!("搜索历史记录失败: {}", e)))?;
+            .map_err(|e| BrowserInterceptorError::StateError(format!("搜索历史记录失败: {e}")))?;
 
         let query_lower = query.to_lowercase();
         let mut result: Vec<InterceptedUrl> = history
@@ -211,14 +217,15 @@ impl UrlManager {
 
     /// 获取统计信息
     pub fn get_statistics(&self) -> Result<UrlStatistics> {
-        let urls = self.intercepted_urls.read().map_err(|e| {
-            BrowserInterceptorError::StateError(format!("读取拦截 URL 失败: {}", e))
-        })?;
+        let urls = self
+            .intercepted_urls
+            .read()
+            .map_err(|e| BrowserInterceptorError::StateError(format!("读取拦截 URL 失败: {e}")))?;
 
         let history = self
             .history
             .read()
-            .map_err(|e| BrowserInterceptorError::StateError(format!("读取历史记录失败: {}", e)))?;
+            .map_err(|e| BrowserInterceptorError::StateError(format!("读取历史记录失败: {e}")))?;
 
         let current_count = urls.len();
         let total_intercepted = history.len();
@@ -246,7 +253,7 @@ impl UrlManager {
     pub fn save_to_storage(&self) -> Result<()> {
         if let Some(storage_path) = &self.storage_path {
             let history = self.history.read().map_err(|e| {
-                BrowserInterceptorError::StateError(format!("读取历史记录失败: {}", e))
+                BrowserInterceptorError::StateError(format!("读取历史记录失败: {e}"))
             })?;
 
             let storage_data = UrlStorageData {
@@ -255,19 +262,18 @@ impl UrlManager {
                 saved_at: Utc::now(),
             };
 
-            let json_data = serde_json::to_string_pretty(&storage_data).map_err(|e| {
-                BrowserInterceptorError::StateError(format!("序列化数据失败: {}", e))
-            })?;
+            let json_data = serde_json::to_string_pretty(&storage_data)
+                .map_err(|e| BrowserInterceptorError::StateError(format!("序列化数据失败: {e}")))?;
 
             // 确保目录存在
             if let Some(parent) = Path::new(storage_path).parent() {
                 fs::create_dir_all(parent).map_err(|e| {
-                    BrowserInterceptorError::StateError(format!("创建目录失败: {}", e))
+                    BrowserInterceptorError::StateError(format!("创建目录失败: {e}"))
                 })?;
             }
 
             fs::write(storage_path, json_data)
-                .map_err(|e| BrowserInterceptorError::StateError(format!("写入文件失败: {}", e)))?;
+                .map_err(|e| BrowserInterceptorError::StateError(format!("写入文件失败: {e}")))?;
 
             tracing::info!("已保存历史记录到: {}", storage_path);
         }
@@ -280,17 +286,17 @@ impl UrlManager {
         if let Some(storage_path) = &self.storage_path {
             if Path::new(storage_path).exists() {
                 let json_data = fs::read_to_string(storage_path).map_err(|e| {
-                    BrowserInterceptorError::StateError(format!("读取文件失败: {}", e))
+                    BrowserInterceptorError::StateError(format!("读取文件失败: {e}"))
                 })?;
 
                 let storage_data: UrlStorageData =
                     serde_json::from_str(&json_data).map_err(|e| {
-                        BrowserInterceptorError::StateError(format!("反序列化数据失败: {}", e))
+                        BrowserInterceptorError::StateError(format!("反序列化数据失败: {e}"))
                     })?;
 
                 {
                     let mut history = self.history.write().map_err(|e| {
-                        BrowserInterceptorError::StateError(format!("写入历史记录失败: {}", e))
+                        BrowserInterceptorError::StateError(format!("写入历史记录失败: {e}"))
                     })?;
                     *history = storage_data.history;
                 }

@@ -197,19 +197,19 @@ pub enum FilterToken {
 impl fmt::Display for FilterToken {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FilterToken::Model(s) => write!(f, "~m {}", s),
-            FilterToken::Provider(s) => write!(f, "~p {}", s),
+            FilterToken::Model(s) => write!(f, "~m {s}"),
+            FilterToken::Provider(s) => write!(f, "~p {s}"),
             FilterToken::State(s) => write!(f, "~s {}", state_to_string(s)),
             FilterToken::HasError => write!(f, "~e"),
             FilterToken::HasToolCalls => write!(f, "~t"),
             FilterToken::HasThinking => write!(f, "~k"),
             FilterToken::Starred => write!(f, "~starred"),
-            FilterToken::Tag(s) => write!(f, "~tag {}", s),
-            FilterToken::Body(s) => write!(f, "~b {}", s),
-            FilterToken::BodyRequest(s) => write!(f, "~bq {}", s),
-            FilterToken::BodyResponse(s) => write!(f, "~bs {}", s),
-            FilterToken::Tokens(c) => write!(f, "~tokens {}", c),
-            FilterToken::Latency(c) => write!(f, "~latency {}", c),
+            FilterToken::Tag(s) => write!(f, "~tag {s}"),
+            FilterToken::Body(s) => write!(f, "~b {s}"),
+            FilterToken::BodyRequest(s) => write!(f, "~bq {s}"),
+            FilterToken::BodyResponse(s) => write!(f, "~bs {s}"),
+            FilterToken::Tokens(c) => write!(f, "~tokens {c}"),
+            FilterToken::Latency(c) => write!(f, "~latency {c}"),
             FilterToken::And => write!(f, "&"),
             FilterToken::Or => write!(f, "|"),
             FilterToken::Not => write!(f, "!"),
@@ -262,10 +262,10 @@ pub enum FilterExpr {
 impl fmt::Display for FilterExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FilterExpr::Token(t) => write!(f, "{}", t),
-            FilterExpr::And(left, right) => write!(f, "({} & {})", left, right),
-            FilterExpr::Or(left, right) => write!(f, "({} | {})", left, right),
-            FilterExpr::Not(expr) => write!(f, "!{}", expr),
+            FilterExpr::Token(t) => write!(f, "{t}"),
+            FilterExpr::And(left, right) => write!(f, "({left} & {right})"),
+            FilterExpr::Or(left, right) => write!(f, "({left} | {right})"),
+            FilterExpr::Not(expr) => write!(f, "!{expr}"),
         }
     }
 }
@@ -568,9 +568,8 @@ impl Parser {
 
     /// 检查当前 Token 是否匹配
     fn check(&self, token: &FilterToken) -> bool {
-        self.peek().map_or(false, |t| {
-            std::mem::discriminant(t) == std::mem::discriminant(token)
-        })
+        self.peek()
+            .is_some_and(|t| std::mem::discriminant(t) == std::mem::discriminant(token))
     }
 
     /// 解析表达式
@@ -635,7 +634,7 @@ impl Parser {
                 // 检查是否是过滤器 Token
                 match token {
                     FilterToken::And | FilterToken::Or | FilterToken::RightParen => Err(
-                        FilterParseError::UnexpectedToken(format!("{}", token), self.pos),
+                        FilterParseError::UnexpectedToken(format!("{token}"), self.pos),
                     ),
                     _ => {
                         let token = self.advance().unwrap();
@@ -723,11 +722,10 @@ impl FilterParser {
             FilterToken::HasToolCalls => flow
                 .response
                 .as_ref()
-                .map_or(false, |r| !r.tool_calls.is_empty()),
-            FilterToken::HasThinking => flow
-                .response
-                .as_ref()
-                .map_or(false, |r| r.thinking.is_some()),
+                .is_some_and(|r| !r.tool_calls.is_empty()),
+            FilterToken::HasThinking => {
+                flow.response.as_ref().is_some_and(|r| r.thinking.is_some())
+            }
             FilterToken::Starred => flow.annotations.starred,
             FilterToken::Tag(tag) => flow
                 .annotations
@@ -740,7 +738,7 @@ impl FilterParser {
                     .response
                     .as_ref()
                     .map_or(String::new(), |r| r.content.clone());
-                let combined = format!("{}\n{}", request_text, response_text);
+                let combined = format!("{request_text}\n{response_text}");
 
                 if let Ok(re) = Regex::new(pattern) {
                     re.is_match(&combined)
@@ -896,7 +894,7 @@ pub const FILTER_HELP: &[(&str, &str)] = &[
 pub fn get_filter_help() -> String {
     let mut help = String::from("过滤表达式语法:\n\n");
     for (syntax, desc) in FILTER_HELP {
-        help.push_str(&format!("  {:<20} {}\n", syntax, desc));
+        help.push_str(&format!("  {syntax:<20} {desc}\n"));
     }
     help.push_str("\n示例:\n");
     help.push_str("  ~m claude              模型名称包含 'claude'\n");
@@ -1237,7 +1235,7 @@ mod tests {
     #[test]
     fn test_display_filter_expr() {
         let expr = FilterParser::parse("~p kiro & ~m claude").unwrap();
-        let display = format!("{}", expr);
+        let display = format!("{expr}");
         assert!(display.contains("~p kiro"));
         assert!(display.contains("~m claude"));
     }
@@ -1246,9 +1244,9 @@ mod tests {
     fn test_round_trip_simple() {
         let original = "~m claude";
         let expr = FilterParser::parse(original).unwrap();
-        let display = format!("{}", expr);
+        let display = format!("{expr}");
         let reparsed = FilterParser::parse(&display).unwrap();
-        assert_eq!(format!("{}", expr), format!("{}", reparsed));
+        assert_eq!(format!("{expr}"), format!("{}", reparsed));
     }
 }
 
@@ -1419,7 +1417,7 @@ mod property_tests {
         ) {
             // 测试模型过滤器正确性
             let model = flow.request.model.clone();
-            let expr_str = format!("~m {}", model);
+            let expr_str = format!("~m {model}");
             let expr = FilterParser::parse(&expr_str).unwrap();
             let filter = FilterParser::compile(&expr);
 
@@ -1438,7 +1436,7 @@ mod property_tests {
         ) {
             // 测试提供商过滤器正确性
             let provider_str = format!("{:?}", flow.metadata.provider).to_lowercase();
-            let expr_str = format!("~p {}", provider_str);
+            let expr_str = format!("~p {provider_str}");
             let expr = FilterParser::parse(&expr_str).unwrap();
             let filter = FilterParser::compile(&expr);
 
@@ -1456,7 +1454,7 @@ mod property_tests {
         ) {
             // 测试状态过滤器正确性
             let state_str = state_to_string(&flow.state);
-            let expr_str = format!("~s {}", state_str);
+            let expr_str = format!("~s {state_str}");
             let expr = FilterParser::parse(&expr_str).unwrap();
             let filter = FilterParser::compile(&expr);
 
@@ -1496,7 +1494,7 @@ mod property_tests {
             let has_tool_calls = flow
                 .response
                 .as_ref()
-                .map_or(false, |r| !r.tool_calls.is_empty());
+                .is_some_and(|r| !r.tool_calls.is_empty());
 
             prop_assert_eq!(
                 result,
@@ -1517,7 +1515,7 @@ mod property_tests {
             let has_thinking = flow
                 .response
                 .as_ref()
-                .map_or(false, |r| r.thinking.is_some());
+                .is_some_and(|r| r.thinking.is_some());
 
             prop_assert_eq!(
                 result,
@@ -1554,7 +1552,7 @@ mod property_tests {
                 .map_or(0, |r| r.usage.total_tokens as i64);
 
             // 测试大于
-            let expr_str = format!("~tokens >{}", threshold);
+            let expr_str = format!("~tokens >{threshold}");
             let expr = FilterParser::parse(&expr_str).unwrap();
             let filter = FilterParser::compile(&expr);
             let result = filter(&flow);
@@ -1578,7 +1576,7 @@ mod property_tests {
             let duration_ms = flow.timestamps.duration_ms as i64;
 
             // 测试大于
-            let expr_str = format!("~latency >{}ms", threshold);
+            let expr_str = format!("~latency >{threshold}ms");
             let expr = FilterParser::parse(&expr_str).unwrap();
             let filter = FilterParser::compile(&expr);
             let result = filter(&flow);
@@ -1601,7 +1599,7 @@ mod property_tests {
             let model = flow.request.model.clone();
             let provider_str = format!("{:?}", flow.metadata.provider).to_lowercase();
 
-            let expr_str = format!("~m {} & ~p {}", model, provider_str);
+            let expr_str = format!("~m {model} & ~p {provider_str}");
             let expr = FilterParser::parse(&expr_str).unwrap();
             let filter = FilterParser::compile(&expr);
 
@@ -1621,7 +1619,7 @@ mod property_tests {
             let model = flow.request.model.clone();
 
             // 使用一个匹配的条件和一个不匹配的条件
-            let expr_str = format!("~m {} | ~m nonexistent-model-xyz", model);
+            let expr_str = format!("~m {model} | ~m nonexistent-model-xyz");
             let expr = FilterParser::parse(&expr_str).unwrap();
             let filter = FilterParser::compile(&expr);
 
@@ -1725,7 +1723,7 @@ mod property_tests {
             flow in arb_llm_flow(),
         ) {
             // 序列化为字符串
-            let expr_str = format!("{}", expr);
+            let expr_str = format!("{expr}");
 
             // 重新解析
             let reparsed = FilterParser::parse(&expr_str);
@@ -1761,7 +1759,7 @@ mod property_tests {
             flow in arb_llm_flow(),
         ) {
             let expr = FilterExpr::Token(token);
-            let expr_str = format!("{}", expr);
+            let expr_str = format!("{expr}");
 
             // 重新解析
             let reparsed = FilterParser::parse(&expr_str);
@@ -1844,7 +1842,7 @@ mod property_tests {
         fn prop_invalid_filter_returns_error(
             filter_name in arb_invalid_filter_name(),
         ) {
-            let expr_str = format!("~{}", filter_name);
+            let expr_str = format!("~{filter_name}");
             let result = FilterParser::parse(&expr_str);
 
             // 应该返回错误
@@ -1868,7 +1866,7 @@ mod property_tests {
         fn prop_invalid_state_returns_error(
             state in arb_invalid_state(),
         ) {
-            let expr_str = format!("~s {}", state);
+            let expr_str = format!("~s {state}");
             let result = FilterParser::parse(&expr_str);
 
             // 应该返回错误
@@ -1892,7 +1890,7 @@ mod property_tests {
         fn prop_invalid_comparison_op_returns_error(
             op in arb_invalid_comparison_op(),
         ) {
-            let expr_str = format!("~tokens {}100", op);
+            let expr_str = format!("~tokens {op}100");
             let result = FilterParser::parse(&expr_str);
 
             // 应该返回错误
@@ -1909,7 +1907,7 @@ mod property_tests {
         ) {
             // 生成不匹配的括号
             let open_parens: String = (0..depth).map(|_| '(').collect();
-            let expr_str = format!("{}~e", open_parens);
+            let expr_str = format!("{open_parens}~e");
             let result = FilterParser::parse(&expr_str);
 
             // 应该返回错误
@@ -1955,7 +1953,7 @@ mod property_tests {
             ],
         ) {
             // 缺少参数的过滤器
-            let expr_str = format!("~{}", filter);
+            let expr_str = format!("~{filter}");
             let result = FilterParser::parse(&expr_str);
 
             // 应该返回错误（缺少参数）

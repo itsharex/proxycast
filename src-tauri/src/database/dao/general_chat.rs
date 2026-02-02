@@ -27,7 +27,7 @@ impl GeneralChatDao {
         let metadata_json = session
             .metadata
             .as_ref()
-            .map(|m| serde_json::to_string(m))
+            .map(serde_json::to_string)
             .transpose()
             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
 
@@ -167,14 +167,14 @@ impl GeneralChatDao {
         let blocks_json = message
             .blocks
             .as_ref()
-            .map(|b| serde_json::to_string(b))
+            .map(serde_json::to_string)
             .transpose()
             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
 
         let metadata_json = message
             .metadata
             .as_ref()
-            .map(|m| serde_json::to_string(m))
+            .map(serde_json::to_string)
             .transpose()
             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
 
@@ -225,8 +225,7 @@ impl GeneralChatDao {
                      FROM general_chat_messages
                      WHERE session_id = ?1 AND id < ?2
                      ORDER BY created_at DESC
-                     LIMIT {}",
-                    lim
+                     LIMIT {lim}"
                 )
             }
             (Some(lim), None) => {
@@ -235,8 +234,7 @@ impl GeneralChatDao {
                      FROM general_chat_messages
                      WHERE session_id = ?1
                      ORDER BY created_at DESC
-                     LIMIT {}",
-                    lim
+                     LIMIT {lim}"
                 )
             }
             (None, Some(_)) => {
@@ -526,10 +524,10 @@ mod tests {
 
         for i in 1..=5 {
             let msg = create_test_message(
-                &format!("msg-{}", i),
+                &format!("msg-{i}"),
                 "session-1",
                 MessageRole::User,
-                &format!("消息 {}", i),
+                &format!("消息 {i}"),
             );
             GeneralChatDao::add_message(&conn, &msg).unwrap();
         }

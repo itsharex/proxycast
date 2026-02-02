@@ -74,7 +74,7 @@ pub fn check_config_sync_status(
     // 解析 app_type
     let app_type_enum: AppType = app_type
         .parse()
-        .map_err(|e| format!("Invalid app type: {}", e))?;
+        .map_err(|e| format!("Invalid app type: {e}"))?;
 
     // 获取当前 ProxyCast 中设置的 provider
     let current_provider = SwitchService::get_current_provider(&db, &app_type)?
@@ -83,7 +83,7 @@ pub fn check_config_sync_status(
 
     // 检查同步状态
     check_config_sync(&app_type_enum, &current_provider)
-        .map_err(|e| format!("Failed to check config sync: {}", e))
+        .map_err(|e| format!("Failed to check config sync: {e}"))
 }
 
 /// 从外部配置同步到 ProxyCast
@@ -95,17 +95,14 @@ pub fn sync_from_external_config(
     // 解析 app_type
     let app_type_enum: AppType = app_type
         .parse()
-        .map_err(|e| format!("Invalid app type: {}", e))?;
+        .map_err(|e| format!("Invalid app type: {e}"))?;
 
     // 从外部配置获取 provider
     let external_provider = sync_from_external(&app_type_enum)
-        .map_err(|e| format!("Failed to sync from external: {}", e))?;
+        .map_err(|e| format!("Failed to sync from external: {e}"))?;
 
     // 切换到外部检测到的 provider
     SwitchService::switch_provider(&db, &app_type, &external_provider)?;
 
-    Ok(format!(
-        "已同步到外部配置的 provider: {}",
-        external_provider
-    ))
+    Ok(format!("已同步到外部配置的 provider: {external_provider}"))
 }

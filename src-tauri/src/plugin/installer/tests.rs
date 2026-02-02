@@ -11,7 +11,7 @@ use zip::ZipWriter;
 
 /// 创建测试用的插件包
 fn create_test_plugin_zip(dir: &TempDir, plugin_id: &str, version: &str) -> std::path::PathBuf {
-    let zip_path = dir.path().join(format!("{}.zip", plugin_id));
+    let zip_path = dir.path().join(format!("{plugin_id}.zip"));
     let file = fs::File::create(&zip_path).unwrap();
     let mut zip = ZipWriter::new(file);
 
@@ -130,15 +130,15 @@ mod registry_tests {
         // 注册多个插件
         for i in 1..=3 {
             let plugin = InstalledPlugin {
-                id: format!("plugin-{}", i),
-                name: format!("Plugin {}", i),
+                id: format!("plugin-{i}"),
+                name: format!("Plugin {i}"),
                 version: "1.0.0".to_string(),
-                description: format!("Plugin {} description", i),
+                description: format!("Plugin {i} description"),
                 author: Some("Author".to_string()),
-                install_path: temp_dir.path().join(format!("plugin-{}", i)),
+                install_path: temp_dir.path().join(format!("plugin-{i}")),
                 installed_at: chrono::Utc::now(),
                 source: InstallSource::Local {
-                    path: format!("/tmp/plugin-{}.zip", i),
+                    path: format!("/tmp/plugin-{i}.zip"),
                 },
                 enabled: true,
             };

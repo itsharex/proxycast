@@ -39,12 +39,12 @@ pub async fn get_available_routes(
             crate::models::route_model::RouteEndpoint {
                 path: "/v1/messages".to_string(),
                 protocol: "claude".to_string(),
-                url: format!("{}/v1/messages", base_url),
+                url: format!("{base_url}/v1/messages"),
             },
             crate::models::route_model::RouteEndpoint {
                 path: "/v1/chat/completions".to_string(),
                 protocol: "openai".to_string(),
-                url: format!("{}/v1/chat/completions", base_url),
+                url: format!("{base_url}/v1/chat/completions"),
             },
         ],
         tags: vec!["默认".to_string()],

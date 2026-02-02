@@ -59,7 +59,7 @@ impl PluginDownloader {
         // 创建目标文件
         let mut file = tokio::fs::File::create(dest)
             .await
-            .map_err(|e| InstallError::IoError(e))?;
+            .map_err(InstallError::IoError)?;
 
         // 流式下载
         use tokio::io::AsyncWriteExt;
@@ -70,7 +70,7 @@ impl PluginDownloader {
             let chunk = chunk.map_err(|e| InstallError::NetworkError(e.to_string()))?;
             file.write_all(&chunk)
                 .await
-                .map_err(|e| InstallError::IoError(e))?;
+                .map_err(InstallError::IoError)?;
 
             downloaded += chunk.len() as u64;
 
@@ -95,7 +95,7 @@ impl PluginDownloader {
             progress.on_progress(InstallProgress::downloading(percent, message));
         }
 
-        file.flush().await.map_err(|e| InstallError::IoError(e))?;
+        file.flush().await.map_err(InstallError::IoError)?;
 
         progress.on_progress(InstallProgress::downloading(100, "下载完成"));
 
@@ -133,8 +133,7 @@ impl PluginDownloader {
         }
 
         Err(InstallError::UrlParseError(format!(
-            "无法解析 GitHub URL: {}",
-            url
+            "无法解析 GitHub URL: {url}"
         )))
     }
 
@@ -350,10 +349,7 @@ mod property_tests {
             "[a-z][a-z0-9_-]{0,49}\\.zip",           // asset
         )
             .prop_map(|(owner, repo, tag, asset)| {
-                format!(
-                    "https://github.com/{}/{}/releases/download/{}/{}",
-                    owner, repo, tag, asset
-                )
+                format!("https://github.com/{owner}/{repo}/releases/download/{tag}/{asset}")
             })
     }
 
@@ -365,7 +361,7 @@ mod property_tests {
             "v[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}", // tag
         )
             .prop_map(|(owner, repo, tag)| {
-                format!("https://github.com/{}/{}/releases/tag/{}", owner, repo, tag)
+                format!("https://github.com/{owner}/{repo}/releases/tag/{tag}")
             })
     }
 
@@ -377,7 +373,7 @@ mod property_tests {
             "v[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}", // tag
         )
             .prop_map(|(owner, repo, _tag)| {
-                format!("{}/@{}", owner, repo)
+                format!("{owner}/@{repo}")
                     .replace("/@", &format!("/{}@", repo.chars().next().unwrap_or('r')))
             })
             .prop_map(|_| "owner/repo@v1.0.0".to_string()) // 简化生成
@@ -389,7 +385,7 @@ mod property_tests {
             "[a-z][a-z0-9_-]{0,38}", // owner
             "[a-z][a-z0-9_-]{0,99}", // repo
         )
-            .prop_map(|(owner, repo)| format!("{}/{}", owner, repo))
+            .prop_map(|(owner, repo)| format!("{owner}/{repo}"))
     }
 
     proptest! {

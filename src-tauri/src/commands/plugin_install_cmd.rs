@@ -69,7 +69,7 @@ pub async fn install_plugin_from_file<R: Runtime>(
         return Ok(InstallResult {
             success: false,
             plugin: None,
-            error: Some(format!("文件不存在: {}", file_path)),
+            error: Some(format!("文件不存在: {file_path}")),
         });
     }
 

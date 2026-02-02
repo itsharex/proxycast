@@ -26,17 +26,13 @@ use super::models::{LLMFlow, LLMRequest, LLMResponse};
 /// 超时动作
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum TimeoutAction {
     /// 超时后继续处理
+    #[default]
     Continue,
     /// 超时后取消请求
     Cancel,
-}
-
-impl Default for TimeoutAction {
-    fn default() -> Self {
-        TimeoutAction::Continue
-    }
 }
 
 /// 拦截配置
@@ -100,8 +96,10 @@ pub enum InterceptType {
 /// 拦截状态
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum InterceptState {
     /// 等待用户操作
+    #[default]
     Pending,
     /// 用户正在编辑
     Editing,
@@ -111,12 +109,6 @@ pub enum InterceptState {
     Cancelled,
     /// 已超时
     TimedOut,
-}
-
-impl Default for InterceptState {
-    fn default() -> Self {
-        InterceptState::Pending
-    }
 }
 
 // ============================================================================
@@ -1158,20 +1150,20 @@ mod property_tests {
     /// 生成随机的过滤表达式
     fn arb_filter_expr() -> impl Strategy<Value = String> {
         prop_oneof![
-            arb_model_name().prop_map(|m| format!("~m {}", m)),
+            arb_model_name().prop_map(|m| format!("~m {m}")),
             prop_oneof![
                 Just("kiro".to_string()),
                 Just("openai".to_string()),
                 Just("claude".to_string()),
                 Just("gemini".to_string()),
             ]
-            .prop_map(|p| format!("~p {}", p)),
+            .prop_map(|p| format!("~p {p}")),
             Just("~e".to_string()),
             Just("~t".to_string()),
             Just("~k".to_string()),
             Just("~starred".to_string()),
-            (0i64..50000i64).prop_map(|n| format!("~tokens >{}", n)),
-            (0i64..30000i64).prop_map(|n| format!("~latency >{}ms", n)),
+            (0i64..50000i64).prop_map(|n| format!("~tokens >{n}")),
+            (0i64..30000i64).prop_map(|n| format!("~latency >{n}ms")),
         ]
     }
 
@@ -1303,7 +1295,7 @@ mod property_tests {
                 // 使用模型过滤器
                 let config = InterceptConfig {
                     enabled: true,
-                    filter_expr: Some(format!("~m {}", model)),
+                    filter_expr: Some(format!("~m {model}")),
                     intercept_request: true,
                     ..Default::default()
                 };
@@ -1333,7 +1325,7 @@ mod property_tests {
                 // 使用提供商过滤器
                 let config = InterceptConfig {
                     enabled: true,
-                    filter_expr: Some(format!("~p {}", provider_str)),
+                    filter_expr: Some(format!("~p {provider_str}")),
                     intercept_request: true,
                     ..Default::default()
                 };
@@ -1422,7 +1414,7 @@ mod property_tests {
                 // 使用 Token 过滤器
                 let config = InterceptConfig {
                     enabled: true,
-                    filter_expr: Some(format!("~tokens >{}", threshold)),
+                    filter_expr: Some(format!("~tokens >{threshold}")),
                     intercept_request: true,
                     ..Default::default()
                 };
@@ -1454,7 +1446,7 @@ mod property_tests {
                 // 使用延迟过滤器
                 let config = InterceptConfig {
                     enabled: true,
-                    filter_expr: Some(format!("~latency >{}ms", threshold)),
+                    filter_expr: Some(format!("~latency >{threshold}ms")),
                     intercept_request: true,
                     ..Default::default()
                 };

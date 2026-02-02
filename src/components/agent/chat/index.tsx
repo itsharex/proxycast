@@ -10,6 +10,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import styled from "styled-components";
 import { useAgentChat } from "./hooks/useAgentChat";
 import { useSessionFiles } from "./hooks/useSessionFiles";
+import { useContentSync } from "./hooks/useContentSync";
 import { ChatNavbar } from "./components/ChatNavbar";
 import { ChatSidebar } from "./components/ChatSidebar";
 import { ChatSettings } from "./components/ChatSettings";
@@ -52,7 +53,11 @@ import {
   type Project,
   type ProjectType,
 } from "@/lib/api/project";
-import { getProjectMemory, type ProjectMemory } from "@/lib/api/memory";
+import {
+  getProjectMemory,
+  type ProjectMemory,
+  type Character,
+} from "@/lib/api/memory";
 
 import type { MessageImage } from "./types";
 import type { ThemeType, LayoutMode } from "@/components/content-creator/types";
@@ -184,6 +189,11 @@ export function AgentChatPage({
     null,
   );
 
+  // 引用的角色列表（用于注入到消息中）
+  const [mentionedCharacters, setMentionedCharacters] = useState<Character[]>(
+    [],
+  );
+
   // 用于追踪已处理的消息 ID，避免重复处理
   const processedMessageIds = useRef<Set<string>>(new Set());
 
@@ -197,6 +207,13 @@ export function AgentChatPage({
     mappedTheme,
     creationMode,
   );
+
+  // 内容同步 Hook
+  const { syncContent, syncStatus } = useContentSync({
+    debounceMs: 2000,
+    autoRetry: true,
+    retryDelayMs: 5000,
+  });
 
   // 判断是否为内容创作模式
   const isContentCreationMode = isContentCreationTheme(activeTheme);
@@ -321,6 +338,53 @@ export function AgentChatPage({
     creationMode,
     autoInit: true,
   });
+
+  // 监听画布状态变化，自动同步到 Content
+  useEffect(() => {
+    if (!canvasState) return;
+
+    // 提取画布内容
+    let content = "";
+    try {
+      switch (canvasState.type) {
+        case "document":
+          content = canvasState.content || "";
+          break;
+        case "novel":
+          content = JSON.stringify(canvasState.chapters);
+          break;
+        case "script":
+          content = JSON.stringify(canvasState.scenes);
+          break;
+        case "music":
+          content = JSON.stringify(canvasState.sections);
+          break;
+        case "poster":
+          content = JSON.stringify(canvasState.pages);
+          break;
+        default:
+          content = JSON.stringify(canvasState);
+      }
+
+      // 如果有 contentId，直接同步
+      if (contentId && content) {
+        syncContent(contentId, content);
+      }
+      // 如果没有 contentId 但有 projectId，自动创建 Content
+      else if (!contentId && projectId && content && project) {
+        // 只在内容不为空时创建
+        const isEmpty =
+          !content || content === "" || content === "[]" || content === "{}";
+        if (!isEmpty) {
+          console.log("[AgentChatPage] 自动创建 Content 记录");
+          // TODO: 实现自动创建 Content 的逻辑
+          // 这里需要调用 createContent API，但为了避免重复创建，需要添加防抖和状态管理
+        }
+      }
+    } catch (error) {
+      console.error("提取画布内容失败:", error);
+    }
+  }, [canvasState, contentId, projectId, project, syncContent]);
 
   // 追踪已恢复元数据和文件的会话 ID
   const restoredMetaSessionId = useRef<string | null>(null);
@@ -534,11 +598,28 @@ export function AgentChatPage({
       thinking?: boolean,
     ) => {
       if (!input.trim() && (!images || images.length === 0)) return;
-      const text = input;
+      let text = input;
+
+      // 如果有引用的角色，注入角色信息
+      if (mentionedCharacters.length > 0) {
+        const characterContext = mentionedCharacters
+          .map((char) => {
+            let context = `角色：${char.name}`;
+            if (char.description) context += `\n简介：${char.description}`;
+            if (char.personality) context += `\n性格：${char.personality}`;
+            if (char.background) context += `\n背景：${char.background}`;
+            return context;
+          })
+          .join("\n\n");
+
+        text = `[角色上下文]\n${characterContext}\n\n[用户输入]\n${text}`;
+      }
+
       setInput("");
+      setMentionedCharacters([]); // 清空引用的角色
       await sendMessage(text, images || [], webSearch, thinking);
     },
-    [input, sendMessage],
+    [input, mentionedCharacters, sendMessage],
   );
 
   const handleClearMessages = useCallback(() => {
@@ -1153,6 +1234,14 @@ export function AgentChatPage({
             taskFilesExpanded={taskFilesExpanded}
             onToggleTaskFiles={() => setTaskFilesExpanded(!taskFilesExpanded)}
             onTaskFileClick={handleTaskFileClick}
+            characters={projectMemory?.characters || []}
+            onSelectCharacter={(character) => {
+              setMentionedCharacters((prev) => {
+                // 避免重复添加
+                if (prev.find((c) => c.id === character.id)) return prev;
+                return [...prev, character];
+              });
+            }}
           />
         </>
       )}
@@ -1262,6 +1351,36 @@ export function AgentChatPage({
           onToggleFullscreen={() => {}}
           onToggleSettings={() => setShowSettings(!showSettings)}
         />
+
+        {/* 同步状态指示器 */}
+        {contentId && syncStatus !== "idle" && (
+          <div
+            style={{
+              padding: "4px 16px",
+              fontSize: "12px",
+              color:
+                syncStatus === "syncing"
+                  ? "hsl(var(--muted-foreground))"
+                  : syncStatus === "success"
+                    ? "hsl(142, 76%, 36%)"
+                    : "hsl(0, 84%, 60%)",
+              backgroundColor:
+                syncStatus === "syncing"
+                  ? "hsl(var(--muted) / 0.3)"
+                  : syncStatus === "success"
+                    ? "hsl(142, 76%, 96%)"
+                    : "hsl(0, 84%, 96%)",
+              borderBottom: "1px solid hsl(var(--border))",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+          >
+            {syncStatus === "syncing" && "正在同步..."}
+            {syncStatus === "success" && "✓ 已保存"}
+            {syncStatus === "error" && "⚠ 同步失败，将自动重试"}
+          </div>
+        )}
 
         {/* 使用布局过渡组件 */}
         <LayoutTransition

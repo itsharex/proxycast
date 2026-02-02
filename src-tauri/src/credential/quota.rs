@@ -262,7 +262,7 @@ impl QuotaManager {
         }
 
         // 添加 -preview 后缀
-        Some(format!("{}-preview", model))
+        Some(format!("{model}-preview"))
     }
 
     /// 检查模型是否为预览版本
@@ -391,7 +391,7 @@ pub struct QuotaAutoSwitchResult {
 impl QuotaAutoSwitchResult {
     /// 创建成功切换的结果
     pub fn switched(new_credential_id: String) -> Self {
-        let message = format!("已切换到凭证: {}", new_credential_id);
+        let message = format!("已切换到凭证: {new_credential_id}");
         Self {
             switched: true,
             new_credential_id: Some(new_credential_id),
@@ -403,7 +403,7 @@ impl QuotaAutoSwitchResult {
 
     /// 创建使用预览模型的结果
     pub fn preview_model(model: String) -> Self {
-        let message = format!("已切换到预览模型: {}", model);
+        let message = format!("已切换到预览模型: {model}");
         Self {
             switched: false,
             new_credential_id: None,
@@ -427,7 +427,7 @@ impl QuotaAutoSwitchResult {
     /// 创建所有凭证耗尽的结果
     pub fn all_exhausted(earliest_recovery: Option<DateTime<Utc>>) -> Self {
         let message = match earliest_recovery {
-            Some(time) => format!("所有凭证配额超限，最早恢复时间: {}", time),
+            Some(time) => format!("所有凭证配额超限，最早恢复时间: {time}"),
             None => "所有凭证配额超限，无可用凭证".to_string(),
         };
         Self {

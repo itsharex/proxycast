@@ -91,7 +91,7 @@ impl ResyncOptions {
 }
 
 /// 重同步结果
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ResyncResult {
     /// 是否创建了新控制器
     pub controller_created: bool,
@@ -101,17 +101,6 @@ pub struct ResyncResult {
     pub history_restored: bool,
     /// 恢复的历史数据大小（字节）
     pub history_size: usize,
-}
-
-impl Default for ResyncResult {
-    fn default() -> Self {
-        Self {
-            controller_created: false,
-            controller_restarted: false,
-            history_restored: false,
-            history_size: 0,
-        }
-    }
 }
 
 /// 状态重同步控制器
@@ -373,8 +362,7 @@ impl ResyncController {
                 Ok(Box::new(controller))
             }
             _ => Err(TerminalError::Internal(format!(
-                "未知的控制器类型: {}",
-                controller_name
+                "未知的控制器类型: {controller_name}"
             ))),
         }
     }
@@ -410,7 +398,7 @@ impl ResyncController {
                     data,
                 },
             )
-            .map_err(|e| TerminalError::Internal(format!("发送重置序列失败: {}", e)))?;
+            .map_err(|e| TerminalError::Internal(format!("发送重置序列失败: {e}")))?;
 
         tracing::debug!(
             "[ResyncController] 发送重置序列: block_id={}, full={}",
@@ -460,7 +448,7 @@ impl ResyncController {
                     data,
                 },
             )
-            .map_err(|e| TerminalError::Internal(format!("发送历史数据失败: {}", e)))?;
+            .map_err(|e| TerminalError::Internal(format!("发送历史数据失败: {e}")))?;
 
         tracing::info!(
             "[ResyncController] 恢复历史数据: block_id={}, size={} bytes",

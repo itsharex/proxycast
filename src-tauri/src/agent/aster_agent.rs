@@ -4,11 +4,11 @@
 //! 处理消息发送、事件流转换和会话管理
 
 use crate::agent::aster_state::{AsterAgentState, SessionConfigBuilder};
+use crate::database::dao::agent::AgentDao;
 use crate::database::DbConnection;
 use aster::conversation::message::Message;
-use aster::session::SessionManager;
+use chrono::Utc;
 use futures::StreamExt;
-use std::path::PathBuf;
 use tauri::{AppHandle, Emitter};
 
 /// Aster Agent 包装器
@@ -78,7 +78,7 @@ impl AsterAgentWrapper {
                             // 发送错误事件
                             let error_event =
                                 crate::agent::event_converter::TauriAgentEvent::Error {
-                                    message: format!("Stream error: {}", e),
+                                    message: format!("Stream error: {e}"),
                                 };
                             let _ = app.emit(&event_name, &error_event);
                         }
@@ -93,10 +93,10 @@ impl AsterAgentWrapper {
             Err(e) => {
                 // 发送错误事件并返回错误
                 let error_event = crate::agent::event_converter::TauriAgentEvent::Error {
-                    message: format!("Agent error: {}", e),
+                    message: format!("Agent error: {e}"),
                 };
                 let _ = app.emit(&event_name, &error_event);
-                return Err(format!("Agent error: {}", e));
+                return Err(format!("Agent error: {e}"));
             }
         }
 
@@ -113,60 +113,74 @@ impl AsterAgentWrapper {
         state.cancel_session(session_id).await
     }
 
-    /// 创建新会话
-    pub async fn create_session(
-        working_dir: Option<PathBuf>,
-        name: Option<String>,
-    ) -> Result<String, String> {
-        let dir = working_dir
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-        let session_name = name.unwrap_or_else(|| "New Session".to_string());
+    /// 创建新会话 - 使用 ProxyCast 数据库
+    pub fn create_session_sync(db: &DbConnection, name: Option<String>) -> Result<String, String> {
+        let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
+        let session_name = name.unwrap_or_else(|| "新对话".to_string());
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
 
-        let session =
-            SessionManager::create_session(dir, session_name, aster::session::SessionType::User)
-                .await
-                .map_err(|e| format!("Failed to create session: {}", e))?;
+        let session = crate::agent::types::AgentSession {
+            id: session_id.clone(),
+            model: "agent:default".to_string(),
+            messages: Vec::new(),
+            system_prompt: None,
+            title: Some(session_name),
+            created_at: now.clone(),
+            updated_at: now,
+        };
 
-        Ok(session.id)
+        AgentDao::create_session(&conn, &session).map_err(|e| format!("创建会话失败: {e}"))?;
+
+        Ok(session_id)
     }
 
-    /// 列出所有会话
-    pub async fn list_sessions() -> Result<Vec<SessionInfo>, String> {
-        let sessions = SessionManager::list_sessions()
-            .await
-            .map_err(|e| format!("Failed to list sessions: {}", e))?;
+    /// 列出所有会话 - 使用 ProxyCast 数据库
+    pub fn list_sessions_sync(db: &DbConnection) -> Result<Vec<SessionInfo>, String> {
+        let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
+
+        let sessions =
+            AgentDao::list_sessions(&conn).map_err(|e| format!("获取会话列表失败: {e}"))?;
 
         Ok(sessions
             .into_iter()
             .map(|s| SessionInfo {
                 id: s.id,
-                name: s.name,
-                created_at: s.created_at.timestamp(),
-                updated_at: s.updated_at.timestamp(),
+                name: s.title.unwrap_or_else(|| "未命名".to_string()),
+                created_at: chrono::DateTime::parse_from_rfc3339(&s.created_at)
+                    .map(|dt| dt.timestamp())
+                    .unwrap_or(0),
+                updated_at: chrono::DateTime::parse_from_rfc3339(&s.updated_at)
+                    .map(|dt| dt.timestamp())
+                    .unwrap_or(0),
             })
             .collect())
     }
 
-    /// 获取会话详情
-    pub async fn get_session(session_id: &str) -> Result<SessionDetail, String> {
-        let session = SessionManager::get_session(session_id, true)
-            .await
-            .map_err(|e| format!("Failed to get session: {}", e))?;
+    /// 获取会话详情 - 使用 ProxyCast 数据库
+    pub fn get_session_sync(db: &DbConnection, session_id: &str) -> Result<SessionDetail, String> {
+        let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
+
+        let session = AgentDao::get_session(&conn, session_id)
+            .map_err(|e| format!("获取会话失败: {e}"))?
+            .ok_or_else(|| format!("会话不存在: {session_id}"))?;
+
+        let messages =
+            AgentDao::get_messages(&conn, session_id).map_err(|e| format!("获取消息失败: {e}"))?;
 
         Ok(SessionDetail {
             id: session.id,
-            name: session.name,
-            created_at: session.created_at.timestamp(),
-            updated_at: session.updated_at.timestamp(),
-            messages: session
-                .conversation
-                .map(|c| {
-                    c.messages()
-                        .iter()
-                        .map(|m| crate::agent::event_converter::convert_to_tauri_message(m))
-                        .collect()
-                })
-                .unwrap_or_default(),
+            name: session.title.unwrap_or_else(|| "未命名".to_string()),
+            created_at: chrono::DateTime::parse_from_rfc3339(&session.created_at)
+                .map(|dt| dt.timestamp())
+                .unwrap_or(0),
+            updated_at: chrono::DateTime::parse_from_rfc3339(&session.updated_at)
+                .map(|dt| dt.timestamp())
+                .unwrap_or(0),
+            messages: messages
+                .into_iter()
+                .map(|m| convert_agent_message(&m))
+                .collect(),
         })
     }
 }
@@ -188,6 +202,40 @@ pub struct SessionDetail {
     pub created_at: i64,
     pub updated_at: i64,
     pub messages: Vec<crate::agent::event_converter::TauriMessage>,
+}
+
+/// 将 AgentMessage 转换为 TauriMessage
+fn convert_agent_message(
+    msg: &crate::agent::types::AgentMessage,
+) -> crate::agent::event_converter::TauriMessage {
+    use crate::agent::event_converter::{TauriMessage, TauriMessageContent};
+    use crate::agent::types::MessageContent;
+
+    let content = match &msg.content {
+        MessageContent::Text(text) => vec![TauriMessageContent::Text { text: text.clone() }],
+        MessageContent::Parts(parts) => parts
+            .iter()
+            .filter_map(|p| {
+                if let crate::agent::types::ContentPart::Text { text } = p {
+                    Some(TauriMessageContent::Text { text: text.clone() })
+                } else {
+                    None
+                }
+            })
+            .collect(),
+    };
+
+    // 解析时间戳
+    let timestamp = chrono::DateTime::parse_from_rfc3339(&msg.timestamp)
+        .map(|dt| dt.timestamp())
+        .unwrap_or(0);
+
+    TauriMessage {
+        id: None,
+        role: msg.role.clone(),
+        content,
+        timestamp,
+    }
 }
 
 #[cfg(test)]

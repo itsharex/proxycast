@@ -65,7 +65,7 @@ impl RegisteredRoute {
     /// 创建凭证选择器路由
     pub fn credential_selector(credential_uuid: &str, provider_type: &str) -> Self {
         Self {
-            path_pattern: format!("/{}/v1/{{endpoint}}", credential_uuid),
+            path_pattern: format!("/{credential_uuid}/v1/{{endpoint}}"),
             route_type: RouteType::CredentialSelector,
             provider_type: Some(provider_type.to_string()),
             credential_uuid: Some(credential_uuid.to_string()),

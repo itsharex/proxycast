@@ -162,7 +162,7 @@ pub async fn add_model_to_provider(
     if let Some(provider_config) = state.config.models.providers.get_mut(&provider) {
         // 检查是否已存在
         if provider_config.models.iter().any(|m| m.id == model_id) {
-            return Err(format!("模型 {} 已存在于 {} 中", model_id, provider));
+            return Err(format!("模型 {model_id} 已存在于 {provider} 中"));
         }
         provider_config.models.push(ModelInfo {
             id: model_id,
@@ -170,7 +170,7 @@ pub async fn add_model_to_provider(
             enabled: true,
         });
     } else {
-        return Err(format!("Provider {} 不存在", provider));
+        return Err(format!("Provider {provider} 不存在"));
     }
 
     save_config(&state.config).map_err(|e| e.to_string())?;
@@ -189,7 +189,7 @@ pub async fn remove_model_from_provider(
     if let Some(provider_config) = state.config.models.providers.get_mut(&provider) {
         provider_config.models.retain(|m| m.id != model_id);
     } else {
-        return Err(format!("Provider {} 不存在", provider));
+        return Err(format!("Provider {provider} 不存在"));
     }
 
     save_config(&state.config).map_err(|e| e.to_string())?;
@@ -210,10 +210,10 @@ pub async fn toggle_model_enabled(
         if let Some(model) = provider_config.models.iter_mut().find(|m| m.id == model_id) {
             model.enabled = enabled;
         } else {
-            return Err(format!("模型 {} 不存在于 {} 中", model_id, provider));
+            return Err(format!("模型 {model_id} 不存在于 {provider} 中"));
         }
     } else {
-        return Err(format!("Provider {} 不存在", provider));
+        return Err(format!("Provider {provider} 不存在"));
     }
 
     save_config(&state.config).map_err(|e| e.to_string())?;
@@ -230,7 +230,7 @@ pub async fn add_provider(
     let mut state = app_state.write().await;
 
     if state.config.models.providers.contains_key(&provider_id) {
-        return Err(format!("Provider {} 已存在", provider_id));
+        return Err(format!("Provider {provider_id} 已存在"));
     }
 
     state.config.models.providers.insert(
@@ -254,7 +254,7 @@ pub async fn remove_provider(
     let mut state = app_state.write().await;
 
     if state.config.models.providers.remove(&provider_id).is_none() {
-        return Err(format!("Provider {} 不存在", provider_id));
+        return Err(format!("Provider {provider_id} 不存在"));
     }
 
     save_config(&state.config).map_err(|e| e.to_string())?;

@@ -554,7 +554,7 @@ fn convert_anthropic_tools(tools: &Option<Vec<AnthropicTool>>) -> Option<Vec<CWT
                     name: t.name.clone(),
                     description: if desc.len() > 500 {
                         let truncated: String = desc.chars().take(497).collect();
-                        format!("{}...", truncated)
+                        format!("{truncated}...")
                     } else {
                         desc
                     },

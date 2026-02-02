@@ -96,7 +96,7 @@ pub async fn save_experimental_config(
     config_manager
         .save_config(&config)
         .await
-        .map_err(|e| ConfigError::LoadFailed(e))?;
+        .map_err(ConfigError::LoadFailed)?;
 
     debug!("实验室功能配置已保存");
     Ok(())

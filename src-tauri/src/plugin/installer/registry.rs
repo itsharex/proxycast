@@ -28,7 +28,7 @@ impl PluginRegistry {
 
         // 设置 busy_timeout 为 5 秒，避免 "database is locked" 错误
         conn.busy_timeout(std::time::Duration::from_secs(5))
-            .map_err(|e| InstallError::DatabaseError(format!("设置 busy_timeout 失败: {}", e)))?;
+            .map_err(|e| InstallError::DatabaseError(format!("设置 busy_timeout 失败: {e}")))?;
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -252,7 +252,7 @@ impl PluginRow {
     fn into_installed_plugin(self) -> Result<InstalledPlugin, InstallError> {
         let source = deserialize_source(&self.source_type, self.source_data.as_deref())?;
         let installed_at = chrono::DateTime::parse_from_rfc3339(&self.installed_at)
-            .map_err(|e| InstallError::DatabaseError(format!("无效的时间格式: {}", e)))?
+            .map_err(|e| InstallError::DatabaseError(format!("无效的时间格式: {e}")))?
             .with_timezone(&chrono::Utc);
 
         Ok(InstalledPlugin {
@@ -306,8 +306,7 @@ fn deserialize_source(
             })
         }
         _ => Err(InstallError::DatabaseError(format!(
-            "未知的来源类型: {}",
-            source_type
+            "未知的来源类型: {source_type}"
         ))),
     }
 }
@@ -329,11 +328,11 @@ mod tests {
     fn create_test_plugin(id: &str) -> InstalledPlugin {
         InstalledPlugin {
             id: id.to_string(),
-            name: format!("Test Plugin {}", id),
+            name: format!("Test Plugin {id}"),
             version: "1.0.0".to_string(),
             description: "A test plugin".to_string(),
             author: Some("Test Author".to_string()),
-            install_path: PathBuf::from(format!("/plugins/{}", id)),
+            install_path: PathBuf::from(format!("/plugins/{id}")),
             installed_at: chrono::Utc::now(),
             source: InstallSource::Local {
                 path: "/tmp/plugin.zip".to_string(),

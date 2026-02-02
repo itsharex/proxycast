@@ -152,11 +152,7 @@ pub async fn handle_websocket(
 
                     if let Ok(msg_text) = serde_json::to_string(&ws_msg) {
                         let mut sender_guard = flow_sender.lock().await;
-                        if sender_guard
-                            .send(WsMessage::Text(msg_text.into()))
-                            .await
-                            .is_err()
-                        {
+                        if sender_guard.send(WsMessage::Text(msg_text)).await.is_err() {
                             tracing::debug!(
                                 "[WS] Flow event send failed for connection {}",
                                 &conn_id_clone[..8]
@@ -197,11 +193,7 @@ pub async fn handle_websocket(
                         if let Some(resp) = response {
                             let resp_text = serde_json::to_string(&resp).unwrap_or_default();
                             let mut sender_guard = sender.lock().await;
-                            if sender_guard
-                                .send(WsMessage::Text(resp_text.into()))
-                                .await
-                                .is_err()
-                            {
+                            if sender_guard.send(WsMessage::Text(resp_text)).await.is_err() {
                                 break;
                             }
                         }
@@ -209,13 +201,12 @@ pub async fn handle_websocket(
                     Err(e) => {
                         state.ws_manager.on_error();
                         let error = WsProtoMessage::Error(WsError::invalid_message(format!(
-                            "Failed to parse message: {}",
-                            e
+                            "Failed to parse message: {e}"
                         )));
                         let error_text = serde_json::to_string(&error).unwrap_or_default();
                         let mut sender_guard = sender.lock().await;
                         if sender_guard
-                            .send(WsMessage::Text(error_text.into()))
+                            .send(WsMessage::Text(error_text))
                             .await
                             .is_err()
                         {
@@ -232,7 +223,7 @@ pub async fn handle_websocket(
                 let error_text = serde_json::to_string(&error).unwrap_or_default();
                 let mut sender_guard = sender.lock().await;
                 if sender_guard
-                    .send(WsMessage::Text(error_text.into()))
+                    .send(WsMessage::Text(error_text))
                     .await
                     .is_err()
                 {
@@ -407,7 +398,7 @@ async fn handle_ws_api_request(state: &AppState, request: &WsApiRequest) -> WsPr
                 }
                 Err(e) => WsProtoMessage::Error(WsError::invalid_request(
                     Some(request.request_id.clone()),
-                    format!("Invalid chat completion request: {}", e),
+                    format!("Invalid chat completion request: {e}"),
                 )),
             }
         }
@@ -419,7 +410,7 @@ async fn handle_ws_api_request(state: &AppState, request: &WsApiRequest) -> WsPr
                 }
                 Err(e) => WsProtoMessage::Error(WsError::invalid_request(
                     Some(request.request_id.clone()),
-                    format!("Invalid messages request: {}", e),
+                    format!("Invalid messages request: {e}"),
                 )),
             }
         }
@@ -485,8 +476,7 @@ async fn handle_ws_chat_completions(
         WsProtoMessage::Error(WsError::internal(
             Some(request_id.to_string()),
             format!(
-                "No available credentials for provider '{}'. Please add credentials in the Provider Pool.",
-                default_provider
+                "No available credentials for provider '{default_provider}'. Please add credentials in the Provider Pool."
             ),
         ))
     }
@@ -549,8 +539,7 @@ async fn handle_ws_anthropic_messages(
         WsProtoMessage::Error(WsError::internal(
             Some(request_id.to_string()),
             format!(
-                "No available credentials for provider '{}'. Please add credentials in the Provider Pool.",
-                default_provider
+                "No available credentials for provider '{default_provider}'. Please add credentials in the Provider Pool."
             ),
         ))
     }
@@ -572,7 +561,7 @@ pub async fn call_provider_openai_for_ws(
                     let _ = state.pool_service.mark_unhealthy(
                         db,
                         &credential.uuid,
-                        Some(&format!("Failed to load credentials: {}", e)),
+                        Some(&format!("Failed to load credentials: {e}")),
                     );
                 }
                 return Err(e.to_string());
@@ -582,7 +571,7 @@ pub async fn call_provider_openai_for_ws(
                     let _ = state.pool_service.mark_unhealthy(
                         db,
                         &credential.uuid,
-                        Some(&format!("Token refresh failed: {}", e)),
+                        Some(&format!("Token refresh failed: {e}")),
                     );
                 }
                 return Err(e.to_string());
@@ -663,7 +652,7 @@ pub async fn call_provider_openai_for_ws(
                         .pool_service
                         .mark_unhealthy(db, &credential.uuid, Some(&body));
                 }
-                Err(format!("Upstream error: {}", body))
+                Err(format!("Upstream error: {body}"))
             }
         }
         CredentialData::OpenAIKey { api_key, base_url } => {
@@ -700,7 +689,7 @@ pub async fn call_provider_openai_for_ws(
                         .pool_service
                         .mark_unhealthy(db, &credential.uuid, Some(&body));
                 }
-                Err(format!("Upstream error: {}", body))
+                Err(format!("Upstream error: {body}"))
             }
         }
         CredentialData::ClaudeKey { api_key, base_url } => {
@@ -750,7 +739,7 @@ pub async fn call_provider_openai_for_ws(
                     let _ = state.pool_service.mark_unhealthy(
                         db,
                         &credential.uuid,
-                        Some(&format!("Failed to load credentials: {}", e)),
+                        Some(&format!("Failed to load credentials: {e}")),
                     );
                 }
                 return Err(e.to_string());
@@ -885,7 +874,7 @@ pub async fn call_provider_anthropic_for_ws(
                         .pool_service
                         .mark_unhealthy(db, &credential.uuid, Some(&body));
                 }
-                Err(format!("Upstream error: {}", body))
+                Err(format!("Upstream error: {body}"))
             }
         }
         _ => {

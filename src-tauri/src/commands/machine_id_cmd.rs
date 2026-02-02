@@ -161,7 +161,7 @@ pub async fn clear_machine_id_override() -> Result<MachineIdResult, String> {
             }),
             Err(e) => Ok(MachineIdResult {
                 success: false,
-                message: format!("Failed to remove override: {}", e),
+                message: format!("Failed to remove override: {e}"),
                 requires_restart: false,
                 requires_admin: false,
                 new_machine_id: None,
@@ -185,11 +185,10 @@ pub async fn clear_machine_id_override() -> Result<MachineIdResult, String> {
 #[tauri::command]
 pub async fn copy_machine_id_to_clipboard(machine_id: String) -> Result<bool, String> {
     use arboard::Clipboard;
-    let mut clipboard =
-        Clipboard::new().map_err(|e| format!("Failed to access clipboard: {}", e))?;
+    let mut clipboard = Clipboard::new().map_err(|e| format!("Failed to access clipboard: {e}"))?;
     clipboard
         .set_text(machine_id)
-        .map_err(|e| format!("Failed to copy to clipboard: {}", e))?;
+        .map_err(|e| format!("Failed to copy to clipboard: {e}"))?;
 
     Ok(true)
 }
@@ -198,11 +197,10 @@ pub async fn copy_machine_id_to_clipboard(machine_id: String) -> Result<bool, St
 #[tauri::command]
 pub async fn paste_machine_id_from_clipboard() -> Result<String, String> {
     use arboard::Clipboard;
-    let mut clipboard =
-        Clipboard::new().map_err(|e| format!("Failed to access clipboard: {}", e))?;
+    let mut clipboard = Clipboard::new().map_err(|e| format!("Failed to access clipboard: {e}"))?;
     let text = clipboard
         .get_text()
-        .map_err(|e| format!("Failed to read from clipboard: {}", e))?;
+        .map_err(|e| format!("Failed to read from clipboard: {e}"))?;
 
     // 基本验证
     let cleaned = text.replace("-", "").replace(" ", "").trim().to_lowercase();

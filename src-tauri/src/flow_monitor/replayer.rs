@@ -585,7 +585,7 @@ impl FlowReplayer {
             id.clone()
         } else {
             // 尝试从凭证池选择
-            let provider_type_str = format!("{:?}", provider);
+            let provider_type_str = format!("{provider:?}");
             if let Ok(Some(cred)) =
                 self.provider_pool
                     .select_credential(&self.db, &provider_type_str, None)
@@ -946,7 +946,7 @@ mod property_tests {
                 state: FlowState::Pending,
                 annotations: FlowAnnotations {
                     marker: Some("🔄".to_string()), // 重放标记
-                    comment: Some(format!("重放自 Flow: {}", original_flow_id)),
+                    comment: Some(format!("重放自 Flow: {original_flow_id}")),
                     tags: vec!["replay".to_string()],
                     starred: false,
                 },

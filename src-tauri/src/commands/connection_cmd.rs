@@ -168,7 +168,7 @@ pub fn connection_delete(name: String) -> ConnectionResponse {
 
     // 检查连接是否存在
     if !config.connections.contains_key(&name) {
-        return ConnectionResponse::err(format!("连接 '{}' 不存在", name));
+        return ConnectionResponse::err(format!("连接 '{name}' 不存在"));
     }
 
     // 删除并保存
@@ -234,7 +234,7 @@ pub async fn connection_test(name: String) -> ConnectionResponse {
     // 获取连接
     let conn = match config.get(&name) {
         Some(c) => c,
-        None => return ConnectionResponse::err(format!("连接 '{}' 不存在", name)),
+        None => return ConnectionResponse::err(format!("连接 '{name}' 不存在")),
     };
 
     // 根据连接类型测试
@@ -253,14 +253,14 @@ pub async fn connection_test(name: String) -> ConnectionResponse {
             let port = conn.port.unwrap_or(22);
 
             // 简单的 TCP 连接测试
-            match tokio::net::TcpStream::connect(format!("{}:{}", host, port)).await {
+            match tokio::net::TcpStream::connect(format!("{host}:{port}")).await {
                 Ok(_) => {
                     tracing::info!("[Connection] SSH 连接测试成功: {}:{}", host, port);
                     ConnectionResponse::ok()
                 }
                 Err(e) => {
                     tracing::warn!("[Connection] SSH 连接测试失败: {} - {}", host, e);
-                    ConnectionResponse::err(format!("连接失败: {}", e))
+                    ConnectionResponse::err(format!("连接失败: {e}"))
                 }
             }
         }
@@ -303,7 +303,7 @@ pub fn connection_import_ssh_host(host_name: String) -> ConnectionResponse {
     // 查找指定的 host
     let ssh_host = match ssh_hosts.into_iter().find(|h| h.pattern == host_name) {
         Some(h) => h,
-        None => return ConnectionResponse::err(format!("SSH Host '{}' 不存在", host_name)),
+        None => return ConnectionResponse::err(format!("SSH Host '{host_name}' 不存在")),
     };
 
     // 加载用户配置
@@ -314,7 +314,7 @@ pub fn connection_import_ssh_host(host_name: String) -> ConnectionResponse {
 
     // 检查是否已存在
     if config.connections.contains_key(&host_name) {
-        return ConnectionResponse::err(format!("连接 '{}' 已存在", host_name));
+        return ConnectionResponse::err(format!("连接 '{host_name}' 已存在"));
     }
 
     // 创建连接配置
