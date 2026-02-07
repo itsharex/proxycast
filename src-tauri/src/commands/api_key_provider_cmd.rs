@@ -8,6 +8,7 @@
 use crate::database::dao::api_key_provider::{
     ApiKeyEntry, ApiKeyProvider, ApiProviderType, ProviderWithKeys,
 };
+use crate::database::system_providers::get_system_providers;
 use crate::database::DbConnection;
 use crate::services::api_key_provider_service::{
     ApiKeyProviderService, ChatTestResult, ConnectionTestResult, ImportResult,
@@ -108,6 +109,21 @@ pub struct ProviderWithKeysDisplay {
     pub api_keys: Vec<ApiKeyDisplay>,
 }
 
+/// 系统 Provider Catalog 条目（用于前端快速填充）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemProviderCatalogItem {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub provider_type: String,
+    pub api_host: String,
+    pub group: String,
+    pub sort_order: i32,
+    pub api_version: Option<String>,
+    /// 兼容旧版本前端/历史配置的别名 ID
+    pub legacy_ids: Vec<String>,
+}
+
 // ============================================================================
 // 辅助函数
 // ============================================================================
@@ -184,9 +200,55 @@ fn provider_with_keys_to_display(
     }
 }
 
+/// 为系统 Provider 提供兼容旧版本的别名 ID
+fn get_legacy_ids(provider_id: &str) -> Vec<String> {
+    match provider_id {
+        "google" => vec!["gemini".to_string()],
+        "zhipuai" => vec!["zhipu".to_string()],
+        "alibaba" => vec!["dashscope".to_string()],
+        "moonshotai" => vec!["moonshot".to_string()],
+        "xai" => vec!["grok".to_string()],
+        "github-models" => vec!["github".to_string()],
+        "github-copilot" => vec!["copilot".to_string()],
+        "google-vertex" => vec!["vertexai".to_string()],
+        "amazon-bedrock" => vec!["aws-bedrock".to_string()],
+        "togetherai" => vec!["together".to_string()],
+        "fireworks-ai" => vec!["fireworks".to_string()],
+        "xiaomi" => vec!["mimo".to_string()],
+        "siliconflow" => vec!["silicon".to_string()],
+        _ => vec![],
+    }
+}
+
+fn system_provider_to_catalog_item(
+    provider: crate::database::system_providers::SystemProviderDef,
+) -> SystemProviderCatalogItem {
+    SystemProviderCatalogItem {
+        id: provider.id.to_string(),
+        name: provider.name.to_string(),
+        provider_type: provider.provider_type.to_string(),
+        api_host: provider.api_host.to_string(),
+        group: provider.group.to_string(),
+        sort_order: provider.sort_order,
+        api_version: provider.api_version.map(|v| v.to_string()),
+        legacy_ids: get_legacy_ids(provider.id),
+    }
+}
+
 // ============================================================================
 // Tauri 命令
 // ============================================================================
+
+/// 获取系统 Provider Catalog
+///
+/// 用于前端动态构建 Provider 列表，避免前后端维护两份静态清单。
+#[tauri::command]
+pub fn get_system_provider_catalog() -> Result<Vec<SystemProviderCatalogItem>, String> {
+    Ok(get_system_providers()
+        .into_iter()
+        .map(system_provider_to_catalog_item)
+        .collect())
+}
 
 /// 获取所有 API Key Provider（包含 API Keys）
 #[tauri::command]

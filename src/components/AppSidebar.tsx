@@ -26,7 +26,6 @@ import {
   Image,
   FolderKanban,
   Blocks,
-  Sparkles,
   LucideIcon,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
@@ -131,7 +130,6 @@ const mainMenuItems: { id: Page; label: string; icon: typeof Bot }[] = [
   { id: "api-server", label: "API Server", icon: Globe },
   { id: "provider-pool", label: "凭证池", icon: Database },
   { id: "mcp", label: "MCP 服务器", icon: Blocks },
-  { id: "vibe", label: "Vibe Zone", icon: Sparkles },
   { id: "terminal", label: "终端", icon: Terminal },
   { id: "tools", label: "工具", icon: Wrench },
   { id: "plugins", label: "插件中心", icon: Puzzle },
@@ -156,7 +154,6 @@ const DEFAULT_ENABLED_NAV_ITEMS = [
   "api-server",
   "provider-pool",
   "mcp",
-  "vibe",
 ];
 
 export function AppSidebar({ currentPage, onNavigate }: AppSidebarProps) {

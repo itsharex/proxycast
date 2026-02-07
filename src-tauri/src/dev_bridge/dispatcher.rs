@@ -3,7 +3,78 @@
 //! 将 HTTP 请求路由到现有的 Tauri 命令函数。
 
 use crate::server::AppState;
+use serde::Deserialize;
 use serde_json::Value as JsonValue;
+
+#[derive(Debug, Deserialize)]
+struct ModelRegistryIndex {
+    providers: Vec<String>,
+}
+
+fn resolve_models_index_path() -> Option<std::path::PathBuf> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+
+    if let Ok(current_dir) = std::env::current_dir() {
+        candidates.push(current_dir.join("src-tauri/resources/models/index.json"));
+        candidates.push(current_dir.join("resources/models/index.json"));
+    }
+
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(parent) = exe_path.parent() {
+            candidates.push(parent.join("resources/models/index.json"));
+            candidates.push(parent.join("../../src-tauri/resources/models/index.json"));
+            candidates.push(parent.join("../../../src-tauri/resources/models/index.json"));
+            candidates.push(parent.join("../Resources/resources/models/index.json"));
+            candidates.push(parent.join("../../Resources/resources/models/index.json"));
+            candidates.push(parent.join("../../../Resources/resources/models/index.json"));
+        }
+    }
+
+    candidates.into_iter().find(|path| path.exists())
+}
+
+fn load_model_registry_provider_ids_from_resources() -> Result<Vec<String>, String> {
+    let index_path =
+        resolve_models_index_path().ok_or_else(|| "未找到 models index.json".to_string())?;
+
+    let index_content = std::fs::read_to_string(&index_path)
+        .map_err(|e| format!("读取 models index.json 失败 ({index_path:?}): {e}"))?;
+
+    let index: ModelRegistryIndex = serde_json::from_str(&index_content)
+        .map_err(|e| format!("解析 models index.json 失败: {e}"))?;
+
+    let mut provider_ids: Vec<String> = index
+        .providers
+        .into_iter()
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty())
+        .collect();
+
+    provider_ids.sort();
+    provider_ids.dedup();
+    Ok(provider_ids)
+}
+
+fn load_model_registry_provider_ids_from_db(
+    state: &AppState,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let Some(db) = &state.db else {
+        return Ok(vec![]);
+    };
+
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT provider_id FROM model_registry WHERE provider_id IS NOT NULL ORDER BY provider_id",
+    )?;
+
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    let mut provider_ids = Vec::new();
+    for row in rows {
+        provider_ids.push(row?);
+    }
+
+    Ok(provider_ids)
+}
 
 /// 处理 HTTP 桥接命令请求
 ///
@@ -111,6 +182,12 @@ pub async fn handle_command(
             }
         }
 
+        "get_system_provider_catalog" => {
+            let catalog = crate::commands::api_key_provider_cmd::get_system_provider_catalog()
+                .map_err(|e| format!("获取系统 Provider Catalog 失败: {e}"))?;
+            Ok(serde_json::to_value(catalog)?)
+        }
+
         "get_provider_pool_credentials" => {
             // 获取所有凭证详细信息
             if let Some(db) = &state.db {
@@ -176,6 +253,23 @@ pub async fn handle_command(
                     {"id": "gpt-4o-mini", "object": "model", "owned_by": "openai"},
                 ]
             }))
+        }
+
+        "get_model_registry_provider_ids" => {
+            match load_model_registry_provider_ids_from_resources() {
+                Ok(provider_ids) => Ok(serde_json::to_value(provider_ids)?),
+                Err(resource_error) => {
+                    let fallback = load_model_registry_provider_ids_from_db(state)?;
+                    if fallback.is_empty() {
+                        Err(format!(
+                            "获取模型 Provider ID 失败（resources 与数据库均不可用）: {resource_error}"
+                        )
+                        .into())
+                    } else {
+                        Ok(serde_json::to_value(fallback)?)
+                    }
+                }
+            }
         }
 
         // ========== 网络信息 ==========

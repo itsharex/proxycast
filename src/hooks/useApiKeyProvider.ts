@@ -19,6 +19,10 @@ import {
   ImportResult,
 } from "@/lib/api/apiKeyProvider";
 import { ProviderGroup } from "@/lib/types/provider";
+import {
+  emitProviderDataChanged,
+  subscribeProviderDataChanged,
+} from "@/lib/providerDataEvents";
 
 // ============================================================================
 // Hook 返回类型
@@ -163,6 +167,11 @@ export function useApiKeyProvider(): UseApiKeyProviderReturn {
     }
   }, []);
 
+  const refreshAndNotify = useCallback(async () => {
+    await fetchProviders();
+    emitProviderDataChanged("api_key");
+  }, [fetchProviders]);
+
   // ===== 加载 UI 状态 =====
   const loadUiState = useCallback(async () => {
     try {
@@ -191,6 +200,33 @@ export function useApiKeyProvider(): UseApiKeyProviderReturn {
   useEffect(() => {
     fetchProviders();
     loadUiState();
+
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      return;
+    }
+
+    const handleFocus = () => {
+      void fetchProviders();
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        void fetchProviders();
+      }
+    };
+
+    const unsubscribe = subscribeProviderDataChanged(() => {
+      void fetchProviders();
+    });
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      unsubscribe();
+    };
   }, [fetchProviders, loadUiState]);
 
   // ===== 保存折叠状态 =====
@@ -259,12 +295,12 @@ export function useApiKeyProvider(): UseApiKeyProviderReturn {
         // 更新数据库
         await apiKeyProviderApi.updateSortOrders(sortOrders);
         // 刷新列表
-        await fetchProviders();
+        await refreshAndNotify();
       } catch {
         // 忽略错误，保持 UI 状态
       }
     },
-    [fetchProviders],
+    [refreshAndNotify],
   );
 
   // ===== Provider CRUD =====
@@ -272,12 +308,12 @@ export function useApiKeyProvider(): UseApiKeyProviderReturn {
   const addCustomProvider = useCallback(
     async (request: AddCustomProviderRequest): Promise<ProviderDisplay> => {
       const result = await apiKeyProviderApi.addCustomProvider(request);
-      await fetchProviders();
+      await refreshAndNotify();
       // 自动选中新添加的 Provider
       selectProvider(result.id);
       return result;
     },
-    [fetchProviders, selectProvider],
+    [refreshAndNotify, selectProvider],
   );
 
   const updateProvider = useCallback(
@@ -286,17 +322,17 @@ export function useApiKeyProvider(): UseApiKeyProviderReturn {
       request: UpdateProviderRequest,
     ): Promise<ProviderDisplay> => {
       const result = await apiKeyProviderApi.updateProvider(id, request);
-      await fetchProviders();
+      await refreshAndNotify();
       return result;
     },
-    [fetchProviders],
+    [refreshAndNotify],
   );
 
   const deleteCustomProvider = useCallback(
     async (id: string): Promise<boolean> => {
       const result = await apiKeyProviderApi.deleteCustomProvider(id);
       if (result) {
-        await fetchProviders();
+        await refreshAndNotify();
         // 如果删除的是当前选中的，清除选中状态
         if (selectedProviderId === id) {
           selectProvider(null);
@@ -304,16 +340,16 @@ export function useApiKeyProvider(): UseApiKeyProviderReturn {
       }
       return result;
     },
-    [fetchProviders, selectedProviderId, selectProvider],
+    [refreshAndNotify, selectedProviderId, selectProvider],
   );
 
   const toggleProviderEnabled = useCallback(
     async (id: string, enabled: boolean): Promise<ProviderDisplay> => {
       const result = await apiKeyProviderApi.updateProvider(id, { enabled });
-      await fetchProviders();
+      await refreshAndNotify();
       return result;
     },
-    [fetchProviders],
+    [refreshAndNotify],
   );
 
   // ===== API Key CRUD =====
@@ -339,41 +375,41 @@ export function useApiKeyProvider(): UseApiKeyProviderReturn {
 
       // 强制刷新 Provider 列表以确保新添加的 API Key 显示
       console.log("[useApiKeyProvider] 刷新 Provider 列表...");
-      await fetchProviders();
+      await refreshAndNotify();
       console.log("[useApiKeyProvider] Provider 列表刷新完成");
 
       return result;
     },
-    [fetchProviders],
+    [refreshAndNotify],
   );
 
   const deleteApiKey = useCallback(
     async (keyId: string): Promise<boolean> => {
       const result = await apiKeyProviderApi.deleteApiKey(keyId);
       if (result) {
-        await fetchProviders();
+        await refreshAndNotify();
       }
       return result;
     },
-    [fetchProviders],
+    [refreshAndNotify],
   );
 
   const toggleApiKey = useCallback(
     async (keyId: string, enabled: boolean): Promise<ApiKeyDisplay> => {
       const result = await apiKeyProviderApi.toggleApiKey(keyId, enabled);
-      await fetchProviders();
+      await refreshAndNotify();
       return result;
     },
-    [fetchProviders],
+    [refreshAndNotify],
   );
 
   const updateApiKeyAlias = useCallback(
     async (keyId: string, alias?: string): Promise<ApiKeyDisplay> => {
       const result = await apiKeyProviderApi.updateApiKeyAlias(keyId, alias);
-      await fetchProviders();
+      await refreshAndNotify();
       return result;
     },
-    [fetchProviders],
+    [refreshAndNotify],
   );
 
   // ===== 导入导出 =====
@@ -388,10 +424,10 @@ export function useApiKeyProvider(): UseApiKeyProviderReturn {
   const importConfig = useCallback(
     async (configJson: string): Promise<ImportResult> => {
       const result = await apiKeyProviderApi.importConfig(configJson);
-      await fetchProviders();
+      await refreshAndNotify();
       return result;
     },
-    [fetchProviders],
+    [refreshAndNotify],
   );
 
   // ===== 计算属性 =====

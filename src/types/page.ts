@@ -24,7 +24,6 @@ export type Page =
   | "image-analysis"
   | "projects"
   | "project-detail"
-  | "vibe"
   | `plugin:${string}`;
 
 /**

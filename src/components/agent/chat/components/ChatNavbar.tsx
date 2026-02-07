@@ -13,6 +13,9 @@ import { getDefaultProvider } from "@/hooks/useTauri";
 import { useConfiguredProviders } from "@/hooks/useConfiguredProviders";
 import { useProviderModels } from "@/hooks/useProviderModels";
 import { isAliasProvider } from "@/lib/constants/providerMappings";
+import { providerPoolApi } from "@/lib/api/providerPool";
+import { apiKeyProviderApi } from "@/lib/api/apiKeyProvider";
+import { emitProviderDataChanged } from "@/lib/providerDataEvents";
 
 interface ChatNavbarProps {
   providerType: string;
@@ -126,6 +129,34 @@ export const ChatNavbar: React.FC<ChatNavbarProps> = ({
   }, [currentModels, setModel, selectedProvider, modelsLoading]);
 
   const selectedProviderLabel = selectedProvider?.label || providerType;
+
+  // 当打开模型选择器时，主动触发一次 Provider 数据同步
+  useEffect(() => {
+    if (!open) return;
+
+    let cancelled = false;
+
+    const refreshProviderData = async () => {
+      try {
+        await Promise.all([
+          providerPoolApi.getOverview(),
+          apiKeyProviderApi.getProviders(),
+        ]);
+
+        if (!cancelled) {
+          emitProviderDataChanged("provider_pool");
+        }
+      } catch (e) {
+        console.error("[ChatNavbar] 刷新 Provider 数据失败:", e);
+      }
+    };
+
+    void refreshProviderData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   return (
     <Navbar>

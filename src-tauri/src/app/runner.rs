@@ -834,6 +834,7 @@ pub fn run() {
             commands::provider_pool_cmd::start_kiro_playwright_login,
             commands::provider_pool_cmd::cancel_kiro_playwright_login,
             // API Key Provider commands
+            commands::api_key_provider_cmd::get_system_provider_catalog,
             commands::api_key_provider_cmd::get_api_key_providers,
             commands::api_key_provider_cmd::get_api_key_provider,
             commands::api_key_provider_cmd::add_custom_api_key_provider,
@@ -1148,6 +1149,7 @@ pub fn run() {
             commands::connect_cmd::send_connect_callback,
             // Model Registry commands
             commands::model_registry_cmd::get_model_registry,
+            commands::model_registry_cmd::get_model_registry_provider_ids,
             commands::model_registry_cmd::refresh_model_registry,
             commands::model_registry_cmd::search_models,
             commands::model_registry_cmd::get_model_preferences,

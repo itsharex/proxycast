@@ -22,7 +22,9 @@ AI Agent 集成模块，基于 aster-rust 框架实现。
 | `aster_state.rs` | Aster Agent 状态管理（Provider 配置、取消令牌、Skills 加载） |
 | `aster_agent.rs` | Aster Agent 包装器（会话管理） |
 | `event_converter.rs` | Aster 事件到 Tauri 事件转换 |
-| `credential_bridge.rs` | 凭证池桥接（连接 ProxyCast 凭证池与 Aster Provider） |
+| `credential_bridge.rs` | 凭证池桥接（连接 ProxyCast 凭证池与 Aster Provider，智能拆分 base_url） |
+| `mcp_bridge.rs` | MCP 服务桥接 |
+| `subagent_scheduler.rs` | 子 Agent 调度器 |
 
 ## Skills 集成
 

@@ -29,7 +29,11 @@ import {
 import { Search, X } from "lucide-react";
 import { useModelRegistry } from "@/hooks/useModelRegistry";
 import type { ProviderType } from "@/lib/types/provider";
-import type { AddCustomProviderRequest } from "@/lib/api/apiKeyProvider";
+import {
+  apiKeyProviderApi,
+  type AddCustomProviderRequest,
+  type SystemProviderCatalogItem,
+} from "@/lib/api/apiKeyProvider";
 
 // ============================================================================
 // 常量
@@ -72,10 +76,11 @@ interface KnownProvider {
   name: string;
   type: ProviderType;
   apiHost?: string;
+  keywords?: string[];
 }
 
 /** 已知厂商列表（用于快速填充） */
-const KNOWN_PROVIDERS: KnownProvider[] = [
+const FALLBACK_KNOWN_PROVIDERS: KnownProvider[] = [
   {
     id: "anthropic",
     name: "Anthropic",
@@ -173,6 +178,57 @@ const KNOWN_PROVIDERS: KnownProvider[] = [
     apiHost: "http://localhost:11434",
   },
 ];
+
+/** 将 Catalog 返回的 provider type 收敛到前端 ProviderType */
+function normalizeCatalogProviderType(providerType: string): ProviderType {
+  switch (providerType) {
+    case "openai":
+    case "openai-response":
+    case "codex":
+    case "anthropic":
+    case "anthropic-compatible":
+    case "gemini":
+    case "azure-openai":
+    case "vertexai":
+    case "aws-bedrock":
+    case "ollama":
+    case "new-api":
+    case "gateway":
+      return providerType;
+    default:
+      return "openai";
+  }
+}
+
+function buildKnownProvidersFromCatalog(
+  catalog: SystemProviderCatalogItem[],
+): KnownProvider[] {
+  const providers: KnownProvider[] = [];
+
+  for (const item of catalog) {
+    const normalizedType = normalizeCatalogProviderType(item.type);
+
+    providers.push({
+      id: item.id,
+      name: item.name,
+      type: normalizedType,
+      apiHost: item.api_host,
+      keywords: item.legacy_ids,
+    });
+
+    for (const legacyId of item.legacy_ids) {
+      providers.push({
+        id: legacyId,
+        name: item.name,
+        type: normalizedType,
+        apiHost: item.api_host,
+        keywords: [item.id, ...item.legacy_ids.filter((id) => id !== legacyId)],
+      });
+    }
+  }
+
+  return providers;
+}
 
 // ============================================================================
 // 类型定义
@@ -325,6 +381,9 @@ export const AddCustomProviderModal: React.FC<AddCustomProviderModalProps> = ({
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [catalogKnownProviders, setCatalogKnownProviders] = useState<
+    KnownProvider[] | null
+  >(null);
 
   // 厂商搜索状态
   const [providerSearch, setProviderSearch] = useState("");
@@ -337,16 +396,60 @@ export const AddCustomProviderModal: React.FC<AddCustomProviderModalProps> = ({
   // 从 model_registry 获取额外的 Provider 信息
   const { groupedByProvider } = useModelRegistry({ autoLoad: true });
 
+  // 优先从后端系统 Catalog 加载已知厂商
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSystemCatalog = async () => {
+      try {
+        const catalog = await apiKeyProviderApi.getSystemProviderCatalog();
+        if (cancelled) {
+          return;
+        }
+
+        const providers = buildKnownProvidersFromCatalog(catalog);
+        setCatalogKnownProviders(
+          providers.length > 0 ? providers : FALLBACK_KNOWN_PROVIDERS,
+        );
+      } catch {
+        if (cancelled) {
+          return;
+        }
+        setCatalogKnownProviders(FALLBACK_KNOWN_PROVIDERS);
+      }
+    };
+
+    loadSystemCatalog();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
+
   // 合并已知厂商和 model_registry 中的厂商
   const allProviders = useMemo(() => {
-    const providers = [...KNOWN_PROVIDERS];
-    const existingIds = new Set(providers.map((p) => p.id));
+    const baseProviders =
+      catalogKnownProviders && catalogKnownProviders.length > 0
+        ? catalogKnownProviders
+        : FALLBACK_KNOWN_PROVIDERS;
+
+    const providerMap = new Map<string, KnownProvider>();
+
+    for (const provider of baseProviders) {
+      if (!providerMap.has(provider.id)) {
+        providerMap.set(provider.id, provider);
+      }
+    }
 
     // 从 model_registry 添加额外的厂商
     groupedByProvider.forEach((models, providerId) => {
-      if (!existingIds.has(providerId) && models.length > 0) {
+      if (!providerMap.has(providerId) && models.length > 0) {
         const firstModel = models[0];
-        providers.push({
+        providerMap.set(providerId, {
           id: providerId,
           name: firstModel.provider_name,
           type: "openai" as ProviderType, // 默认使用 OpenAI 兼容
@@ -354,8 +457,8 @@ export const AddCustomProviderModal: React.FC<AddCustomProviderModalProps> = ({
       }
     });
 
-    return providers;
-  }, [groupedByProvider]);
+    return Array.from(providerMap.values());
+  }, [catalogKnownProviders, groupedByProvider]);
 
   // 过滤厂商列表
   const filteredProviders = useMemo(() => {
@@ -366,7 +469,9 @@ export const AddCustomProviderModal: React.FC<AddCustomProviderModalProps> = ({
     return allProviders.filter(
       (p) =>
         p.name.toLowerCase().includes(query) ||
-        p.id.toLowerCase().includes(query),
+        p.id.toLowerCase().includes(query) ||
+        (p.keywords?.some((keyword) => keyword.toLowerCase().includes(query)) ??
+          false),
     );
   }, [allProviders, providerSearch]);
 

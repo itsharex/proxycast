@@ -200,6 +200,7 @@ const defaultMocks: Record<string, any> = {
   // 凭证池相关
   get_relay_providers: () => [],
   list_relay_providers: () => [],
+  get_system_provider_catalog: () => [],
   get_pool_overview: () => [],
   get_provider_pool_overview: () => [],
   get_provider_pool_credentials: () => [],
@@ -289,6 +290,7 @@ const defaultMocks: Record<string, any> = {
 
   // 模型相关
   get_model_registry: () => [],
+  get_model_registry_provider_ids: () => [],
   refresh_model_registry: () => ({ success: true }),
   search_models: () => [],
   get_all_provider_models: () => ({}),

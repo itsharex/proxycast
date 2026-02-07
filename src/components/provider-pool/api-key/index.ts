@@ -52,4 +52,9 @@ export type { ImportExportDialogProps } from "./ImportExportDialog";
 export { ProviderModelList } from "./ProviderModelList";
 export type { ProviderModelListProps } from "./ProviderModelList";
 
-export { mapProviderTypeToRegistryId } from "./providerTypeMapping";
+export {
+  mapProviderTypeToRegistryId,
+  mapProviderIdToRegistryId,
+  resolveRegistryProviderId,
+  buildCatalogAliasMap,
+} from "./providerTypeMapping";

@@ -8,6 +8,7 @@
 //! - 将凭证转换为 Aster Provider 配置
 //! - 支持 OAuth 和 API Key 两种凭证类型
 //! - 自动刷新过期的 OAuth Token
+//! - 智能拆分 base_url 为 host + path，避免路径重复（如智谱 /v4/v1 问题）
 
 use crate::database::DbConnection;
 use crate::models::provider_pool_model::{CredentialData, PoolProviderType, ProviderCredential};
@@ -359,6 +360,33 @@ pub async fn create_aster_provider(
 }
 
 /// 设置 Provider 环境变量
+/// 从 URL 中拆分 host（scheme+authority）和 path 部分
+///
+/// 例如：
+/// - `https://api.openai.com` -> (`https://api.openai.com`, ``)
+/// - `https://open.bigmodel.cn/api/paas/v4` -> (`https://open.bigmodel.cn`, `api/paas/v4`)
+/// - `https://localhost:8080/v1` -> (`https://localhost:8080`, `v1`)
+fn split_url_host_and_path(url: &str) -> (String, String) {
+    // 找到 scheme 之后的 authority 部分
+    let after_scheme = if let Some(pos) = url.find("://") {
+        pos + 3
+    } else {
+        return (url.to_string(), String::new());
+    };
+
+    // 找到 authority 之后的第一个 /（即路径开始）
+    let path_start = url[after_scheme..].find('/').map(|p| p + after_scheme);
+
+    match path_start {
+        Some(pos) => {
+            let host = url[..pos].to_string();
+            let path = url[pos..].trim_matches('/').to_string();
+            (host, path)
+        }
+        None => (url.to_string(), String::new()),
+    }
+}
+
 fn set_provider_env_vars(config: &AsterProviderConfig) {
     tracing::info!(
         "[CredentialBridge] set_provider_env_vars: provider_name={}, has_api_key={}, base_url={:?}",
@@ -388,13 +416,33 @@ fn set_provider_env_vars(config: &AsterProviderConfig) {
     }
 
     // 设置 base_url
-    // Aster 的 OpenAI Provider 使用 OPENAI_HOST 环境变量
+    // Aster 的 OpenAI Provider 使用 OPENAI_HOST（仅 scheme+host+port）和
+    // OPENAI_BASE_PATH（路径部分 + /chat/completions）环境变量
     if let Some(base_url) = &config.base_url {
         match config.provider_name.as_str() {
             "openai" => {
-                // OpenAI 兼容的 Provider 使用 OPENAI_HOST
-                std::env::set_var("OPENAI_HOST", base_url);
-                tracing::info!("[CredentialBridge] 设置 OPENAI_HOST={}", base_url);
+                // 解析 base_url，将路径部分拆分到 OPENAI_BASE_PATH
+                // 例如 https://open.bigmodel.cn/api/paas/v4
+                //   -> OPENAI_HOST = https://open.bigmodel.cn
+                //   -> OPENAI_BASE_PATH = api/paas/v4/chat/completions
+                let (host_part, path_part) = split_url_host_and_path(base_url);
+                if path_part.is_empty() {
+                    // 无路径部分（如 https://api.openai.com），直接设置
+                    std::env::set_var("OPENAI_HOST", base_url);
+                    // 清除可能残留的 OPENAI_BASE_PATH，使用 Aster 默认值
+                    std::env::remove_var("OPENAI_BASE_PATH");
+                    tracing::info!("[CredentialBridge] 设置 OPENAI_HOST={}", base_url);
+                } else {
+                    // base_url 包含路径，需要拆分
+                    let base_path = format!("{}/chat/completions", path_part);
+                    std::env::set_var("OPENAI_HOST", &host_part);
+                    std::env::set_var("OPENAI_BASE_PATH", &base_path);
+                    tracing::info!(
+                        "[CredentialBridge] 设置 OPENAI_HOST={}, OPENAI_BASE_PATH={}",
+                        host_part,
+                        base_path
+                    );
+                }
             }
             "anthropic" => {
                 std::env::set_var("ANTHROPIC_BASE_URL", base_url);
@@ -481,5 +529,33 @@ mod tests {
     fn test_credential_bridge_error_display() {
         let err = CredentialBridgeError::NoCredentials("test".to_string());
         assert!(err.to_string().contains("没有可用凭证"));
+    }
+
+    #[test]
+    fn test_split_url_host_and_path() {
+        // 无路径
+        let (host, path) = split_url_host_and_path("https://api.openai.com");
+        assert_eq!(host, "https://api.openai.com");
+        assert_eq!(path, "");
+
+        // 带路径（智谱）
+        let (host, path) = split_url_host_and_path("https://open.bigmodel.cn/api/paas/v4");
+        assert_eq!(host, "https://open.bigmodel.cn");
+        assert_eq!(path, "api/paas/v4");
+
+        // 带端口
+        let (host, path) = split_url_host_and_path("https://localhost:8080/v1");
+        assert_eq!(host, "https://localhost:8080");
+        assert_eq!(path, "v1");
+
+        // 尾部斜杠
+        let (host, path) = split_url_host_and_path("https://api.deepseek.com/v1/");
+        assert_eq!(host, "https://api.deepseek.com");
+        assert_eq!(path, "v1");
+
+        // 仅根路径
+        let (host, path) = split_url_host_and_path("https://api.openai.com/");
+        assert_eq!(host, "https://api.openai.com");
+        assert_eq!(path, "");
     }
 }

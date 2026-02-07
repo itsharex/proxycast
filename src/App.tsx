@@ -22,7 +22,6 @@ import { PluginsPage } from "./components/plugins/PluginsPage";
 import { McpPanel } from "./components/mcp";
 import { ImageGenPage } from "./components/image-gen";
 import { ProjectsPage } from "./components/projects";
-import { VibePage } from "./components/vibe/VibePage";
 import { ProjectDetailPage } from "./components/projects/ProjectDetailPage";
 import { CreateProjectDialog } from "./components/projects/CreateProjectDialog";
 import { ProjectType } from "./lib/api/project";
@@ -357,11 +356,6 @@ function AppContent() {
         {/* Plugins 页面 */}
         <PageWrapper $isActive={currentPage === "plugins"}>
           <PluginsPage />
-        </PageWrapper>
-
-        {/* Vibe 页面 */}
-        <PageWrapper $isActive={currentPage === "vibe"}>
-          <VibePage />
         </PageWrapper>
 
         {/* Settings 页面 */}

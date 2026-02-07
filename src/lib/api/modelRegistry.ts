@@ -21,6 +21,13 @@ export async function getModelRegistry(): Promise<EnhancedModelMetadata[]> {
 }
 
 /**
+ * 获取模型注册表中所有 provider_id
+ */
+export async function getModelRegistryProviderIds(): Promise<string[]> {
+  return safeInvoke("get_model_registry_provider_ids");
+}
+
+/**
  * 刷新模型注册表（强制从内嵌资源重新加载）
  * @returns 加载的模型数量
  */
@@ -124,6 +131,7 @@ export async function getAllAliasConfigs(): Promise<
  */
 export const modelRegistryApi = {
   getModelRegistry,
+  getModelRegistryProviderIds,
   refreshModelRegistry,
   searchModels,
   getModelPreferences,

@@ -9,6 +9,10 @@ import {
   OAuthStatus,
   MigrationResult,
 } from "@/lib/api/providerPool";
+import {
+  emitProviderDataChanged,
+  subscribeProviderDataChanged,
+} from "@/lib/providerDataEvents";
 
 export function useProviderPool() {
   const [overview, setOverview] = useState<ProviderPoolOverview[]>([]);
@@ -30,14 +34,46 @@ export function useProviderPool() {
     }
   }, []);
 
+  const refreshAndNotify = useCallback(async () => {
+    await fetchOverview();
+    emitProviderDataChanged("provider_pool");
+  }, [fetchOverview]);
+
   useEffect(() => {
     fetchOverview();
+
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      return;
+    }
+
+    const handleFocus = () => {
+      void fetchOverview();
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        void fetchOverview();
+      }
+    };
+
+    const unsubscribe = subscribeProviderDataChanged(() => {
+      void fetchOverview();
+    });
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      unsubscribe();
+    };
   }, [fetchOverview]);
 
   // Add Kiro OAuth credential
   const addKiroOAuth = async (credsFilePath: string, name?: string) => {
     await providerPoolApi.addKiroOAuth(credsFilePath, name);
-    await fetchOverview();
+    await refreshAndNotify();
   };
 
   // Add Gemini OAuth credential
@@ -47,7 +83,7 @@ export function useProviderPool() {
     name?: string,
   ) => {
     await providerPoolApi.addGeminiOAuth(credsFilePath, projectId, name);
-    await fetchOverview();
+    await refreshAndNotify();
   };
 
   // Add OpenAI API Key credential
@@ -57,7 +93,7 @@ export function useProviderPool() {
     name?: string,
   ) => {
     await providerPoolApi.addOpenAIKey(apiKey, baseUrl, name);
-    await fetchOverview();
+    await refreshAndNotify();
   };
 
   // Add Claude API Key credential
@@ -67,7 +103,7 @@ export function useProviderPool() {
     name?: string,
   ) => {
     await providerPoolApi.addClaudeKey(apiKey, baseUrl, name);
-    await fetchOverview();
+    await refreshAndNotify();
   };
 
   // Update credential
@@ -76,7 +112,7 @@ export function useProviderPool() {
     request: UpdateCredentialRequest,
   ) => {
     await providerPoolApi.updateCredential(uuid, request);
-    await fetchOverview();
+    await refreshAndNotify();
   };
 
   // Delete credential
@@ -85,25 +121,25 @@ export function useProviderPool() {
     providerType?: PoolProviderType,
   ) => {
     await providerPoolApi.deleteCredential(uuid, providerType);
-    await fetchOverview();
+    await refreshAndNotify();
   };
 
   // Toggle credential enabled/disabled
   const toggleCredential = async (uuid: string, isDisabled: boolean) => {
     await providerPoolApi.toggleCredential(uuid, isDisabled);
-    await fetchOverview();
+    await refreshAndNotify();
   };
 
   // Reset credential counters
   const resetCredential = async (uuid: string) => {
     await providerPoolApi.resetCredential(uuid);
-    await fetchOverview();
+    await refreshAndNotify();
   };
 
   // Reset health for all credentials of a type
   const resetHealth = async (providerType: PoolProviderType) => {
     await providerPoolApi.resetHealth(providerType);
-    await fetchOverview();
+    await refreshAndNotify();
   };
 
   // Check health of a single credential
@@ -113,7 +149,7 @@ export function useProviderPool() {
     setCheckingHealth(uuid);
     try {
       const result = await providerPoolApi.checkCredentialHealth(uuid);
-      await fetchOverview();
+      await refreshAndNotify();
       return result;
     } finally {
       setCheckingHealth(null);
@@ -127,7 +163,7 @@ export function useProviderPool() {
     setCheckingHealth(providerType);
     try {
       const results = await providerPoolApi.checkTypeHealth(providerType);
-      await fetchOverview();
+      await refreshAndNotify();
       return results;
     } finally {
       setCheckingHealth(null);
@@ -139,7 +175,7 @@ export function useProviderPool() {
     setRefreshingToken(uuid);
     try {
       const result = await providerPoolApi.refreshCredentialToken(uuid);
-      await fetchOverview();
+      await refreshAndNotify();
       return result;
     } finally {
       setRefreshingToken(null);
@@ -172,7 +208,7 @@ export function useProviderPool() {
     config: unknown,
   ): Promise<MigrationResult> => {
     const result = await providerPoolApi.migratePrivateConfig(config);
-    await fetchOverview();
+    await refreshAndNotify();
     return result;
   };
 

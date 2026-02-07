@@ -96,3 +96,32 @@ function ApiKeySection() {
 - Requirements 8.1, 8.2, 8.3: Provider 分组和搜索
 - Requirements 10.4: Provider 图标显示
 - Requirements 9.4, 9.5: 导入导出功能
+
+
+## Provider 映射分层（关键）
+
+为避免“改一处坏一片”，Provider/模型映射采用分层策略：
+
+1. **框架层（aster-rust）**
+   - 负责 Provider 工厂与别名归一；
+   - 支持 `ASTER_PROVIDER_ALIAS_OVERRIDES` 做运行时覆盖（JSON 或 `k=v`）。
+
+2. **应用后端层（Proxycast Tauri）**
+   - `get_system_provider_catalog` 作为 Provider 元信息入口（含 `legacy_ids`）；
+   - `get_model_registry_provider_ids` 从 `src-tauri/resources/models/index.json` 提供模型 Provider 真相集。
+
+3. **应用前端层（UI）**
+   - `ProviderModelList` 先用 Catalog 归一 provider，再用模型 Provider 真相集校验；
+   - 仅保留最小 legacy 映射（如 `dashscope -> alibaba`），避免维护大硬编码表。
+
+### 解析优先级
+
+`resolveRegistryProviderId` 的核心规则：
+
+1. codex 协议强制 `codex`
+2. Catalog 别名映射
+3. 最小 legacy ID 映射
+4. providerType 回退
+5. 原始 providerId
+
+当提供 `validRegistryProviders` 时，会优先选择“真实存在于模型注册表”的候选值。

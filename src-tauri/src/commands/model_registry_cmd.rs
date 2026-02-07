@@ -6,6 +6,7 @@ use crate::models::model_registry::{
     EnhancedModelMetadata, ModelSyncState, ModelTier, ProviderAliasConfig, UserModelPreference,
 };
 use crate::services::model_registry_service::{FetchModelsResult, ModelRegistryService};
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::RwLock;
@@ -24,6 +25,24 @@ pub async fn get_model_registry(
         .ok_or_else(|| "模型注册服务未初始化".to_string())?;
 
     Ok(service.get_all_models().await)
+}
+
+/// 获取模型注册表中所有 provider_id（去重且有序）
+///
+/// provider_id 来源于 `src-tauri/resources/models/providers/*.json` 加载结果。
+#[tauri::command]
+pub async fn get_model_registry_provider_ids(
+    state: State<'_, ModelRegistryState>,
+) -> Result<Vec<String>, String> {
+    let guard = state.read().await;
+    let service = guard
+        .as_ref()
+        .ok_or_else(|| "模型注册服务未初始化".to_string())?;
+
+    let models = service.get_all_models().await;
+    let provider_ids: BTreeSet<String> = models.into_iter().map(|m| m.provider_id).collect();
+
+    Ok(provider_ids.into_iter().collect())
 }
 
 /// 搜索模型

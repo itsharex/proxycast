@@ -4,7 +4,7 @@
  * @module components/provider-pool/api-key/ProviderModelList
  */
 
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useModelRegistry } from "@/hooks/useModelRegistry";
 import {
@@ -25,7 +25,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { EnhancedModelMetadata } from "@/lib/types/modelRegistry";
-import { mapProviderIdToRegistryId } from "./providerTypeMapping";
+import { apiKeyProviderApi } from "@/lib/api/apiKeyProvider";
+import { modelRegistryApi } from "@/lib/api/modelRegistry";
+import {
+  buildCatalogAliasMap,
+  resolveRegistryProviderId,
+} from "./providerTypeMapping";
 import { invoke } from "@tauri-apps/api/core";
 
 // ============================================================================
@@ -136,11 +141,73 @@ export const ProviderModelList: React.FC<ProviderModelListProps> = ({
   className,
   maxItems,
 }) => {
+  const [catalogAliasMap, setCatalogAliasMap] = useState<Record<
+    string,
+    string
+  > | null>(null);
+  const [validRegistryProviderIds, setValidRegistryProviderIds] =
+    useState<Set<string> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCatalog = async () => {
+      try {
+        const catalog = await apiKeyProviderApi.getSystemProviderCatalog();
+        if (cancelled) {
+          return;
+        }
+        setCatalogAliasMap(buildCatalogAliasMap(catalog));
+      } catch {
+        if (cancelled) {
+          return;
+        }
+        setCatalogAliasMap(null);
+      }
+    };
+
+    loadCatalog();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRegistryProviders = async () => {
+      try {
+        const providerIds =
+          await modelRegistryApi.getModelRegistryProviderIds();
+        if (cancelled) {
+          return;
+        }
+
+        setValidRegistryProviderIds(new Set(providerIds));
+      } catch {
+        if (cancelled) {
+          return;
+        }
+        setValidRegistryProviderIds(null);
+      }
+    };
+
+    loadRegistryProviders();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // 转换 Provider ID 为 registry ID（优先使用 providerId，回退到 providerType）
-  const registryProviderId = useMemo(
-    () => mapProviderIdToRegistryId(providerId, providerType),
-    [providerId, providerType],
-  );
+  const registryProviderId = useMemo(() => {
+    return resolveRegistryProviderId(providerId, {
+      providerType,
+      catalogAliasMap,
+      validRegistryProviders: validRegistryProviderIds ?? undefined,
+    });
+  }, [catalogAliasMap, providerId, providerType, validRegistryProviderIds]);
 
   // 获取模型数据
   const { models, loading, error } = useModelRegistry({

@@ -104,6 +104,22 @@ export interface ProviderWithKeysDisplay extends ProviderDisplay {
 }
 
 /**
+ * 系统 Provider Catalog 条目
+ * 用于前端动态构建系统 Provider 元信息
+ */
+export interface SystemProviderCatalogItem {
+  id: string;
+  name: string;
+  type: string;
+  api_host: string;
+  group: string;
+  sort_order: number;
+  api_version?: string;
+  /** 兼容旧版本前端/历史配置的别名 ID */
+  legacy_ids: string[];
+}
+
+/**
  * 导入结果
  */
 export interface ImportResult {
@@ -130,6 +146,13 @@ export interface ChatTestResult {
  * API Key Provider API 封装
  */
 export const apiKeyProviderApi = {
+  /**
+   * 获取系统 Provider Catalog
+   */
+  async getSystemProviderCatalog(): Promise<SystemProviderCatalogItem[]> {
+    return safeInvoke("get_system_provider_catalog");
+  },
+
   /**
    * 获取所有 API Key Provider（包含 API Keys）
    */
