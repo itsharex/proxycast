@@ -34,6 +34,24 @@ impl AudioData {
         self.duration_secs >= 0.5
     }
 
+    /// 从 PCM16 LE 字节创建音频数据
+    pub fn from_pcm16le_bytes(bytes: &[u8], sample_rate: u32, channels: u16) -> Self {
+        let samples = bytes
+            .chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect();
+
+        Self::new(samples, sample_rate, channels)
+    }
+
+    /// 转换为 PCM16 LE 字节
+    pub fn to_pcm16le_bytes(&self) -> Vec<u8> {
+        self.samples
+            .iter()
+            .flat_map(|sample| sample.to_le_bytes())
+            .collect()
+    }
+
     /// 转换为 WAV 格式字节
     pub fn to_wav_bytes(&self) -> Vec<u8> {
         let mut cursor = std::io::Cursor::new(Vec::new());

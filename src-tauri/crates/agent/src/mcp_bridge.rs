@@ -5,9 +5,8 @@
 
 use aster::agents::mcp_client::{Error, McpClientTrait};
 use rmcp::model::{
-    CallToolResult, GetPromptResult, InitializeResult, JsonObject,
-    ListPromptsResult, ListResourcesResult, ListToolsResult,
-    ReadResourceResult, ServerNotification,
+    CallToolResult, GetPromptResult, InitializeResult, JsonObject, ListPromptsResult,
+    ListResourcesResult, ListToolsResult, ReadResourceResult, ServerNotification,
 };
 use rmcp::service::RunningService;
 use rmcp::RoleClient;
@@ -16,7 +15,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 
-use crate::mcp::client::ProxyCastMcpClient;
+use proxycast_mcp::client::ProxyCastMcpClient;
 
 /// MCP 桥接客户端
 ///

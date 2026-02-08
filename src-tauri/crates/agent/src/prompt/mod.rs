@@ -7,8 +7,8 @@
 //! - templates - 提示词模板定义
 //! - builder - 提示词构建器
 
-pub mod templates;
 pub mod builder;
+pub mod templates;
 
 pub use builder::SystemPromptBuilder;
 pub use templates::*;

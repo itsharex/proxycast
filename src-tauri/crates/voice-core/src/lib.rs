@@ -4,16 +4,20 @@
 //! 不依赖 Tauri，可被任何 Rust 项目使用。
 
 pub mod asr_client;
+pub mod device;
 pub mod error;
 pub mod output;
 pub mod recorder;
+pub mod threaded_recorder;
 #[cfg(feature = "local-whisper")]
 pub mod transcriber;
 pub mod types;
 
+pub use device::{list_audio_devices, AudioDeviceInfo};
 pub use error::{Result, VoiceError};
 pub use output::OutputHandler;
 pub use recorder::AudioRecorder;
+pub use threaded_recorder::{RecordingCommand, RecordingResponse, RecordingService};
 #[cfg(feature = "local-whisper")]
 pub use transcriber::WhisperTranscriber;
 pub use types::*;

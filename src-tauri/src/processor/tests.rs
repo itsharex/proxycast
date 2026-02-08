@@ -3,6 +3,7 @@
 use super::*;
 use crate::services::provider_pool_service::ProviderPoolService;
 use crate::ProviderType;
+use std::sync::Arc;
 
 #[test]
 fn test_request_processor_new() {

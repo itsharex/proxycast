@@ -43,7 +43,6 @@ impl SystemPromptOptions {
     }
 }
 
-
 /// System Prompt 构建器
 pub struct SystemPromptBuilder {
     options: SystemPromptOptions,
@@ -132,7 +131,6 @@ impl SystemPromptBuilder {
         prompt
     }
 
-
     /// 构建环境信息部分
     fn build_environment_info(&self) -> String {
         let mut info = String::from("# 环境信息\n\n");
@@ -175,9 +173,7 @@ mod tests {
 
     #[test]
     fn test_build_with_working_dir() {
-        let prompt = SystemPromptBuilder::new()
-            .working_dir("/tmp/test")
-            .build();
+        let prompt = SystemPromptBuilder::new().working_dir("/tmp/test").build();
         assert!(prompt.contains("/tmp/test"));
     }
 }

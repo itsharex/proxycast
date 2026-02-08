@@ -10428,6 +10428,7 @@ dependencies = [
  "futures-util",
  "hmac",
  "hound",
+ "parking_lot",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

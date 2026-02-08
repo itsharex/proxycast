@@ -1,0 +1,19 @@
+//! ProxyCast Skills Crate
+//!
+//! 包含 Skills 系统的 trait 定义和纯逻辑部分。
+//! Tauri 相关的实现（TauriExecutionCallback、ProxyCastLlmProvider）留在主 crate。
+
+mod execution_callback;
+mod llm_provider;
+mod skill_loader;
+
+pub use execution_callback::{
+    events, ExecutionCallback, ExecutionCompletePayload, StepCompletePayload, StepErrorPayload,
+    StepStartPayload,
+};
+pub use llm_provider::{LlmProvider, SkillError};
+pub use skill_loader::{
+    find_skill_by_name, get_proxycast_skills_dir, load_skill_from_file, load_skills_from_directory,
+    parse_allowed_tools, parse_boolean, parse_skill_frontmatter, LoadedSkillDefinition,
+    SkillFrontmatter,
+};

@@ -29,6 +29,8 @@ use std::path::PathBuf;
 #[cfg(feature = "local-whisper")]
 use crate::config::WhisperModelSize;
 use crate::config::{load_config, AsrCredentialEntry, AsrProviderType};
+use voice_core::asr_client::{AsrClient, BaiduClient, OpenAIWhisperClient, XunfeiClient};
+use voice_core::types::AudioData;
 
 /// ASR 服务
 pub struct AsrService;
@@ -152,18 +154,7 @@ impl AsrService {
         let model_path = Self::get_whisper_model_path(&whisper_config.model)?;
 
         // 将 PCM 字节转换为 i16 采样
-        let samples: Vec<i16> = audio_data
-            .chunks_exact(2)
-            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
-            .collect();
-
-        // 检查音频数据是否有效
-        if samples.is_empty() {
-            return Err("音频数据为空".to_string());
-        }
-
-        // 创建 AudioData
-        let audio = voice_core::types::AudioData::new(samples, sample_rate, 1);
+        let audio = Self::build_audio_data(audio_data, sample_rate)?;
 
         // 检查录音时长
         if !audio.is_valid() {
@@ -240,80 +231,26 @@ impl AsrService {
     }
 
     /// OpenAI Whisper API 识别
-    ///
-    /// 使用手动构建 multipart/form-data 请求
     async fn transcribe_openai(
         credential: &AsrCredentialEntry,
         audio_data: &[u8],
         sample_rate: u32,
     ) -> Result<String, String> {
         let config = credential.openai_config.as_ref().ok_or("OpenAI 配置缺失")?;
+        let audio = Self::build_audio_data(audio_data, sample_rate)?;
 
-        // 构建 WAV 文件
-        let wav_data = Self::build_wav(audio_data, sample_rate, 1)?;
-
-        // 构建 multipart/form-data 请求体
-        let boundary = format!("----WebKitFormBoundary{}", uuid::Uuid::new_v4().simple());
-        let mut body = Vec::new();
-
-        // 添加 file 字段
-        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
-        body.extend_from_slice(
-            b"Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n",
-        );
-        body.extend_from_slice(b"Content-Type: audio/wav\r\n\r\n");
-        body.extend_from_slice(&wav_data);
-        body.extend_from_slice(b"\r\n");
-
-        // 添加 model 字段
-        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
-        body.extend_from_slice(b"Content-Disposition: form-data; name=\"model\"\r\n\r\n");
-        body.extend_from_slice(b"whisper-1\r\n");
-
-        // 添加 language 字段
-        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
-        body.extend_from_slice(b"Content-Disposition: form-data; name=\"language\"\r\n\r\n");
-        body.extend_from_slice(credential.language.as_bytes());
-        body.extend_from_slice(b"\r\n");
-
-        // 结束边界
-        body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
-
-        // 构建请求
-        let base_url = config
-            .base_url
-            .as_deref()
-            .unwrap_or("https://api.openai.com");
-        let url = format!("{base_url}/v1/audio/transcriptions");
-
-        let client = reqwest::Client::new();
-        let response = client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", config.api_key))
-            .header(
-                "Content-Type",
-                format!("multipart/form-data; boundary={boundary}"),
-            )
-            .body(body)
-            .send()
-            .await
-            .map_err(|e| format!("请求失败: {e}"))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(format!("OpenAI API 错误: {status} - {body}"));
+        let mut client = OpenAIWhisperClient::new(config.api_key.clone());
+        if let Some(base_url) = config.base_url.clone() {
+            client = client.with_host(base_url);
+        }
+        if !credential.language.is_empty() {
+            client = client.with_language(credential.language.clone());
         }
 
-        #[derive(serde::Deserialize)]
-        struct WhisperResponse {
-            text: String,
-        }
-
-        let result: WhisperResponse = response
-            .json()
+        let result = client
+            .transcribe(&audio)
             .await
-            .map_err(|e| format!("解析响应失败: {e}"))?;
+            .map_err(|e| format!("OpenAI Whisper 识别失败: {e}"))?;
 
         Ok(result.text)
     }
@@ -325,83 +262,15 @@ impl AsrService {
         sample_rate: u32,
     ) -> Result<String, String> {
         let config = credential.baidu_config.as_ref().ok_or("百度配置缺失")?;
+        let audio = Self::build_audio_data(audio_data, sample_rate)?;
 
-        // 获取 Access Token
-        let token_url = format!(
-            "https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={}&client_secret={}",
-            config.api_key, config.secret_key
-        );
-
-        let client = reqwest::Client::new();
-        let token_resp = client
-            .post(&token_url)
-            .send()
+        let client = BaiduClient::new(config.api_key.clone(), config.secret_key.clone());
+        let result = client
+            .transcribe(&audio)
             .await
-            .map_err(|e| format!("获取 Token 失败: {e}"))?;
+            .map_err(|e| format!("百度识别失败: {e}"))?;
 
-        #[derive(serde::Deserialize)]
-        struct TokenResponse {
-            access_token: String,
-        }
-
-        let token: TokenResponse = token_resp
-            .json()
-            .await
-            .map_err(|e| format!("解析 Token 失败: {e}"))?;
-
-        // 构建 WAV 并 Base64 编码
-        let wav_data = Self::build_wav(audio_data, sample_rate, 1)?;
-        let speech = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &wav_data);
-
-        #[derive(serde::Serialize)]
-        struct AsrRequest {
-            format: String,
-            rate: u32,
-            channel: u16,
-            cuid: String,
-            token: String,
-            speech: String,
-            len: usize,
-        }
-
-        let request = AsrRequest {
-            format: "wav".to_string(),
-            rate: sample_rate,
-            channel: 1,
-            cuid: "proxycast".to_string(),
-            token: token.access_token,
-            speech,
-            len: wav_data.len(),
-        };
-
-        let response = client
-            .post("https://vop.baidu.com/server_api")
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| format!("请求失败: {e}"))?;
-
-        #[derive(serde::Deserialize)]
-        struct AsrResponse {
-            err_no: i32,
-            err_msg: String,
-            #[serde(default)]
-            result: Vec<String>,
-        }
-
-        let result: AsrResponse = response
-            .json()
-            .await
-            .map_err(|e| format!("解析响应失败: {e}"))?;
-
-        if result.err_no != 0 {
-            return Err(format!(
-                "百度 ASR 错误: {} - {}",
-                result.err_no, result.err_msg
-            ));
-        }
-
-        Ok(result.result.join(""))
+        Ok(result.text)
     }
 
     /// 讯飞语音识别
@@ -413,15 +282,7 @@ impl AsrService {
         sample_rate: u32,
     ) -> Result<String, String> {
         let config = credential.xunfei_config.as_ref().ok_or("讯飞配置缺失")?;
-
-        // 将 PCM 字节转换为 i16 采样
-        let samples: Vec<i16> = audio_data
-            .chunks_exact(2)
-            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
-            .collect();
-
-        // 创建 AudioData
-        let audio = voice_core::types::AudioData::new(samples, sample_rate, 1);
+        let audio = Self::build_audio_data(audio_data, sample_rate)?;
 
         // 创建讯飞客户端
         // 讯飞语言代码转换：zh -> zh_cn, en -> en_us
@@ -431,15 +292,13 @@ impl AsrService {
             other => other.to_string(),
         };
 
-        let client = voice_core::asr_client::XunfeiClient::new(
+        let client = XunfeiClient::new(
             config.app_id.clone(),
             config.api_key.clone(),
             config.api_secret.clone(),
         )
         .with_language(xunfei_language);
 
-        // 调用识别
-        use voice_core::asr_client::AsrClient;
         let result = client
             .transcribe(&audio)
             .await
@@ -448,36 +307,13 @@ impl AsrService {
         Ok(result.text)
     }
 
-    /// 构建 WAV 文件
-    fn build_wav(pcm_data: &[u8], sample_rate: u32, channels: u16) -> Result<Vec<u8>, String> {
-        let bits_per_sample: u16 = 16;
-        let byte_rate = sample_rate * u32::from(channels) * u32::from(bits_per_sample) / 8;
-        let block_align = channels * bits_per_sample / 8;
-        let data_size = pcm_data.len() as u32;
-        let file_size = 36 + data_size;
+    /// 将 PCM 字节构造成 voice-core 的 AudioData
+    fn build_audio_data(audio_data: &[u8], sample_rate: u32) -> Result<AudioData, String> {
+        let audio = AudioData::from_pcm16le_bytes(audio_data, sample_rate, 1);
+        if audio.samples.is_empty() {
+            return Err("音频数据为空".to_string());
+        }
 
-        let mut wav = Vec::with_capacity(44 + pcm_data.len());
-
-        // RIFF header
-        wav.extend_from_slice(b"RIFF");
-        wav.extend_from_slice(&file_size.to_le_bytes());
-        wav.extend_from_slice(b"WAVE");
-
-        // fmt chunk
-        wav.extend_from_slice(b"fmt ");
-        wav.extend_from_slice(&16u32.to_le_bytes()); // chunk size
-        wav.extend_from_slice(&1u16.to_le_bytes()); // PCM format
-        wav.extend_from_slice(&channels.to_le_bytes());
-        wav.extend_from_slice(&sample_rate.to_le_bytes());
-        wav.extend_from_slice(&byte_rate.to_le_bytes());
-        wav.extend_from_slice(&block_align.to_le_bytes());
-        wav.extend_from_slice(&bits_per_sample.to_le_bytes());
-
-        // data chunk
-        wav.extend_from_slice(b"data");
-        wav.extend_from_slice(&data_size.to_le_bytes());
-        wav.extend_from_slice(pcm_data);
-
-        Ok(wav)
+        Ok(audio)
     }
 }

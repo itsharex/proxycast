@@ -328,11 +328,7 @@ pub async fn stop_recording(
     );
 
     // 将 i16 样本转换为字节（小端序）
-    let bytes: Vec<u8> = audio
-        .samples
-        .iter()
-        .flat_map(|&s| s.to_le_bytes())
-        .collect();
+    let bytes = audio.to_pcm16le_bytes();
 
     Ok(StopRecordingResult {
         audio_data: bytes,

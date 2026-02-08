@@ -16,7 +16,6 @@ pub const CORE_IDENTITY: &str = r#"你是 ProxyCast Agent，一个强大的 AI �
 - 拒绝破坏性技术、DoS 攻击、大规模攻击、供应链攻击的请求
 - 永远不要生成或猜测 URL，除非你确信这些 URL 是用于帮助用户编程"#;
 
-
 /// 工具使用指南
 pub const TOOL_GUIDELINES: &str = r#"# 工具使用策略
 
@@ -46,7 +45,6 @@ pub const TOOL_GUIDELINES: &str = r#"# 工具使用策略
 3. **先读后改**：修改文件前必须先读取文件内容
 4. **最小权限**：只执行必要的操作，避免不必要的文件修改"#;
 
-
 /// 代码编写指南
 pub const CODING_GUIDELINES: &str = r#"# 代码编写指南
 
@@ -70,7 +68,6 @@ pub const CODING_GUIDELINES: &str = r#"# 代码编写指南
 - 优先编辑现有文件而不是创建新文件
 - 删除未使用的代码，不要留下注释掉的代码"#;
 
-
 /// 任务管理指南
 pub const TASK_MANAGEMENT: &str = r#"# 任务管理
 
@@ -89,7 +86,6 @@ pub const TASK_MANAGEMENT: &str = r#"# 任务管理
 
 不要批量完成多个任务后再标记，应该完成一个标记一个。"#;
 
-
 /// Git 操作指南
 pub const GIT_GUIDELINES: &str = r#"# Git 操作
 
@@ -100,7 +96,6 @@ pub const GIT_GUIDELINES: &str = r#"# Git 操作
 - 避免使用 git commit --amend，除非明确请求
 - 在 amend 之前：始终检查作者信息（git log -1 --format='%an %ae'）
 - 永远不要提交更改，除非用户明确要求"#;
-
 
 /// 输出风格指南
 pub const OUTPUT_STYLE: &str = r#"# 输出风格

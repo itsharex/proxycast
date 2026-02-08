@@ -32,6 +32,7 @@ reqwest = { version = "0.12", features = ["json", "multipart"] }
 
 # 异步运行时
 tokio = { version = "1", features = ["sync", "time"] }
+parking_lot = "0.12"
 
 # WebSocket 客户端（讯飞 ASR）
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }

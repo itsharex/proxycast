@@ -1,20 +1,11 @@
 //! ProxyCast LLM Provider 实现
 //!
-//! 实现 aster-rust 的 LlmProvider trait，使用 ProviderPoolService 选择凭证并调用 LLM API。
-//!
-//! ## 功能
-//! - 通过 ProviderPoolService 选择可用凭证
-//! - 支持指定 provider 类型和 model 参数
-//! - 智能降级到 API Key Provider
-//!
-//! ## 依赖
-//! - `ProviderPoolService`: 凭证池管理
-//! - `ApiKeyProviderService`: API Key 服务（降级使用）
+//! 使用 ProviderPoolService 选择凭证并调用 LLM API。
+//! trait 定义（LlmProvider, SkillError）已迁移到 proxycast-skills crate。
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 
 use crate::database::DbConnection;
 use crate::models::anthropic::AnthropicMessagesRequest;
@@ -25,54 +16,7 @@ use crate::providers::{ClaudeCustomProvider, KiroProvider, OpenAICustomProvider}
 use crate::services::api_key_provider_service::ApiKeyProviderService;
 use crate::services::provider_pool_service::ProviderPoolService;
 
-/// Skill 执行错误类型
-///
-/// 用于 LlmProvider trait 的错误返回
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum SkillError {
-    /// Provider 错误（凭证不可用、API 调用失败等）
-    ProviderError(String),
-    /// 执行错误（Skill 执行过程中的错误）
-    ExecutionError(String),
-    /// 配置错误
-    ConfigError(String),
-}
-
-impl std::fmt::Display for SkillError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SkillError::ProviderError(msg) => write!(f, "Provider error: {}", msg),
-            SkillError::ExecutionError(msg) => write!(f, "Execution error: {}", msg),
-            SkillError::ConfigError(msg) => write!(f, "Config error: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for SkillError {}
-
-/// LLM Provider Trait
-///
-/// 定义 Skill 执行引擎调用 LLM 的接口。
-/// 应用层需要实现此 trait 以提供 LLM 调用能力。
-#[async_trait]
-pub trait LlmProvider: Send + Sync {
-    /// 调用 LLM 进行对话
-    ///
-    /// # 参数
-    /// - `system_prompt`: 系统提示词
-    /// - `user_message`: 用户消息
-    /// - `model`: 可选的模型名称
-    ///
-    /// # 返回
-    /// - `Ok(String)`: LLM 的响应文本
-    /// - `Err(SkillError)`: 调用失败时的错误
-    async fn chat(
-        &self,
-        system_prompt: &str,
-        user_message: &str,
-        model: Option<&str>,
-    ) -> Result<String, SkillError>;
-}
+use proxycast_skills::{LlmProvider, SkillError};
 
 /// ProxyCast LLM Provider
 ///

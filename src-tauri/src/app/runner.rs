@@ -210,14 +210,17 @@ pub fn run() {
                 tracing::info!("[启动] GlobalConfigManager 事件发射器已设置");
             }
 
-            // 设置 MCP Manager 的 AppHandle（用于发送 mcp:* 事件）
+            // 设置 MCP Manager 的事件发射器（用于发送 mcp:* 事件）
             if let Some(mcp_manager) = app.try_state::<crate::mcp::McpManagerState>() {
                 let app_handle = app.handle().clone();
+                let emitter = proxycast_core::DynEmitter::new(
+                    crate::app::TauriEventEmitter(app_handle),
+                );
                 tauri::async_runtime::block_on(async {
                     let mut manager = mcp_manager.lock().await;
-                    manager.set_app_handle(app_handle);
+                    manager.set_emitter(emitter);
                 });
-                tracing::info!("[启动] MCP Manager AppHandle 已设置");
+                tracing::info!("[启动] MCP Manager 事件发射器已设置");
             }
 
             // 初始化截图对话模块

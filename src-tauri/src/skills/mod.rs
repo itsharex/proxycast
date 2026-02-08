@@ -1,32 +1,21 @@
 //! Skills 集成模块
 //!
-//! 本模块实现 aster-rust Skills 系统与 ProxyCast 的集成。
-//!
-//! ## 模块结构
-//! - `llm_provider`: ProxyCastLlmProvider 实现，使用 ProviderPoolService 调用 LLM
-//! - `execution_callback`: TauriExecutionCallback 实现，通过 Tauri 事件发送进度
-//!
-//! ## 使用示例
-//! ```ignore
-//! use proxycast::skills::{ProxyCastLlmProvider, TauriExecutionCallback};
-//!
-//! let provider = ProxyCastLlmProvider::new(pool_service, api_key_service, db);
-//! let callback = TauriExecutionCallback::new(app_handle, execution_id);
-//! ```
+//! trait 定义和纯逻辑已迁移到 proxycast-skills crate，
+//! 本模块保留 Tauri 相关的实现。
 
 mod execution_callback;
 mod llm_provider;
-mod skill_loader;
 
-pub use execution_callback::{
-    events, ExecutionCallback, ExecutionCompletePayload, StepCompletePayload, StepErrorPayload,
-    StepStartPayload, TauriExecutionCallback,
+// 从 proxycast-skills crate re-export
+pub use proxycast_skills::{
+    events, ExecutionCallback, ExecutionCompletePayload, LlmProvider, SkillError,
+    StepCompletePayload, StepErrorPayload, StepStartPayload,
 };
-pub use llm_provider::{LlmProvider, ProxyCastLlmProvider, SkillError};
-pub(crate) use skill_loader::{
-    find_skill_by_name, get_proxycast_skills_dir, load_skills_from_directory,
+pub use proxycast_skills::{
+    find_skill_by_name, get_proxycast_skills_dir, load_skill_from_file, load_skills_from_directory,
+    parse_allowed_tools, parse_boolean, parse_skill_frontmatter,
 };
-#[cfg(test)]
-pub(crate) use skill_loader::{
-    load_skill_from_file, parse_allowed_tools, parse_boolean, parse_skill_frontmatter,
-};
+
+// Tauri 实现（留在主 crate）
+pub use execution_callback::TauriExecutionCallback;
+pub use llm_provider::ProxyCastLlmProvider;

@@ -42,10 +42,10 @@
 
 ```
 voice/
-├── asr_service.rs ──→ voice-core (WhisperTranscriber, XunfeiClient)
+├── asr_service.rs ──→ voice-core (WhisperTranscriber, AsrClient)
 ├── output_service.rs ──→ voice-core (OutputHandler)
+├── recording_service.rs ──→ voice-core (threaded_recorder + Tauri State 包装)
 ├── processor.rs ──→ 本地 API 服务器 (LLM 润色)
-├── recording_service.rs ──→ cpal (音频采集)
 └── commands.rs ──→ 上述所有服务
 ```
 

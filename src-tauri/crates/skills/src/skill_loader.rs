@@ -1,7 +1,6 @@
 //! Skill 定义加载器
 //!
 //! 负责从 `~/.proxycast/skills/<skill>/SKILL.md` 加载并解析 Skill 定义。
-//! 命令层只负责编排执行，不再持有文件解析细节。
 
 use std::path::{Path, PathBuf};
 
@@ -9,63 +8,42 @@ use serde::{Deserialize, Serialize};
 
 /// Skill 前置元数据
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct SkillFrontmatter {
-    /// Skill 名称
+pub struct SkillFrontmatter {
     pub name: Option<String>,
-    /// Skill 描述
     pub description: Option<String>,
-    /// 允许的工具
     #[serde(rename = "allowed-tools")]
     pub allowed_tools: Option<String>,
-    /// 参数提示
     #[serde(rename = "argument-hint")]
     pub argument_hint: Option<String>,
-    /// 使用场景
     #[serde(rename = "when-to-use")]
     pub when_to_use: Option<String>,
-    /// 版本
     pub version: Option<String>,
-    /// 偏好模型
     pub model: Option<String>,
-    /// 偏好 Provider
     pub provider: Option<String>,
-    /// 是否禁用模型调用
     #[serde(rename = "disable-model-invocation")]
     pub disable_model_invocation: Option<String>,
-    /// 执行模式
     #[serde(rename = "execution-mode")]
     pub execution_mode: Option<String>,
 }
 
 /// 内部 Skill 定义（用于加载和执行）
 #[derive(Debug, Clone)]
-pub(crate) struct LoadedSkillDefinition {
-    /// Skill 名称
+pub struct LoadedSkillDefinition {
     pub skill_name: String,
-    /// 显示名称
     pub display_name: String,
-    /// 描述
     pub description: String,
-    /// Markdown 内容（System Prompt）
     pub markdown_content: String,
-    /// 允许的工具
     pub allowed_tools: Option<Vec<String>>,
-    /// 参数提示
     pub argument_hint: Option<String>,
-    /// 使用场景
     pub when_to_use: Option<String>,
-    /// 偏好模型
     pub model: Option<String>,
-    /// 偏好 Provider
     pub provider: Option<String>,
-    /// 是否禁用模型调用
     pub disable_model_invocation: bool,
-    /// 执行模式
     pub execution_mode: String,
 }
 
 /// 解析 Skill 文件的 frontmatter
-pub(crate) fn parse_skill_frontmatter(content: &str) -> (SkillFrontmatter, String) {
+pub fn parse_skill_frontmatter(content: &str) -> (SkillFrontmatter, String) {
     let regex = regex::Regex::new(r"^---\s*\n([\s\S]*?)---\s*\n?").unwrap();
 
     if let Some(captures) = regex.captures(content) {
@@ -111,7 +89,7 @@ pub(crate) fn parse_skill_frontmatter(content: &str) -> (SkillFrontmatter, Strin
 }
 
 /// 解析 allowed-tools 字段
-pub(crate) fn parse_allowed_tools(value: Option<&str>) -> Option<Vec<String>> {
+pub fn parse_allowed_tools(value: Option<&str>) -> Option<Vec<String>> {
     value.and_then(|v| {
         if v.is_empty() {
             return None;
@@ -130,7 +108,7 @@ pub(crate) fn parse_allowed_tools(value: Option<&str>) -> Option<Vec<String>> {
 }
 
 /// 解析布尔值字段
-pub(crate) fn parse_boolean(value: Option<&str>, default: bool) -> bool {
+pub fn parse_boolean(value: Option<&str>, default: bool) -> bool {
     value
         .map(|v| {
             let lower = v.to_lowercase();
@@ -140,7 +118,7 @@ pub(crate) fn parse_boolean(value: Option<&str>, default: bool) -> bool {
 }
 
 /// 从文件加载 Skill 定义
-pub(crate) fn load_skill_from_file(
+pub fn load_skill_from_file(
     skill_name: &str,
     file_path: &Path,
 ) -> Result<LoadedSkillDefinition, String> {
@@ -178,12 +156,12 @@ pub(crate) fn load_skill_from_file(
 }
 
 /// 获取 ProxyCast Skills 目录
-pub(crate) fn get_proxycast_skills_dir() -> Option<PathBuf> {
+pub fn get_proxycast_skills_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|home| home.join(".proxycast").join("skills"))
 }
 
 /// 从目录加载所有 Skills
-pub(crate) fn load_skills_from_directory(dir_path: &Path) -> Vec<LoadedSkillDefinition> {
+pub fn load_skills_from_directory(dir_path: &Path) -> Vec<LoadedSkillDefinition> {
     let mut results = Vec::new();
 
     if !dir_path.exists() {
@@ -216,7 +194,7 @@ pub(crate) fn load_skills_from_directory(dir_path: &Path) -> Vec<LoadedSkillDefi
 }
 
 /// 根据名称查找 Skill
-pub(crate) fn find_skill_by_name(skill_name: &str) -> Result<LoadedSkillDefinition, String> {
+pub fn find_skill_by_name(skill_name: &str) -> Result<LoadedSkillDefinition, String> {
     let skills_dir =
         get_proxycast_skills_dir().ok_or_else(|| "无法获取 Skills 目录".to_string())?;
 

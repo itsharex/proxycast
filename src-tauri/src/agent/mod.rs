@@ -1,19 +1,17 @@
 //! AI Agent 集成模块
 //!
-//! 基于 aster-rust 框架实现 Agent 功能
-//!
-//! ## 架构设计
-//! - aster_state - Aster Agent 状态管理
-//! - aster_agent - Aster Agent 包装器
-//! - event_converter - Aster 事件转换器
-//! - credential_bridge - 凭证池桥接（连接 ProxyCast 凭证池与 Aster Provider）
-//! - subagent_scheduler - SubAgent 调度器集成
+//! 纯逻辑部分已迁移到 proxycast-agent crate，
+//! 本模块保留深耦合部分（依赖 database, services, AppHandle）。
 
 pub mod aster_agent;
 pub mod aster_state;
 pub mod credential_bridge;
-pub mod event_converter;
 pub mod subagent_scheduler;
+
+// 从 proxycast-agent crate re-export
+pub use proxycast_agent::event_converter;
+pub use proxycast_agent::mcp_bridge;
+pub use proxycast_agent::prompt;
 
 // types 已迁移到 proxycast-core
 pub use proxycast_core::agent::types;
@@ -23,7 +21,7 @@ pub use aster_state::AsterAgentState;
 pub use credential_bridge::{
     create_aster_provider, AsterProviderConfig, CredentialBridge, CredentialBridgeError,
 };
-pub use event_converter::{convert_agent_event, TauriAgentEvent};
+pub use proxycast_agent::{convert_agent_event, convert_to_tauri_message, TauriAgentEvent};
 pub use subagent_scheduler::{
     ProxyCastScheduler, ProxyCastSubAgentExecutor, SubAgentProgressEvent,
 };
