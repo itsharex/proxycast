@@ -13,11 +13,9 @@
 //! 6. 插件后置钩子 (PluginPostStep)
 //! 7. 统计记录 (TelemetryStep)
 
-mod context;
-mod error;
+// context 和 error 已迁移到 proxycast-core
+pub use proxycast_core::processor::RequestContext;
 mod steps;
-
-pub use context::RequestContext;
 
 use crate::injection::Injector;
 use crate::plugin::PluginManager;

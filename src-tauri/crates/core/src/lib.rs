@@ -41,6 +41,12 @@ pub mod router;
 // 凭证池核心（types, pool, health, risk）
 pub mod credential;
 
+// 请求处理器核心类型（context, error）
+pub mod processor;
+
+// WebSocket 核心类型
+pub mod websocket;
+
 // 数据层
 pub mod content;
 pub mod database;
