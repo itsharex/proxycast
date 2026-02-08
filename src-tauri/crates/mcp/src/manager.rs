@@ -26,11 +26,11 @@
 
 #![allow(dead_code)]
 
+use proxycast_core::DynEmitter;
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::Emitter;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::RwLock;
@@ -39,8 +39,8 @@ use tracing::{debug, error, info, warn};
 use rmcp::transport::TokioChildProcess;
 use rmcp::ServiceExt;
 
-use super::client::McpClientWrapper;
-use super::types::*;
+use crate::client::McpClientWrapper;
+use crate::types::*;
 
 /// MCP 客户端管理器
 ///
@@ -89,14 +89,14 @@ pub struct McpClientManager {
     /// - Some(tools): 缓存有效
     tool_cache: Arc<RwLock<Option<Vec<McpToolDefinition>>>>,
 
-    /// Tauri AppHandle（用于发送事件）
+    /// 事件发射器
     ///
     /// 用于向前端发送 MCP 相关事件，如：
     /// - mcp:server_started
     /// - mcp:server_stopped
     /// - mcp:server_error
     /// - mcp:tools_updated
-    app_handle: Option<tauri::AppHandle>,
+    emitter: Option<DynEmitter>,
 }
 
 impl McpClientManager {
@@ -104,24 +104,24 @@ impl McpClientManager {
     ///
     /// # Arguments
     ///
-    /// * `app_handle` - Tauri AppHandle，用于发送事件到前端。
+    /// * `emitter` - 事件发射器，用于发送事件到前端。
     ///                  如果为 None，则不会发送事件。
     ///
     /// # Returns
     ///
     /// 返回初始化的 McpClientManager 实例，连接池和缓存均为空。
-    pub fn new(app_handle: Option<tauri::AppHandle>) -> Self {
+    pub fn new(emitter: Option<DynEmitter>) -> Self {
         info!("创建 MCP 客户端管理器");
         Self {
             clients: Arc::new(RwLock::new(HashMap::new())),
             tool_cache: Arc::new(RwLock::new(None)),
-            app_handle,
+            emitter,
         }
     }
 
-    /// 设置 Tauri AppHandle（用于发送前端事件）
-    pub fn set_app_handle(&mut self, app_handle: tauri::AppHandle) {
-        self.app_handle = Some(app_handle);
+    /// 设置事件发射器
+    pub fn set_emitter(&mut self, emitter: DynEmitter) {
+        self.emitter = Some(emitter);
     }
 
     // ========================================================================
@@ -292,15 +292,17 @@ impl McpClientManager {
     /// * `event` - 事件名称
     /// * `payload` - 事件数据
     pub fn emit_event<T: serde::Serialize + Clone>(&self, event: &str, payload: T) {
-        if let Some(ref app_handle) = self.app_handle {
-            if let Err(e) = app_handle.emit(event, payload) {
-                warn!(
-                    event = %event,
-                    error = %e,
-                    "发送 Tauri 事件失败"
-                );
-            } else {
-                debug!(event = %event, "发送 Tauri 事件");
+        if let Some(ref emitter) = self.emitter {
+            if let Ok(value) = serde_json::to_value(&payload) {
+                if let Err(e) = emitter.emit_event(event, &value) {
+                    warn!(
+                        event = %event,
+                        error = %e,
+                        "发送事件失败"
+                    );
+                } else {
+                    debug!(event = %event, "发送事件");
+                }
             }
         }
     }
@@ -471,7 +473,7 @@ impl McpClientManager {
 
         // 4. 初始化 MCP 客户端
         let client_handler =
-            super::client::ProxyCastMcpClient::new(name.to_string(), self.app_handle.clone());
+            crate::client::ProxyCastMcpClient::new(name.to_string(), self.emitter.clone());
 
         // 连接超时：至少 60 秒，避免 npx 首次下载时超时
         let timeout_secs = std::cmp::max(config.timeout, 60);
@@ -538,10 +540,10 @@ impl McpClientManager {
             });
 
         // 创建客户端包装器
-        let mut wrapper = super::client::McpClientWrapper::new(
+        let mut wrapper = crate::client::McpClientWrapper::new(
             name.to_string(),
             config.clone(),
-            self.app_handle.clone(),
+            self.emitter.clone(),
         );
         if let Some(ref info) = server_info {
             wrapper.set_server_info(info.clone());
@@ -1495,8 +1497,8 @@ impl McpClientManager {
 pub type McpManagerState = Arc<tokio::sync::Mutex<McpClientManager>>;
 
 /// 创建 MCP 管理器状态
-pub fn create_mcp_manager_state(app_handle: Option<tauri::AppHandle>) -> McpManagerState {
-    Arc::new(tokio::sync::Mutex::new(McpClientManager::new(app_handle)))
+pub fn create_mcp_manager_state(emitter: Option<DynEmitter>) -> McpManagerState {
+    Arc::new(tokio::sync::Mutex::new(McpClientManager::new(emitter)))
 }
 
 // ============================================================================
@@ -1528,7 +1530,7 @@ mod tests {
     fn test_manager_creation() {
         let manager = McpClientManager::new(None);
         // 验证初始状态
-        assert!(manager.app_handle.is_none());
+        assert!(manager.emitter.is_none());
     }
 
     #[tokio::test]

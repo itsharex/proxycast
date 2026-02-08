@@ -1,0 +1,17 @@
+[package]
+name = "proxycast-mcp"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+proxycast-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+glob.workspace = true
+rmcp.workspace = true

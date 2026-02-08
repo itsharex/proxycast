@@ -232,13 +232,13 @@ pub struct McpToolsUpdatedPayload {
 }
 
 // ============================================================================
-// Tauri 状态类型
+// 状态类型
 // ============================================================================
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-/// MCP 客户端管理器状态（Tauri 托管状态）
+/// MCP 客户端管理器状态
 ///
 /// 使用 Arc<Mutex<McpClientManager>> 包装，支持跨线程共享和异步访问。
 pub type McpManagerState = Arc<Mutex<super::manager::McpClientManager>>;
