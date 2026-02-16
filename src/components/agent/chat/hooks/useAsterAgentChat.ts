@@ -936,16 +936,29 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
     await sendMessage("", [], false, false, true);
   }, [sendMessage]);
 
-  // 清空消息
-  const clearMessages = useCallback(() => {
-    setMessages([]);
-    setSessionId(null);
-    setPendingActions([]);
-    restoredWorkspaceRef.current = null;
-    hydratedSessionRef.current = null;
-    skipAutoRestoreRef.current = true;
-    toast.success("新话题已创建");
-  }, []);
+  // 清空消息（兼容 useAgentChat 的可选参数）
+  const clearMessages = useCallback(
+    (
+      options: {
+        showToast?: boolean;
+        toastMessage?: string;
+      } = {},
+    ) => {
+      const { showToast = true, toastMessage = "新话题已创建" } = options;
+
+      setMessages([]);
+      setSessionId(null);
+      setPendingActions([]);
+      restoredWorkspaceRef.current = null;
+      hydratedSessionRef.current = null;
+      skipAutoRestoreRef.current = true;
+
+      if (showToast) {
+        toast.success(toastMessage);
+      }
+    },
+    [],
+  );
 
   // 删除消息
   const deleteMessage = useCallback((id: string) => {
