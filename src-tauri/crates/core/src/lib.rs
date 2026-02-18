@@ -59,6 +59,9 @@ pub mod event_emit;
 // 网络工具
 pub mod network;
 
+// 凭证清理（敏感信息过滤）
+pub mod sanitizer;
+
 // 数据层
 pub mod content;
 pub mod database;

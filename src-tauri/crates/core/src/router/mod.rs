@@ -10,13 +10,18 @@
 //!
 //! 模型映射：
 //! - 支持模型别名映射（如 `gpt-4` -> `claude-sonnet-4-5-20250514`）
+//!
+//! 提示路由：
+//! - 支持消息前缀提示路由（如 `[reasoning] 请分析...`）
 
 mod amp_router;
+mod hint_router;
 mod mapper;
 mod provider_router;
 mod route_registry;
 mod rules;
 
 pub use amp_router::AmpRouter;
+pub use hint_router::{HintMatch, HintRoute, HintRouter, HintRouterConfig, HintRouteEntry};
 pub use mapper::ModelMapper;
 pub use rules::Router;

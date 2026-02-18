@@ -9,6 +9,7 @@
 //! - `sync` - 凭证与 YAML 配置文件的同步
 
 mod balancer;
+pub mod encryption;
 mod quota;
 mod sync;
 

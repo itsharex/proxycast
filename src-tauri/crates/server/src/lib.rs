@@ -1,6 +1,8 @@
 //! HTTP API 服务器
 
+pub mod auth;
 pub mod client_detector;
+pub mod middleware;
 
 use axum::{
     extract::{DefaultBodyLimit, Path, State},
@@ -43,6 +45,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{oneshot, RwLock};
 use tower_http::cors::CorsLayer;
+use tower_http::timeout::TimeoutLayer;
 
 /// 记录请求统计到遥测系统
 pub fn record_request_telemetry(
@@ -1053,6 +1056,10 @@ async fn run_server(
         .merge(batch_api_routes)
         .layer(cors_layer)
         .layer(DefaultBodyLimit::max(body_limit))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            std::time::Duration::from_secs(300),
+        ))
         .with_state(state);
 
     let addr: std::net::SocketAddr = format!("{host}:{port}")

@@ -6,6 +6,8 @@
 //!
 //! - `steps` - 管道步骤（认证、注入、路由、插件、Provider、遥测）
 
+pub mod conversation_manager;
+pub mod conversation_summarizer;
 pub mod processor;
 pub mod steps;
 
