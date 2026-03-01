@@ -1,5 +1,6 @@
 import React, { memo, useEffect, useMemo, useState } from "react";
 import styled from "styled-components";
+import { toast } from "sonner";
 import {
   ChevronLeft,
   ChevronRight,
@@ -12,6 +13,14 @@ import { VideoSidebar, type VideoProviderOption } from "./VideoSidebar";
 import { VideoWorkspace } from "./VideoWorkspace";
 import { apiKeyProviderApi } from "@/lib/api/apiKeyProvider";
 import { CanvasBreadcrumbHeader } from "../shared/CanvasBreadcrumbHeader";
+import {
+  ackCanvasImageInsertRequest,
+  emitCanvasImageInsertAck,
+  getPendingCanvasImageInsertRequests,
+  matchesCanvasImageInsertTarget,
+  onCanvasImageInsertRequest,
+  type CanvasImageInsertRequest,
+} from "@/lib/canvasImageInsertBus";
 
 const VIDEO_MODEL_PRESETS: Record<string, string[]> = {
   doubao: ["seedance-1-5-pro-251215", "seedance-1-5-lite-250428"],
@@ -198,7 +207,14 @@ const MainAction = styled.button`
 `;
 
 export const VideoCanvas: React.FC<VideoCanvasProps> = memo(
-  ({ state, onStateChange, projectId, onClose: _onClose, onBackHome }) => {
+  ({
+    state,
+    onStateChange,
+    projectId,
+    contentId,
+    onClose: _onClose,
+    onBackHome,
+  }) => {
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [topicPanelCollapsed, setTopicPanelCollapsed] = useState(false);
     const [providers, setProviders] = useState<VideoProviderOption[]>([]);
@@ -279,6 +295,58 @@ export const VideoCanvas: React.FC<VideoCanvasProps> = memo(
         });
       }
     }, [availableModels, onStateChange, providers, state]);
+
+    const matchesRequestTarget = useMemo(
+      () => (request: CanvasImageInsertRequest) =>
+        matchesCanvasImageInsertTarget(request, {
+          projectId: projectId || null,
+          contentId: contentId || null,
+          canvasType: "video",
+        }),
+      [contentId, projectId],
+    );
+
+    useEffect(() => {
+      const processInsertRequest = (request: CanvasImageInsertRequest) => {
+        if (!matchesRequestTarget(request)) {
+          return;
+        }
+
+        const imageUrl = request.image.contentUrl?.trim();
+        if (!imageUrl) {
+          emitCanvasImageInsertAck({
+            requestId: request.requestId,
+            success: false,
+            canvasType: "video",
+            reason: "invalid_image_url",
+          });
+          ackCanvasImageInsertRequest(request.requestId);
+          return;
+        }
+
+        onStateChange({
+          ...state,
+          startImage: imageUrl,
+        });
+        toast.success("已设置为视频起始参考图");
+
+        emitCanvasImageInsertAck({
+          requestId: request.requestId,
+          success: true,
+          canvasType: "video",
+          locationLabel: "起始画面参考图",
+        });
+        ackCanvasImageInsertRequest(request.requestId);
+      };
+
+      const unsubscribe = onCanvasImageInsertRequest((request) => {
+        processInsertRequest(request);
+      });
+      getPendingCanvasImageInsertRequests().forEach((request) => {
+        processInsertRequest(request);
+      });
+      return unsubscribe;
+    }, [matchesRequestTarget, onStateChange, state]);
 
     return (
       <Root>

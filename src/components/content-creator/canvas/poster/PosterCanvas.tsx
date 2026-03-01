@@ -6,6 +6,7 @@
 
 import React, { memo, useRef, useEffect, useState, useCallback } from "react";
 import styled from "styled-components";
+import { toast } from "sonner";
 import { PosterToolbar } from "./PosterToolbar";
 import { ElementToolbar } from "./ElementToolbar";
 import { LayerPanel } from "./LayerPanel";
@@ -27,6 +28,14 @@ import {
 } from "./elements";
 import type { PosterCanvasProps, ShapeType } from "./types";
 import type { AlignDirection } from "./utils/alignmentGuides";
+import {
+  ackCanvasImageInsertRequest,
+  emitCanvasImageInsertAck,
+  getPendingCanvasImageInsertRequests,
+  matchesCanvasImageInsertTarget,
+  onCanvasImageInsertRequest,
+  type CanvasImageInsertRequest,
+} from "@/lib/canvasImageInsertBus";
 
 const Container = styled.div`
   display: flex;
@@ -102,7 +111,7 @@ const GridOverlay = styled.div<{
  * @returns 海报画布组件
  */
 export const PosterCanvas: React.FC<PosterCanvasProps> = memo(
-  ({ state, onStateChange, onBackHome, onClose }) => {
+  ({ state, onStateChange, projectId, contentId, onBackHome, onClose }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -157,7 +166,7 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = memo(
 
     // 使用元素 Hooks
     const { addText } = useTextElement({ canvas });
-    const { addImageFromFile } = useImageElement({ canvas });
+    const { addImage, addImageFromFile } = useImageElement({ canvas });
     const { addShape } = useShapeElement({ canvas });
     const { setSolidBackground } = useBackgroundElement({ canvas });
 
@@ -346,6 +355,64 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = memo(
       },
       [alignSelectedElements],
     );
+
+    const matchesRequestTarget = useCallback(
+      (request: CanvasImageInsertRequest): boolean =>
+        matchesCanvasImageInsertTarget(request, {
+          projectId: projectId || null,
+          contentId: contentId || null,
+          canvasType: "poster",
+        }),
+      [contentId, projectId],
+    );
+
+    const processInsertRequest = useCallback(
+      async (request: CanvasImageInsertRequest) => {
+        if (!matchesRequestTarget(request)) {
+          return;
+        }
+        const imageUrl = request.image.contentUrl?.trim();
+        if (!imageUrl) {
+          emitCanvasImageInsertAck({
+            requestId: request.requestId,
+            success: false,
+            canvasType: "poster",
+            reason: "invalid_image_url",
+          });
+          ackCanvasImageInsertRequest(request.requestId);
+          return;
+        }
+
+        const insertedId = await addImage(imageUrl);
+        const success = Boolean(insertedId);
+        if (success) {
+          toast.success("已插入到海报画布中央");
+        }
+
+        emitCanvasImageInsertAck({
+          requestId: request.requestId,
+          success,
+          canvasType: "poster",
+          locationLabel: success ? "当前画布中心" : undefined,
+          reason: success ? undefined : "poster_insert_failed",
+        });
+        ackCanvasImageInsertRequest(request.requestId);
+      },
+      [addImage, matchesRequestTarget],
+    );
+
+    useEffect(() => {
+      const unsubscribe = onCanvasImageInsertRequest((request) => {
+        void processInsertRequest(request);
+      });
+      return unsubscribe;
+    }, [processInsertRequest]);
+
+    useEffect(() => {
+      getPendingCanvasImageInsertRequests().forEach((request) => {
+        void processInsertRequest(request);
+      });
+    }, [processInsertRequest]);
 
     return (
       <Container>

@@ -1503,7 +1503,6 @@ export function useAgentChat(options: UseAgentChatOptions) {
       console.log("[useAgentChat] 转换后消息数量:", loadedMessages.length);
       setMessages(loadedMessages);
       setSessionId(topicId);
-      toast.info("已切换话题");
     } catch (error) {
       if (restoreRequestVersion !== sessionResetVersionRef.current) {
         console.log("[useAgentChat] 忽略过期会话切换错误:", topicId);

@@ -14,6 +14,7 @@ import type {
 import { WorkspaceShell, WorkspaceTopbar } from "@/components/workspace/shell";
 import {
   WorkbenchCreateContentDialog,
+  WorkbenchCreateContentDialogBoundary,
   WorkbenchCreateProjectDialog,
 } from "@/components/workspace/dialogs";
 import {
@@ -255,42 +256,48 @@ export function WorkbenchPage({
         }}
       />
 
-      <WorkbenchCreateContentDialog
+      <WorkbenchCreateContentDialogBoundary
         open={createContentDialogOpen}
-        creatingContent={creatingContent}
         step={createContentDialogStep}
-        selectedProjectId={selectedProjectId}
-        creationModeOptions={CREATION_MODE_OPTIONS}
-        selectedCreationMode={selectedCreationMode}
-        onCreationModeChange={setSelectedCreationMode}
-        currentCreationIntentFields={currentCreationIntentFields}
-        creationIntentValues={creationIntentValues}
-        onCreationIntentValueChange={handleCreationIntentValueChange}
-        currentIntentLength={currentIntentLength}
-        minCreationIntentLength={MIN_CREATION_INTENT_LENGTH}
-        creationIntentError={creationIntentError}
-        onOpenChange={(open) => {
-          if (!creatingContent) {
-            setCreateContentDialogOpen(open);
-            if (!open) {
-              resetCreateContentDialogState();
+        mode={selectedCreationMode}
+      >
+        <WorkbenchCreateContentDialog
+          open={createContentDialogOpen}
+          creatingContent={creatingContent}
+          step={createContentDialogStep}
+          selectedProjectId={selectedProjectId}
+          creationModeOptions={CREATION_MODE_OPTIONS}
+          selectedCreationMode={selectedCreationMode}
+          onCreationModeChange={setSelectedCreationMode}
+          currentCreationIntentFields={currentCreationIntentFields}
+          creationIntentValues={creationIntentValues}
+          onCreationIntentValueChange={handleCreationIntentValueChange}
+          currentIntentLength={currentIntentLength}
+          minCreationIntentLength={MIN_CREATION_INTENT_LENGTH}
+          creationIntentError={creationIntentError}
+          onOpenChange={(open) => {
+            if (!creatingContent) {
+              setCreateContentDialogOpen(open);
+              if (!open) {
+                resetCreateContentDialogState();
+              }
             }
-          }
-        }}
-        onBackOrCancel={() => {
-          if (createContentDialogStep === "intent") {
-            setCreateContentDialogStep("mode");
-            setCreationIntentError("");
-            return;
-          }
-          setCreateContentDialogOpen(false);
-          resetCreateContentDialogState();
-        }}
-        onGoToIntentStep={handleGoToIntentStep}
-        onCreateContent={() => {
-          void handleCreateContent();
-        }}
-      />
+          }}
+          onBackOrCancel={() => {
+            if (createContentDialogStep === "intent") {
+              setCreateContentDialogStep("mode");
+              setCreationIntentError("");
+              return;
+            }
+            setCreateContentDialogOpen(false);
+            resetCreateContentDialogState();
+          }}
+          onGoToIntentStep={handleGoToIntentStep}
+          onCreateContent={() => {
+            void handleCreateContent();
+          }}
+        />
+      </WorkbenchCreateContentDialogBoundary>
     </div>
   );
 }

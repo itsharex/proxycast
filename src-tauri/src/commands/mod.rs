@@ -16,6 +16,7 @@ pub mod external_tools_cmd;
 pub mod file_upload_cmd;
 pub mod general_chat_cmd;
 pub mod heartbeat_cmd;
+pub mod image_search_cmd;
 pub mod injection_cmd;
 pub mod kiro_local;
 pub mod machine_id_cmd;

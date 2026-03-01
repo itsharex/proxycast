@@ -1,12 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import { Globe, RefreshCw } from "lucide-react";
+import { Globe, Image as ImageIcon, RefreshCw } from "lucide-react";
+import { open } from "@tauri-apps/plugin-shell";
 import { getConfig, saveConfig, type Config } from "@/hooks/useTauri";
 
 type SearchEngine = "google" | "xiaohongshu";
+const PEXELS_APPLY_URL = "https://www.pexels.com/api/new/";
+const PEXELS_DOC_URL = "https://www.pexels.com/api/";
+const PIXABAY_APPLY_URL = "https://pixabay.com/accounts/register/";
+const PIXABAY_DOC_URL = "https://pixabay.com/api/docs/";
 
 export function WebSearchSettings() {
   const [config, setConfig] = useState<Config | null>(null);
   const [draftEngine, setDraftEngine] = useState<SearchEngine>("google");
+  const [draftPexelsApiKey, setDraftPexelsApiKey] = useState("");
+  const [draftPixabayApiKey, setDraftPixabayApiKey] = useState("");
+  const [showPexelsApiKey, setShowPexelsApiKey] = useState(false);
+  const [showPixabayApiKey, setShowPixabayApiKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{
@@ -19,9 +28,16 @@ export function WebSearchSettings() {
     setMessage(null);
     try {
       const nextConfig = await getConfig();
-      const engine = (nextConfig.web_search?.engine || "google") as SearchEngine;
+      const engine = (nextConfig.web_search?.engine ||
+        "google") as SearchEngine;
+      const pexelsApiKey =
+        nextConfig.image_gen?.image_search_pexels_api_key || "";
+      const pixabayApiKey =
+        nextConfig.image_gen?.image_search_pixabay_api_key || "";
       setConfig(nextConfig);
       setDraftEngine(engine);
+      setDraftPexelsApiKey(pexelsApiKey);
+      setDraftPixabayApiKey(pixabayApiKey);
     } catch (error) {
       console.error("加载网络搜索配置失败:", error);
       setMessage({
@@ -38,11 +54,24 @@ export function WebSearchSettings() {
   }, []);
 
   const currentEngine = useMemo(
-    () => ((config?.web_search?.engine || "google") as SearchEngine),
+    () => (config?.web_search?.engine || "google") as SearchEngine,
+    [config],
+  );
+  const currentPexelsApiKey = useMemo(
+    () => config?.image_gen?.image_search_pexels_api_key || "",
+    [config],
+  );
+  const currentPixabayApiKey = useMemo(
+    () => config?.image_gen?.image_search_pixabay_api_key || "",
     [config],
   );
 
-  const hasUnsavedChanges = draftEngine !== currentEngine;
+  const hasUnsavedChanges =
+    draftEngine !== currentEngine ||
+    draftPexelsApiKey.trim() !== currentPexelsApiKey ||
+    draftPixabayApiKey.trim() !== currentPixabayApiKey;
+  const pexelsKeyConfigured = draftPexelsApiKey.trim().length > 0;
+  const pixabayKeyConfigured = draftPixabayApiKey.trim().length > 0;
 
   const handleSave = async () => {
     if (!config || !hasUnsavedChanges) return;
@@ -53,6 +82,11 @@ export function WebSearchSettings() {
         ...config,
         web_search: {
           engine: draftEngine,
+        },
+        image_gen: {
+          ...(config.image_gen || {}),
+          image_search_pexels_api_key: draftPexelsApiKey.trim(),
+          image_search_pixabay_api_key: draftPixabayApiKey.trim(),
         },
       };
       await saveConfig(nextConfig);
@@ -71,7 +105,18 @@ export function WebSearchSettings() {
 
   const handleReset = () => {
     setDraftEngine(currentEngine);
+    setDraftPexelsApiKey(currentPexelsApiKey);
+    setDraftPixabayApiKey(currentPixabayApiKey);
     setMessage(null);
+  };
+
+  const openExternalUrl = async (url: string) => {
+    try {
+      await open(url);
+    } catch (error) {
+      console.error("打开外部链接失败:", error);
+      window.open(url, "_blank");
+    }
   };
 
   if (loading) {
@@ -123,6 +168,139 @@ export function WebSearchSettings() {
           <p className="text-xs text-muted-foreground">
             Google 适用于通用搜索，小红书适用于中文生活方式和购物内容。
           </p>
+        </div>
+      </div>
+
+      <div className="rounded-lg border p-5 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <ImageIcon className="h-4 w-4 text-primary" />
+            <div>
+              <h3 className="text-sm font-medium">联网图片搜索</h3>
+              <p className="text-xs text-muted-foreground">
+                配置插图页「图片搜索 → 联网搜索」使用的 Pexels API Key。
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            <span
+              className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
+                pexelsKeyConfigured
+                  ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                  : "bg-muted text-muted-foreground"
+              }`}
+            >
+              Pexels {pexelsKeyConfigured ? "已填写" : "未填写"}
+            </span>
+            <span
+              className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
+                pixabayKeyConfigured
+                  ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                  : "bg-muted text-muted-foreground"
+              }`}
+            >
+              Pixabay {pixabayKeyConfigured ? "已填写" : "未填写"}
+            </span>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <label
+            htmlFor="web-search-pexels-key"
+            className="text-sm font-medium"
+          >
+            Pexels API Key
+          </label>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void openExternalUrl(PEXELS_APPLY_URL)}
+              className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted"
+            >
+              申请 Pexels Key
+            </button>
+            <button
+              type="button"
+              onClick={() => void openExternalUrl(PEXELS_DOC_URL)}
+              className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted"
+            >
+              查看文档
+            </button>
+          </div>
+          <div className="relative">
+            <input
+              id="web-search-pexels-key"
+              type={showPexelsApiKey ? "text" : "password"}
+              value={draftPexelsApiKey}
+              onChange={(e) => setDraftPexelsApiKey(e.target.value)}
+              placeholder="输入 Pexels API Key"
+              className="w-full h-10 rounded-md border bg-background px-3 pr-20 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPexelsApiKey((prev) => !prev)}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md border px-2.5 py-1 text-xs"
+            >
+              {showPexelsApiKey ? "隐藏" : "显示"}
+            </button>
+          </div>
+
+          <div className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground space-y-1">
+            <p>
+              未填写时会回退读取环境变量 <code>PEXELS_API_KEY</code>。
+            </p>
+            <p>申请地址：{PEXELS_APPLY_URL}</p>
+            <p>验证路径：插图 → 图片搜索 → 联网搜索。</p>
+          </div>
+
+          <div className="h-px bg-border/60" />
+
+          <label
+            htmlFor="web-search-pixabay-key"
+            className="text-sm font-medium"
+          >
+            Pixabay API Key
+          </label>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void openExternalUrl(PIXABAY_APPLY_URL)}
+              className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted"
+            >
+              申请 Pixabay Key
+            </button>
+            <button
+              type="button"
+              onClick={() => void openExternalUrl(PIXABAY_DOC_URL)}
+              className="rounded-md border px-3 py-1.5 text-xs hover:bg-muted"
+            >
+              查看文档
+            </button>
+          </div>
+          <div className="relative">
+            <input
+              id="web-search-pixabay-key"
+              type={showPixabayApiKey ? "text" : "password"}
+              value={draftPixabayApiKey}
+              onChange={(e) => setDraftPixabayApiKey(e.target.value)}
+              placeholder="输入 Pixabay API Key"
+              className="w-full h-10 rounded-md border bg-background px-3 pr-20 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPixabayApiKey((prev) => !prev)}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md border px-2.5 py-1 text-xs"
+            >
+              {showPixabayApiKey ? "隐藏" : "显示"}
+            </button>
+          </div>
+          <div className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground space-y-1">
+            <p>
+              未填写时会回退读取环境变量 <code>PIXABAY_API_KEY</code>。
+            </p>
+            <p>申请地址：{PIXABAY_APPLY_URL}</p>
+            <p>验证路径：插图 → 图片搜索 → Pixabay图库。</p>
+          </div>
         </div>
       </div>
 

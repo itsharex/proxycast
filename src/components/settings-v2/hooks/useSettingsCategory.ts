@@ -23,7 +23,6 @@ import {
   Route,
   Search,
   Monitor,
-  Globe,
   ShieldCheck,
   HeartPulse,
   Activity,
@@ -173,11 +172,6 @@ export function useSettingsCategory(): CategoryGroup[] {
           key: SettingsTabs.ChromeRelay,
           label: t("settings.tab.chromeRelay", "Chrome Relay"),
           icon: Monitor,
-        },
-        {
-          key: SettingsTabs.Proxy,
-          label: t("settings.tab.proxy", "网络代理"),
-          icon: Globe,
         },
         {
           key: SettingsTabs.SecurityPerformance,

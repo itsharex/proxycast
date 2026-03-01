@@ -146,6 +146,8 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = memo(
     onSave,
     onCancel,
     onExport,
+    onAutoInsertImages,
+    autoInsertLoading = false,
     onClose,
   }) => {
     const [showExportMenu, setShowExportMenu] = useState(false);
@@ -191,6 +193,15 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = memo(
           ) : (
             <>
               <ToolButton onClick={onEditToggle}>✏️ 编辑</ToolButton>
+              {onAutoInsertImages && (
+                <ToolButton
+                  onClick={onAutoInsertImages}
+                  disabled={autoInsertLoading}
+                  title="按主题自动搜索并插入图片"
+                >
+                  {autoInsertLoading ? "🖼️ 配图中..." : "🖼️ 主题配图"}
+                </ToolButton>
+              )}
               <ExportDropdown ref={exportRef}>
                 <ToolButton onClick={() => setShowExportMenu(!showExportMenu)}>
                   📤 导出 ▼

@@ -23,6 +23,12 @@ interface NotionEditorProps {
   onSave: () => void;
   onCancel: () => void;
   onSelectionTextChange?: (text: string) => void;
+  externalImageInsert?: {
+    requestId: string;
+    url: string;
+    alt?: string;
+  } | null;
+  onExternalImageInsertComplete?: (requestId: string, success: boolean) => void;
 }
 
 const EMPTY_SLASH: SlashMenuState = {
@@ -33,9 +39,18 @@ const EMPTY_SLASH: SlashMenuState = {
 };
 
 export const NotionEditor: React.FC<NotionEditorProps> = memo(
-  ({ content, onChange, onSave, onCancel, onSelectionTextChange }) => {
+  ({
+    content,
+    onChange,
+    onSave,
+    onCancel,
+    onSelectionTextChange,
+    externalImageInsert,
+    onExternalImageInsertComplete,
+  }) => {
     const [slashState, setSlashState] = useState<SlashMenuState>(EMPTY_SLASH);
     const keyDownRef = useRef<SlashMenuKeyHandler | null>(null);
+    const handledExternalInsertRef = useRef<string | null>(null);
 
     const extensions = useMemo(
       () =>
@@ -112,6 +127,31 @@ export const NotionEditor: React.FC<NotionEditorProps> = memo(
         editor.off("blur", handleBlur);
       };
     }, [editor, onSelectionTextChange]);
+
+    useEffect(() => {
+      if (!editor || !externalImageInsert) {
+        return;
+      }
+
+      if (handledExternalInsertRef.current === externalImageInsert.requestId) {
+        return;
+      }
+
+      handledExternalInsertRef.current = externalImageInsert.requestId;
+      const success = editor
+        .chain()
+        .focus()
+        .setImage({
+          src: externalImageInsert.url,
+          alt: externalImageInsert.alt || "插图",
+        })
+        .run();
+
+      if (success) {
+        onChange(htmlToMarkdown(editor.getHTML()));
+      }
+      onExternalImageInsertComplete?.(externalImageInsert.requestId, success);
+    }, [editor, externalImageInsert, onChange, onExternalImageInsertComplete]);
 
     if (!editor) return null;
 

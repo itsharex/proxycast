@@ -5,3 +5,4 @@ export type {
   WorkbenchCreateContentDialogProps,
   WorkbenchCreateContentDialogStep,
 } from "./WorkbenchCreateContentDialog";
+export { WorkbenchCreateContentDialogBoundary } from "./WorkbenchCreateContentDialogBoundary";

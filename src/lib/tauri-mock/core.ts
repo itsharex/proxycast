@@ -83,6 +83,24 @@ const defaultMocks: Record<string, any> = {
     web_search: {
       engine: "google",
     },
+    image_gen: {
+      default_service: "dall_e",
+      default_count: 1,
+      default_size: "1024x1024",
+      default_quality: "standard",
+      default_style: "vivid",
+      enable_enhancement: false,
+      auto_download: false,
+      image_search_pexels_api_key: "",
+      image_search_pixabay_api_key: "",
+    },
+    crash_reporting: {
+      enabled: true,
+      dsn: null,
+      environment: "development",
+      sample_rate: 1.0,
+      send_pii: false,
+    },
   }),
 
   save_config: (config: any) => {
@@ -387,6 +405,16 @@ const defaultMocks: Record<string, any> = {
   get_video_generation_task: () => null,
   list_video_generation_tasks: () => [],
   cancel_video_generation_task: () => null,
+  search_pixabay_images: () => ({
+    total: 0,
+    total_hits: 0,
+    hits: [],
+  }),
+  search_web_images: () => ({
+    total: 0,
+    provider: "pexels",
+    hits: [],
+  }),
   import_material_from_url: () => ({
     id: "mock-material-id",
   }),
@@ -524,6 +552,7 @@ const defaultMocks: Record<string, any> = {
   get_request_logs: () => ({ logs: [] }),
   get_request_log_detail: () => ({ log: null }),
   clear_request_logs: () => ({ success: true }),
+  report_frontend_crash: () => ({ success: true }),
   get_stats_summary: () => ({ summary: {} }),
   get_stats_by_provider: () => ({ stats: [] }),
   get_stats_by_model: () => ({ stats: [] }),

@@ -62,6 +62,12 @@ export interface DocumentCanvasProps {
   isStreaming?: boolean;
   /** 选中文本变更回调 */
   onSelectionTextChange?: (text: string) => void;
+  /** 当前项目 ID（用于跨页面插图匹配） */
+  projectId?: string | null;
+  /** 当前文稿 ID（用于跨页面插图匹配） */
+  contentId?: string | null;
+  /** 自动配图的主题关键词 */
+  autoImageTopic?: string;
 }
 
 /**
@@ -84,6 +90,10 @@ export interface DocumentToolbarProps {
   onCancel: () => void;
   /** 导出回调 */
   onExport: (format: ExportFormat) => void;
+  /** 主题自动配图 */
+  onAutoInsertImages?: () => void;
+  /** 自动配图执行中 */
+  autoInsertLoading?: boolean;
   /** 关闭回调 */
   onClose: () => void;
 }

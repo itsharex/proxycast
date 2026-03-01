@@ -34,7 +34,7 @@ const DEFAULT_ENABLED_THEMES = [
 const ALL_NAV_ITEMS = [
   { id: "home-general", label: "首页" },
   { id: "video", label: "视频" },
-  { id: "image-gen", label: "绘画" },
+  { id: "image-gen", label: "插图" },
   { id: "batch", label: "批量任务" },
   { id: "plugins", label: "插件中心" },
 ] as const;

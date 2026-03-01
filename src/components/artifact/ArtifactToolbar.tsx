@@ -235,8 +235,10 @@ function getLanguageExtension(language: string): string {
   };
 
   const lower = language.toLowerCase();
-  // 使用 in 操作符检查，避免原型链上的属性
-  return lower in langExtMap ? langExtMap[lower] : "txt";
+  // 使用 hasOwnProperty 检查，避免原型链上的属性污染
+  return Object.prototype.hasOwnProperty.call(langExtMap, lower)
+    ? langExtMap[lower]
+    : "txt";
 }
 
 /**

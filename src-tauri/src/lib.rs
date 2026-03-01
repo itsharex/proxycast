@@ -46,6 +46,7 @@ pub mod voice;
 // 内部模块
 mod commands;
 mod config;
+mod crash_reporting;
 mod data;
 #[cfg(debug_assertions)]
 #[allow(dead_code)]

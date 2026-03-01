@@ -49,6 +49,27 @@ export interface CreationIntentValidationResult {
   message?: string;
 }
 
+const CREATION_MODE_VALUES: CreationMode[] = [
+  "guided",
+  "fast",
+  "hybrid",
+  "framework",
+];
+
+const CREATION_INTENT_FIELD_KEYS: CreationIntentFieldKey[] = [
+  "topic",
+  "targetAudience",
+  "goal",
+  "constraints",
+  "contentType",
+  "length",
+  "corePoints",
+  "tone",
+  "outline",
+  "mustInclude",
+  "extraRequirements",
+];
+
 const CREATION_MODE_LABELS: Record<CreationMode, string> = {
   guided: "引导模式",
   fast: "快速模式",
@@ -194,6 +215,103 @@ const CREATION_INTENT_FIELDS_BY_MODE: Record<
   ],
 };
 
+const FALLBACK_CREATION_INTENT_FIELDS: CreationIntentFieldDefinition[] = [
+  {
+    ...CREATION_INTENT_FIELD_MAP.topic,
+  },
+];
+
+export function isCreationMode(value: unknown): value is CreationMode {
+  return (
+    typeof value === "string" &&
+    CREATION_MODE_VALUES.includes(value as CreationMode)
+  );
+}
+
+export function normalizeCreationMode(
+  value: unknown,
+  fallback: CreationMode = "guided",
+): CreationMode {
+  return isCreationMode(value) ? value : fallback;
+}
+
+function isCreationIntentFieldKey(value: unknown): value is CreationIntentFieldKey {
+  return (
+    typeof value === "string" &&
+    CREATION_INTENT_FIELD_KEYS.includes(value as CreationIntentFieldKey)
+  );
+}
+
+function sanitizeFieldDefinition(
+  field: unknown,
+): CreationIntentFieldDefinition | null {
+  if (!field || typeof field !== "object") {
+    return null;
+  }
+
+  const fieldRecord = field as Partial<CreationIntentFieldDefinition>;
+  if (!isCreationIntentFieldKey(fieldRecord.key)) {
+    return null;
+  }
+
+  if (typeof fieldRecord.label !== "string" || !fieldRecord.label.trim()) {
+    return null;
+  }
+
+  const normalizedOptions =
+    Array.isArray(fieldRecord.options) && fieldRecord.options.length > 0
+      ? fieldRecord.options
+          .filter(
+            (option): option is { value: string; label: string } =>
+              Boolean(option) &&
+              typeof option.value === "string" &&
+              option.value.trim().length > 0 &&
+              typeof option.label === "string" &&
+              option.label.trim().length > 0,
+          )
+          .map((option) => ({
+            value: option.value,
+            label: option.label,
+          }))
+      : undefined;
+
+  return {
+    key: fieldRecord.key,
+    label: fieldRecord.label,
+    placeholder:
+      typeof fieldRecord.placeholder === "string" &&
+      fieldRecord.placeholder.trim().length > 0
+        ? fieldRecord.placeholder
+        : "请输入内容",
+    multiline: fieldRecord.multiline === true,
+    options:
+      normalizedOptions && normalizedOptions.length > 0
+        ? normalizedOptions
+        : undefined,
+  };
+}
+
+export function getCreationIntentFieldsSafe(
+  mode: unknown,
+): CreationIntentFieldDefinition[] {
+  const normalizedMode = normalizeCreationMode(mode);
+  const fieldDefs = CREATION_INTENT_FIELDS_BY_MODE[normalizedMode] || [];
+  const sanitized = fieldDefs
+    .map((field) => sanitizeFieldDefinition(field))
+    .filter((field): field is CreationIntentFieldDefinition => Boolean(field));
+
+  if (sanitized.length > 0) {
+    return sanitized;
+  }
+
+  console.warn(
+    "[creationIntentPrompt] 创作意图字段配置异常，已降级为最小字段集合",
+    { mode: normalizedMode },
+  );
+
+  return FALLBACK_CREATION_INTENT_FIELDS.map((field) => ({ ...field }));
+}
+
 function normalizeValue(value: string | undefined): string {
   return (value || "").trim();
 }
@@ -201,7 +319,7 @@ function normalizeValue(value: string | undefined): string {
 function getRelevantFieldEntries(
   input: CreationIntentInput,
 ): Array<readonly [CreationIntentFieldDefinition, string]> {
-  const fieldDefs = CREATION_INTENT_FIELDS_BY_MODE[input.creationMode] || [];
+  const fieldDefs = getCreationIntentFieldsSafe(input.creationMode);
   return fieldDefs
     .map((field) => [field, normalizeValue(input.values[field.key])] as const)
     .filter(([, value]) => value.length > 0);
@@ -234,7 +352,7 @@ export function createInitialCreationIntentValues(): CreationIntentFormValues {
 export function getCreationIntentFields(
   mode: CreationMode,
 ): CreationIntentFieldDefinition[] {
-  return CREATION_INTENT_FIELDS_BY_MODE[mode] || [];
+  return getCreationIntentFieldsSafe(mode);
 }
 
 export function getCreationIntentText(input: CreationIntentInput): string {

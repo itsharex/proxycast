@@ -4,7 +4,9 @@ import {
   buildCreationIntentPrompt,
   createInitialCreationIntentValues,
   getCreationIntentFields,
+  getCreationIntentFieldsSafe,
   getCreationIntentText,
+  normalizeCreationMode,
   validateCreationIntent,
 } from "./creationIntentPrompt";
 
@@ -26,6 +28,15 @@ describe("creationIntentPrompt", () => {
       .toBeTruthy();
     expect(fastFields.find((item) => item.key === "contentType")?.options)
       .toBeTruthy();
+  });
+
+  it("应对非法模式做安全归一化", () => {
+    expect(normalizeCreationMode("hybrid")).toBe("hybrid");
+    expect(normalizeCreationMode("ai-discuss")).toBe("guided");
+
+    const safeFields = getCreationIntentFieldsSafe("ai-discuss");
+    expect(safeFields).toHaveLength(4);
+    expect(safeFields[0]?.key).toBe("topic");
   });
 
   it("应正确校验最小意图长度", () => {

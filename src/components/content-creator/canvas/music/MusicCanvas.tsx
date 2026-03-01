@@ -4,9 +4,10 @@
  * @module components/content-creator/canvas/music/MusicCanvas
  */
 
-import React, { memo, useMemo, useCallback, useState } from "react";
+import React, { memo, useMemo, useCallback, useState, useEffect } from "react";
 import styled from "styled-components";
 import type { MusicCanvasProps, MusicViewMode } from "./types";
+import { createSection } from "./types";
 import { MusicToolbar } from "./MusicToolbar";
 import {
   NumberedNotationRenderer,
@@ -15,6 +16,14 @@ import {
 } from "./renderers";
 import { Copy, Check, Music } from "lucide-react";
 import { CanvasBreadcrumbHeader } from "../shared/CanvasBreadcrumbHeader";
+import {
+  ackCanvasImageInsertRequest,
+  emitCanvasImageInsertAck,
+  getPendingCanvasImageInsertRequests,
+  matchesCanvasImageInsertTarget,
+  onCanvasImageInsertRequest,
+  type CanvasImageInsertRequest,
+} from "@/lib/canvasImageInsertBus";
 
 /** 段落类型中文映射 */
 const SECTION_DISPLAY_NAMES: Record<string, string> = {
@@ -87,7 +96,7 @@ const LyricsContainer = styled.div`
   padding: 16px;
 `;
 
-const SectionBlock = styled.div<{ $isSelected: boolean }>`
+const SectionBlock = styled.div<{ $isSelected: boolean; $flash?: boolean }>`
   margin-bottom: 16px;
   padding: 12px;
   border-radius: 6px;
@@ -97,10 +106,20 @@ const SectionBlock = styled.div<{ $isSelected: boolean }>`
     ${({ $isSelected }) =>
     $isSelected ? "hsl(var(--primary))" : "hsl(var(--border))"};
   cursor: pointer;
+  animation: ${({ $flash }) => ($flash ? "musicInsertFlash 1.6s ease" : "none")};
   transition: all 0.2s;
 
   &:hover {
     background: hsl(var(--accent) / 0.05);
+  }
+
+  @keyframes musicInsertFlash {
+    0% {
+      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.55);
+    }
+    100% {
+      box-shadow: 0 0 0 0 hsl(var(--primary) / 0);
+    }
   }
 `;
 
@@ -228,9 +247,20 @@ const StatusItem = styled.span`
  * 音乐画布主组件
  */
 export const MusicCanvas: React.FC<MusicCanvasProps> = memo(
-  ({ state, onStateChange, onBackHome, onClose, isStreaming = false }) => {
+  ({
+    state,
+    onStateChange,
+    projectId,
+    contentId,
+    onBackHome,
+    onClose,
+    isStreaming = false,
+  }) => {
     const [toastMessage, setToastMessage] = useState("");
     const [showToast, setShowToast] = useState(false);
+    const [highlightedSectionId, setHighlightedSectionId] = useState<
+      string | null
+    >(null);
 
     // 统计信息
     const stats = useMemo(() => {
@@ -254,6 +284,116 @@ export const MusicCanvas: React.FC<MusicCanvasProps> = memo(
       setShowToast(true);
       setTimeout(() => setShowToast(false), 2000);
     }, []);
+
+    const matchesRequestTarget = useCallback(
+      (request: CanvasImageInsertRequest): boolean =>
+        matchesCanvasImageInsertTarget(request, {
+          projectId: projectId || null,
+          contentId: contentId || null,
+          canvasType: "music",
+        }),
+      [contentId, projectId],
+    );
+
+    const processInsertRequest = useCallback(
+      (request: CanvasImageInsertRequest) => {
+        if (!matchesRequestTarget(request)) {
+          return;
+        }
+
+        const imageUrl = request.image.contentUrl?.trim();
+        if (!imageUrl) {
+          emitCanvasImageInsertAck({
+            requestId: request.requestId,
+            success: false,
+            canvasType: "music",
+            reason: "invalid_image_url",
+          });
+          ackCanvasImageInsertRequest(request.requestId);
+          return;
+        }
+
+        let sections = [...state.sections];
+        let targetSection =
+          sections.find((section) => section.id === state.currentSectionId) ||
+          sections[0] ||
+          null;
+
+        if (!targetSection) {
+          targetSection = createSection("verse", 1);
+          sections = [targetSection];
+        }
+
+        if (
+          targetSection.lyricsLines.some(
+            (line) => line.includes(`](${imageUrl})`) || line.includes(imageUrl),
+          )
+        ) {
+          emitCanvasImageInsertAck({
+            requestId: request.requestId,
+            success: false,
+            canvasType: "music",
+            locationLabel: `${targetSection.name} 段落`,
+            reason: "duplicate",
+          });
+          ackCanvasImageInsertRequest(request.requestId);
+          return;
+        }
+
+        const alt = request.image.title?.trim() || "灵感配图";
+        const imageLine = `![${alt}](${imageUrl})`;
+        sections = sections.map((section) =>
+          section.id === targetSection?.id
+            ? {
+                ...section,
+                lyricsLines: [...section.lyricsLines, imageLine],
+              }
+            : section,
+        );
+
+        onStateChange({
+          ...state,
+          sections,
+          currentSectionId: targetSection.id,
+        });
+        setHighlightedSectionId(targetSection.id);
+        showMessage(`🖼️ 已插入到音乐段落「${targetSection.name}」`);
+
+        emitCanvasImageInsertAck({
+          requestId: request.requestId,
+          success: true,
+          canvasType: "music",
+          locationLabel: `${targetSection.name} 段落末尾`,
+        });
+        ackCanvasImageInsertRequest(request.requestId);
+      },
+      [matchesRequestTarget, onStateChange, showMessage, state],
+    );
+
+    useEffect(() => {
+      const unsubscribe = onCanvasImageInsertRequest((request) => {
+        processInsertRequest(request);
+      });
+      return unsubscribe;
+    }, [processInsertRequest]);
+
+    useEffect(() => {
+      getPendingCanvasImageInsertRequests().forEach((request) => {
+        processInsertRequest(request);
+      });
+    }, [processInsertRequest]);
+
+    useEffect(() => {
+      if (!highlightedSectionId) {
+        return;
+      }
+      const timer = window.setTimeout(() => {
+        setHighlightedSectionId((prev) =>
+          prev === highlightedSectionId ? null : prev,
+        );
+      }, 1600);
+      return () => window.clearTimeout(timer);
+    }, [highlightedSectionId]);
 
     // 切换视图模式
     const handleViewModeChange = useCallback(
@@ -336,6 +476,7 @@ export const MusicCanvas: React.FC<MusicCanvasProps> = memo(
             <SectionBlock
               key={section.id}
               $isSelected={section.id === state.currentSectionId}
+              $flash={section.id === highlightedSectionId}
               onClick={() => handleSectionSelect(section.id)}
             >
               <SectionHeader>

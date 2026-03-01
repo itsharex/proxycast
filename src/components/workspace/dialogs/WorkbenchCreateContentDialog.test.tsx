@@ -153,4 +153,17 @@ describe("WorkbenchCreateContentDialog", () => {
     expect(onBackOrCancel).toHaveBeenCalledTimes(1);
     expect(onCreateContent).toHaveBeenCalledTimes(1);
   });
+
+  it("意图字段配置异常时应回退到最小可用输入", () => {
+    renderDialog({
+      step: "intent",
+      currentCreationIntentFields: [] as ContentDialogProps["currentCreationIntentFields"],
+    });
+
+    const fallbackTopicInput = findInputById(
+      document.body,
+      "creation-intent-topic",
+    ) as HTMLInputElement | null;
+    expect(fallbackTopicInput).not.toBeNull();
+  });
 });

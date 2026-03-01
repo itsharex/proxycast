@@ -4,11 +4,7 @@
 
 import styled from "styled-components";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  onboardingPlugins,
-  userProfiles,
-  type UserProfile,
-} from "../constants";
+import { onboardingPlugins } from "../constants";
 
 const Container = styled.div`
   display: flex;
@@ -101,17 +97,6 @@ const PluginDescription = styled.div`
   line-height: 1.5;
 `;
 
-const RecommendBadge = styled.span`
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
-  background: hsl(var(--primary) / 0.1);
-  color: hsl(var(--primary));
-  font-size: 10px;
-  font-weight: 500;
-  margin-left: 8px;
-`;
-
 const SelectAllRow = styled.div`
   display: flex;
   justify-content: flex-end;
@@ -134,20 +119,14 @@ const SelectAllButton = styled.button`
 `;
 
 interface PluginSelectStepProps {
-  userProfile: UserProfile | null;
   selectedPlugins: string[];
   onSelectionChange: (plugins: string[]) => void;
 }
 
 export function PluginSelectStep({
-  userProfile,
   selectedPlugins,
   onSelectionChange,
 }: PluginSelectStepProps) {
-  // 获取当前用户群体的默认插件
-  const defaultPlugins =
-    userProfiles.find((p) => p.id === userProfile)?.defaultPlugins || [];
-
   const handleToggle = (pluginId: string) => {
     if (selectedPlugins.includes(pluginId)) {
       onSelectionChange(selectedPlugins.filter((id) => id !== pluginId));
@@ -169,11 +148,7 @@ export function PluginSelectStep({
   return (
     <Container>
       <Title>选择要安装的插件</Title>
-      <Subtitle>
-        {userProfile === "developer"
-          ? "已为程序员推荐配置管理和 Flow Monitor 插件"
-          : "您可以根据需要选择插件，或稍后在插件中心安装"}
-      </Subtitle>
+      <Subtitle>您可以根据需要选择插件，或稍后在插件中心安装</Subtitle>
 
       <SelectAllRow>
         <SelectAllButton onClick={handleSelectAll}>
@@ -184,7 +159,6 @@ export function PluginSelectStep({
       <PluginList>
         {onboardingPlugins.map((plugin) => {
           const isSelected = selectedPlugins.includes(plugin.id);
-          const isRecommended = defaultPlugins.includes(plugin.id);
           const Icon = plugin.icon;
 
           return (
@@ -203,10 +177,7 @@ export function PluginSelectStep({
                 <Icon />
               </IconWrapper>
               <PluginInfo>
-                <PluginName>
-                  {plugin.name}
-                  {isRecommended && <RecommendBadge>推荐</RecommendBadge>}
-                </PluginName>
+                <PluginName>{plugin.name}</PluginName>
                 <PluginDescription>{plugin.description}</PluginDescription>
               </PluginInfo>
             </PluginCard>

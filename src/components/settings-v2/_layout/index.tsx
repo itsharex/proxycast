@@ -17,8 +17,6 @@ import { CanvasBreadcrumbHeader } from "@/components/content-creator/canvas/shar
 import { AppearanceSettings } from '../general/appearance';
 import { ChatAppearanceSettings } from '../general/chat-appearance';
 import { MemorySettings } from "../general/memory";
-// 网络代理
-import { ProxySettings } from "../system/proxy";
 // 安全与性能
 import { SecurityPerformanceSettings } from "../system/security-performance";
 // 心跳引擎
@@ -243,14 +241,6 @@ function renderSettingsContent(tab: SettingsTabs): ReactNode {
         <>
           <SettingHeader title="Chrome Relay" />
           <ChromeRelaySettings />
-        </>
-      );
-
-    case SettingsTabs.Proxy:
-      return (
-        <>
-          <SettingHeader title="网络代理" />
-          <ProxySettings />
         </>
       );
 

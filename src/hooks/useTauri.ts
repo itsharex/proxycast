@@ -292,6 +292,10 @@ export interface ImageGenConfig {
   enable_enhancement?: boolean;
   /** 自动下载生成的图像 */
   auto_download?: boolean;
+  /** 图片搜索（Pexels）API Key */
+  image_search_pexels_api_key?: string;
+  /** 图片搜索（Pixabay）API Key */
+  image_search_pixabay_api_key?: string;
 }
 
 /**
@@ -363,6 +367,14 @@ export interface ChannelsConfig {
   feishu: FeishuBotConfig;
 }
 
+export interface CrashReportingConfig {
+  enabled: boolean;
+  dsn?: string | null;
+  environment?: string;
+  sample_rate?: number;
+  send_pii?: boolean;
+}
+
 export interface Config {
   server: {
     host: string;
@@ -429,6 +441,8 @@ export interface Config {
   user_profile?: UserProfile;
   /** 渠道配置（Telegram / Discord / 飞书 Bot） */
   channels?: ChannelsConfig;
+  /** 崩溃上报配置（Sentry 协议兼容） */
+  crash_reporting?: CrashReportingConfig;
 }
 
 export interface LogEntry {

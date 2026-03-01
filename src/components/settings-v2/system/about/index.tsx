@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { safeInvoke } from "@/lib/dev-bridge";
 import { ProviderIcon } from "@/icons/providers";
 
@@ -22,13 +23,34 @@ interface DownloadResult {
   filePath?: string;
 }
 
-interface ToolVersion {
-  name: string;
-  version: string | null;
-  installed: boolean;
-}
+const CREATIVE_THEMES = [
+  "通用对话",
+  "社媒内容",
+  "图文海报",
+  "歌词曲谱",
+  "知识探索",
+  "计划规划",
+  "办公文档",
+  "短视频",
+  "小说创作",
+] as const;
+
+const QUICK_START_STEPS = [
+  "选主题：按目标进入对应创作主题",
+  "给输入：一句需求、一个方向或一份素材都可以",
+  "持续迭代：边聊边改边沉淀，最终得到可发布结果",
+] as const;
+
+const TARGET_USERS = [
+  "自媒体创作者",
+  "短视频团队",
+  "小说与剧情创作者",
+  "运营与品牌内容团队",
+  "需要长期沉淀创作资产的个人与小团队",
+] as const;
 
 export function AboutSection() {
+  const { t } = useTranslation();
   const [versionInfo, setVersionInfo] = useState<VersionInfo>({
     current: "",
     latest: undefined,
@@ -41,8 +63,6 @@ export function AboutSection() {
   const [downloadResult, setDownloadResult] = useState<DownloadResult | null>(
     null,
   );
-  const [toolVersions, setToolVersions] = useState<ToolVersion[]>([]);
-  const [loadingTools, setLoadingTools] = useState(true);
 
   // 加载当前版本号（从后端获取，确保与 Cargo.toml 同步）
   useEffect(() => {
@@ -61,21 +81,6 @@ export function AboutSection() {
     loadCurrentVersion();
   }, []);
 
-  // 加载本地工具版本
-  useEffect(() => {
-    const loadToolVersions = async () => {
-      try {
-        const versions = await safeInvoke<ToolVersion[]>("get_tool_versions");
-        setToolVersions(versions);
-      } catch (error) {
-        console.error("Failed to load tool versions:", error);
-      } finally {
-        setLoadingTools(false);
-      }
-    };
-    loadToolVersions();
-  }, []);
-
   const handleCheckUpdate = async () => {
     setChecking(true);
     setDownloadResult(null);
@@ -86,7 +91,7 @@ export function AboutSection() {
       console.error("Failed to check for updates:", error);
       setVersionInfo((prev) => ({
         ...prev,
-        error: "检查更新失败",
+        error: t("检查更新失败", "检查更新失败"),
       }));
     } finally {
       setChecking(false);
@@ -105,7 +110,10 @@ export function AboutSection() {
         setTimeout(() => {
           setDownloadResult({
             ...result,
-            message: "安装程序已启动，应用将自动关闭以完成更新",
+            message: t(
+              "安装程序已启动，应用将自动关闭以完成更新",
+              "安装程序已启动，应用将自动关闭以完成更新",
+            ),
           });
         }, 1000);
       } else {
@@ -116,7 +124,7 @@ export function AboutSection() {
       console.error("Failed to download update:", error);
       setDownloadResult({
         success: false,
-        message: "下载失败，请手动下载",
+        message: t("下载失败，请手动下载", "下载失败，请手动下载"),
         filePath: undefined,
       });
     } finally {
@@ -134,14 +142,30 @@ export function AboutSection() {
 
         <div>
           <h2 className="text-xl font-bold">ProxyCast</h2>
-          <p className="text-sm text-muted-foreground">AI API 代理服务</p>
+          <p className="text-sm text-muted-foreground">
+            {t("创作类 AI Agent 平台", "创作类 AI Agent 平台")}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {t(
+              "把灵感、写作、出图、改稿、沉淀放进同一个工作台",
+              "把灵感、写作、出图、改稿、沉淀放进同一个工作台",
+            )}
+          </p>
         </div>
 
         <div className="flex items-center justify-center gap-2">
-          <span className="text-sm">版本 {versionInfo.current}</span>
+          <span className="text-sm">
+            {t("版本 {{version}}", {
+              version: versionInfo.current,
+              defaultValue: "版本 {{version}}",
+            })}
+          </span>
           {versionInfo.hasUpdate ? (
             <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs">
-              有新版本 {versionInfo.latest}
+              {t("有新版本 {{version}}", {
+                version: versionInfo.latest ?? "",
+                defaultValue: "有新版本 {{version}}",
+              })}
             </span>
           ) : versionInfo.error ? (
             <span className="flex items-center gap-1 text-xs text-red-500">
@@ -151,7 +175,7 @@ export function AboutSection() {
           ) : versionInfo.latest ? (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <CheckCircle2 className="h-3 w-3" />
-              已是最新
+              {t("已是最新", "已是最新")}
             </span>
           ) : null}
         </div>
@@ -165,7 +189,7 @@ export function AboutSection() {
             <RefreshCw
               className={`h-4 w-4 ${checking ? "animate-spin" : ""}`}
             />
-            检查更新
+            {t("检查更新", "检查更新")}
           </button>
 
           {versionInfo.hasUpdate && (
@@ -178,7 +202,9 @@ export function AboutSection() {
                 <RefreshCw
                   className={`h-4 w-4 ${downloading ? "animate-spin" : ""}`}
                 />
-                {downloading ? "下载中..." : "下载更新"}
+                {downloading
+                  ? t("下载中...", "下载中...")
+                  : t("下载更新", "下载更新")}
               </button>
 
               {versionInfo.downloadUrl && (
@@ -189,7 +215,7 @@ export function AboutSection() {
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border text-sm hover:bg-muted"
                 >
                   <ExternalLink className="h-4 w-4" />
-                  网页下载
+                  {t("网页下载", "网页下载")}
                 </a>
               )}
             </>
@@ -218,10 +244,10 @@ export function AboutSection() {
                     href={versionInfo.downloadUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 mt-2 underline hover:no-underline"
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                    前往网页下载
+                  className="inline-flex items-center gap-1 mt-2 underline hover:no-underline"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                    {t("前往网页下载", "前往网页下载")}
                   </a>
                 )}
               </div>
@@ -232,7 +258,7 @@ export function AboutSection() {
 
       {/* 链接 */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium">相关链接</h3>
+        <h3 className="text-sm font-medium">{t("相关链接", "相关链接")}</h3>
         <div className="space-y-2">
           <a
             href="https://github.com/aiclientproxy/proxycast"
@@ -240,7 +266,7 @@ export function AboutSection() {
             rel="noopener noreferrer"
             className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50"
           >
-            <span className="text-sm">GitHub 仓库</span>
+            <span className="text-sm">{t("GitHub 仓库", "GitHub 仓库")}</span>
             <ExternalLink className="h-4 w-4 text-muted-foreground" />
           </a>
           <a
@@ -249,7 +275,7 @@ export function AboutSection() {
             rel="noopener noreferrer"
             className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50"
           >
-            <span className="text-sm">文档</span>
+            <span className="text-sm">{t("文档", "文档")}</span>
             <ExternalLink className="h-4 w-4 text-muted-foreground" />
           </a>
           <a
@@ -258,105 +284,106 @@ export function AboutSection() {
             rel="noopener noreferrer"
             className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50"
           >
-            <span className="text-sm">问题反馈</span>
+            <span className="text-sm">{t("问题反馈", "问题反馈")}</span>
             <ExternalLink className="h-4 w-4 text-muted-foreground" />
           </a>
         </div>
       </div>
 
-      {/* 使用说明 Q&A */}
+      {/* 产品定位 */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium">使用说明</h3>
-        <div className="space-y-2">
-          <QAItem
-            question="ProxyCast 是什么？"
-            answer="ProxyCast 是一个 AI Agent 工作台，并提供可选的内网团队共享网关。你可以本机直连使用，也可以把统一的 OpenAI/Anthropic 兼容接口分发给同网段同事。"
-          />
-          <QAItem
-            question="如何开始使用？"
-            answer="1. 在「凭证池」添加你的凭证（如 Kiro 凭证文件或 Claude API Key）；2. 直接在「AI Agent」开始使用（默认推荐）；3. 如需给团队共享，在「团队共享网关（内网）」开启共享并选择默认 Provider；4. 在内网工具中配置 API 地址（如 http://localhost:8999）"
-          />
-          <QAItem
-            question="什么是配置切换？"
-            answer="配置切换可以一键修改 Claude Code、Codex、Gemini CLI 的配置文件，快速在不同 Provider 间切换。添加 ProxyCast 配置后，这些工具就会使用本地代理服务。"
-          />
-          <QAItem
-            question="凭证文件在哪里？"
-            answer="Kiro 凭证：~/.kiro/kiro_creds.json；Gemini CLI 凭证：~/.gemini/oauth_creds.json；Qwen 凭证：~/.qwen-coder/auth.json"
-          />
-          <QAItem
-            question="支持哪些 AI 工具？"
-            answer="支持所有兼容 OpenAI API 或 Anthropic API 的工具，如 Claude Code、Cursor、Cherry Studio、Continue、Cline 等。"
-          />
+        <h3 className="text-sm font-medium">{t("产品定位", "产品定位")}</h3>
+        <div className="p-4 rounded-lg border space-y-2">
+          <p className="text-sm text-muted-foreground">
+            {t(
+              "ProxyCast 是面向普通创作者的 AI Agent 平台。你不需要先懂复杂设置，只要带着一个想法进来，就可以在同一处完成对话定方向、生成内容与素材、持续迭代修改，并把结果沉淀成可复用资产。",
+              "ProxyCast 是面向普通创作者的 AI Agent 平台。你不需要先懂复杂设置，只要带着一个想法进来，就可以在同一处完成对话定方向、生成内容与素材、持续迭代修改，并把结果沉淀成可复用资产。",
+            )}
+          </p>
+          <p className="text-sm">
+            <span className="font-medium">{t("一句话：", "一句话：")}</span>
+            {t("从“想到”直接走到“可发布”。", "从“想到”直接走到“可发布”。")}
+          </p>
         </div>
       </div>
 
-      {/* 本地工具版本 */}
+      {/* 创作主题 */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium">本地工具版本</h3>
-        <div className="p-4 rounded-lg border space-y-3">
-          {loadingTools ? (
-            <>
-              <ToolVersionItem name="Claude Code" version="检测中..." />
-              <ToolVersionItem name="Codex" version="检测中..." />
-              <ToolVersionItem name="Gemini CLI" version="检测中..." />
-            </>
-          ) : (
-            toolVersions.map((tool) => (
-              <ToolVersionItem
-                key={tool.name}
-                name={tool.name}
-                version={tool.installed ? tool.version || "已安装" : "未安装"}
-              />
-            ))
-          )}
+        <h3 className="text-sm font-medium">
+          {t("支持的创作主题", "支持的创作主题")}
+        </h3>
+        <div className="p-4 rounded-lg border">
+          <div className="flex flex-wrap gap-2">
+            {CREATIVE_THEMES.map((theme) => (
+              <span
+                key={theme}
+                className="px-2.5 py-1 rounded-full bg-muted text-sm text-muted-foreground"
+              >
+                {t(theme, theme)}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* 快速开始 */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium">
+          {t("3 步开始创作", "3 步开始创作")}
+        </h3>
+        <div className="p-4 rounded-lg border">
+          <ol className="space-y-2 list-decimal pl-5 text-sm text-muted-foreground">
+            {QUICK_START_STEPS.map((step) => (
+              <li key={step}>{t(step, step)}</li>
+            ))}
+          </ol>
+        </div>
+      </div>
+
+      {/* 适合谁 */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium">{t("适合谁", "适合谁")}</h3>
+        <div className="p-4 rounded-lg border">
+          <ul className="space-y-2 text-sm text-muted-foreground">
+            {TARGET_USERS.map((user) => (
+              <li key={user} className="flex items-center gap-2">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
+                <span>{t(user, user)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {/* 可选能力说明 */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium">{t("可选能力", "可选能力")}</h3>
+        <div className="space-y-2">
+          <div className="rounded-lg border p-3 text-sm text-muted-foreground">
+            {t(
+              "团队共享网关用于在局域网内统一暴露兼容 OpenAI/Anthropic 的接口，便于团队复用同一套 Provider 策略与默认模型；单人创作场景可不启用。",
+              "团队共享网关用于在局域网内统一暴露兼容 OpenAI/Anthropic 的接口，便于团队复用同一套 Provider 策略与默认模型；单人创作场景可不启用。",
+            )}
+          </div>
+          <div className="rounded-lg border p-3 text-sm text-muted-foreground">
+            {t(
+              "常见凭证路径：Kiro `~/.kiro/kiro_creds.json`、Gemini CLI `~/.gemini/oauth_creds.json`、Qwen `~/.qwen-coder/auth.json`。",
+              "常见凭证路径：Kiro `~/.kiro/kiro_creds.json`、Gemini CLI `~/.gemini/oauth_creds.json`、Qwen `~/.qwen-coder/auth.json`。",
+            )}
+          </div>
         </div>
       </div>
 
       {/* 版权信息 */}
       <div className="text-center text-xs text-muted-foreground pt-4 border-t">
-        <p>Made with love for AI developers</p>
+        <p>
+          {t(
+            "Made with love for creators & builders",
+            "Made with love for creators & builders",
+          )}
+        </p>
         <p className="mt-1">2025-2026 ProxyCast</p>
       </div>
-    </div>
-  );
-}
-
-function ToolVersionItem({ name, version }: { name: string; version: string }) {
-  const isInstalled = version !== "未安装" && !version.includes("检测");
-
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-sm">{name}</span>
-      <div className="flex items-center gap-2">
-        {isInstalled ? (
-          <CheckCircle2 className="h-4 w-4 text-green-500" />
-        ) : (
-          <AlertCircle className="h-4 w-4 text-muted-foreground" />
-        )}
-        <span className="text-sm text-muted-foreground font-mono">
-          {version}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function QAItem({ question, answer }: { question: string; answer: string }) {
-  const [isOpen, setIsOpen] = useState(false);
-
-  return (
-    <div className="rounded-lg border">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center justify-between p-3 text-left hover:bg-muted/50"
-      >
-        <span className="text-sm font-medium">{question}</span>
-        <span className="text-muted-foreground">{isOpen ? "−" : "+"}</span>
-      </button>
-      {isOpen && (
-        <div className="px-3 pb-3 text-sm text-muted-foreground">{answer}</div>
-      )}
     </div>
   );
 }

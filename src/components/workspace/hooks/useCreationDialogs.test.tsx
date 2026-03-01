@@ -74,6 +74,7 @@ function CreationDialogsHarness(props: HarnessProps) {
       data-create-project-open={String(dialogs.createProjectDialogOpen)}
       data-create-content-open={String(dialogs.createContentDialogOpen)}
       data-create-content-step={dialogs.createContentDialogStep}
+      data-selected-creation-mode={dialogs.selectedCreationMode}
       data-new-project-name={dialogs.newProjectName}
       data-workspace-root={dialogs.workspaceProjectsRoot}
       data-resolved-project-path={dialogs.resolvedProjectPath}
@@ -114,6 +115,18 @@ function CreationDialogsHarness(props: HarnessProps) {
         onClick={dialogs.handleOpenCreateContentDialog}
       />
       <button data-testid="goto-intent" onClick={dialogs.handleGoToIntentStep} />
+      <button
+        data-testid="set-mode-hybrid"
+        onClick={() => dialogs.setSelectedCreationMode("hybrid")}
+      />
+      <button
+        data-testid="set-mode-invalid"
+        onClick={() =>
+          (dialogs.setSelectedCreationMode as (mode: unknown) => void)(
+            "ai-discuss",
+          )
+        }
+      />
       <button
         data-testid="fill-intent-topic"
         onClick={() =>
@@ -328,6 +341,39 @@ describe("useCreationDialogs", () => {
     expect(root?.dataset.createContentStep).toBe("intent");
     expect(root?.dataset.creationIntentError).toContain("创作意图至少需要 10 个字");
     expect(mockCreateContent).not.toHaveBeenCalled();
+  });
+
+  it("切换 hybrid 模式后应稳定进入意图步骤", async () => {
+    const { container } = renderHarness({
+      selectedProjectId: "project-1",
+    });
+    await flushEffects();
+
+    click(container, "open-content-dialog");
+    await flushEffects();
+    click(container, "set-mode-hybrid");
+    await flushEffects();
+    click(container, "goto-intent");
+    await flushEffects();
+
+    const root = getRootElement(container);
+    expect(root?.dataset.selectedCreationMode).toBe("hybrid");
+    expect(root?.dataset.createContentStep).toBe("intent");
+  });
+
+  it("模式值异常时应自动回退到 guided", async () => {
+    const { container } = renderHarness({
+      selectedProjectId: "project-1",
+    });
+    await flushEffects();
+
+    click(container, "open-content-dialog");
+    await flushEffects();
+    click(container, "set-mode-invalid");
+    await flushEffects();
+
+    const root = getRootElement(container);
+    expect(root?.dataset.selectedCreationMode).toBe("guided");
   });
 
   it("创作意图通过后创建文稿应写入待发送提示并进入工作区", async () => {

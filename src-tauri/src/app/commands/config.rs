@@ -6,7 +6,7 @@ use crate::app::types::{AppState, LogState};
 use crate::app::utils::is_valid_bind_host;
 use crate::config::{
     self,
-    observer::{ConfigChangeEvent, RoutingChangeEvent},
+    observer::{ConfigChangeEvent, FullReloadEvent, RoutingChangeEvent},
     ConfigChangeSource, GlobalConfigManagerState,
 };
 
@@ -21,6 +21,7 @@ pub async fn get_config(state: tauri::State<'_, AppState>) -> Result<config::Con
 #[tauri::command]
 pub async fn save_config(
     state: tauri::State<'_, AppState>,
+    config_manager: tauri::State<'_, GlobalConfigManagerState>,
     config: config::Config,
 ) -> Result<(), String> {
     let host = config.server.host.to_lowercase();
@@ -46,17 +47,30 @@ pub async fn save_config(
         return Err("安全限制：不允许开启远程管理功能".to_string());
     }
 
-    let mut s = state.write().await;
-    s.config = config.clone();
+    {
+        let mut s = state.write().await;
+        s.config = config.clone();
+    }
 
-    match config::save_config(&config) {
+    let save_result = config::save_config(&config).map_err(|e| e.to_string());
+    match save_result {
         Ok(()) => {
+            let full_reload_event = ConfigChangeEvent::FullReload(FullReloadEvent {
+                timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
+                source: ConfigChangeSource::FrontendUI,
+            });
+            config_manager
+                .0
+                .subject()
+                .notify_event(full_reload_event)
+                .await;
+
             tracing::info!("[CONFIG] 配置保存成功: host={}", config.server.host);
             Ok(())
         }
         Err(e) => {
             tracing::error!("[CONFIG] 配置保存失败: {}", e);
-            Err(e.to_string())
+            Err(e)
         }
     }
 }

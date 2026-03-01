@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useState,
   type Dispatch,
   type SetStateAction,
@@ -27,32 +28,110 @@ import {
   buildCreationIntentMetadata,
   buildCreationIntentPrompt,
   createInitialCreationIntentValues,
-  getCreationIntentFields,
+  getCreationIntentFieldsSafe,
+  isCreationMode,
+  normalizeCreationMode,
   type CreationIntentFieldKey,
   type CreationIntentFormValues,
   type CreationIntentInput,
   validateCreationIntent,
 } from "@/components/workspace/utils/creationIntentPrompt";
+import { reportFrontendError } from "@/lib/crashReporting";
 
 type CreateContentDialogStep = "mode" | "intent";
 
-function parseCreationMode(value: unknown): CreationMode | null {
-  if (
-    value === "guided" ||
-    value === "fast" ||
-    value === "hybrid" ||
-    value === "framework"
-  ) {
-    return value;
+interface CreateContentDialogState {
+  step: CreateContentDialogStep;
+  selectedCreationMode: CreationMode;
+  creationIntentValues: CreationIntentFormValues;
+  creationIntentError: string;
+}
+
+type CreateContentDialogAction =
+  | {
+      type: "reset";
+      defaultMode: CreationMode;
+    }
+  | {
+      type: "setStep";
+      step: CreateContentDialogStep;
+    }
+  | {
+      type: "setMode";
+      mode: unknown;
+    }
+  | {
+      type: "setError";
+      error: string;
+    }
+  | {
+      type: "updateIntentValue";
+      key: CreationIntentFieldKey;
+      value: string;
+    }
+  | {
+      type: "goIntentStep";
+    };
+
+function createInitialContentDialogState(
+  defaultMode: CreationMode,
+): CreateContentDialogState {
+  return {
+    step: "mode",
+    selectedCreationMode: normalizeCreationMode(defaultMode),
+    creationIntentValues: createInitialCreationIntentValues(),
+    creationIntentError: "",
+  };
+}
+
+function createContentDialogReducer(
+  state: CreateContentDialogState,
+  action: CreateContentDialogAction,
+): CreateContentDialogState {
+  switch (action.type) {
+    case "reset":
+      return createInitialContentDialogState(action.defaultMode);
+    case "setStep":
+      return {
+        ...state,
+        step: action.step,
+      };
+    case "setMode":
+      return {
+        ...state,
+        selectedCreationMode: normalizeCreationMode(action.mode),
+      };
+    case "setError":
+      return {
+        ...state,
+        creationIntentError: action.error,
+      };
+    case "updateIntentValue":
+      return {
+        ...state,
+        creationIntentValues: {
+          ...state.creationIntentValues,
+          [action.key]: action.value,
+        },
+        creationIntentError: "",
+      };
+    case "goIntentStep":
+      return {
+        ...state,
+        step: "intent",
+        creationIntentError: "",
+      };
+    default:
+      return state;
   }
-  return null;
 }
 
 function parseCreationModeFromMetadata(metadata: unknown): CreationMode | null {
   if (!metadata || typeof metadata !== "object") {
     return null;
   }
-  return parseCreationMode((metadata as Record<string, unknown>).creationMode);
+  const mode = (metadata as Record<string, unknown>).creationMode;
+  return isCreationMode(mode) ? mode : null;
 }
 
 function useWorkspaceProjectsRootLoader(
@@ -263,17 +342,15 @@ export function useCreationDialogs({
 }: UseCreationDialogsParams) {
   const [createProjectDialogOpen, setCreateProjectDialogOpen] = useState(false);
   const [createContentDialogOpen, setCreateContentDialogOpen] = useState(false);
-  const [createContentDialogStep, setCreateContentDialogStep] =
-    useState<CreateContentDialogStep>("mode");
+  const [createContentDialogState, dispatchCreateContentDialog] = useReducer(
+    createContentDialogReducer,
+    defaultCreationMode,
+    createInitialContentDialogState,
+  );
   const [newProjectName, setNewProjectName] = useState("");
   const [workspaceProjectsRoot, setWorkspaceProjectsRoot] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
   const [creatingContent, setCreatingContent] = useState(false);
-  const [selectedCreationMode, setSelectedCreationMode] =
-    useState<CreationMode>(defaultCreationMode);
-  const [creationIntentValues, setCreationIntentValues] =
-    useState<CreationIntentFormValues>(() => createInitialCreationIntentValues());
-  const [creationIntentError, setCreationIntentError] = useState("");
   const [resolvedProjectPath, setResolvedProjectPath] = useState("");
   const [pathChecking, setPathChecking] = useState(false);
   const [pathConflictMessage, setPathConflictMessage] = useState("");
@@ -291,15 +368,15 @@ export function useCreationDialogs({
 
   const creationIntentInput = useMemo<CreationIntentInput>(
     () => ({
-      creationMode: selectedCreationMode,
-      values: creationIntentValues,
+      creationMode: createContentDialogState.selectedCreationMode,
+      values: createContentDialogState.creationIntentValues,
     }),
-    [selectedCreationMode, creationIntentValues],
+    [createContentDialogState.creationIntentValues, createContentDialogState.selectedCreationMode],
   );
 
   const currentCreationIntentFields = useMemo(
-    () => getCreationIntentFields(selectedCreationMode),
-    [selectedCreationMode],
+    () => getCreationIntentFieldsSafe(createContentDialogState.selectedCreationMode),
+    [createContentDialogState.selectedCreationMode],
   );
 
   const currentIntentLength = useMemo(
@@ -309,11 +386,35 @@ export function useCreationDialogs({
   );
 
   const resetCreateContentDialogState = useCallback(() => {
-    setCreateContentDialogStep("mode");
-    setSelectedCreationMode(defaultCreationMode);
-    setCreationIntentValues(createInitialCreationIntentValues());
-    setCreationIntentError("");
+    dispatchCreateContentDialog({
+      type: "reset",
+      defaultMode: defaultCreationMode,
+    });
   }, [defaultCreationMode]);
+
+  const setCreateContentDialogStep = useCallback(
+    (step: CreateContentDialogStep) => {
+      dispatchCreateContentDialog({
+        type: "setStep",
+        step,
+      });
+    },
+    [],
+  );
+
+  const setSelectedCreationMode = useCallback((mode: CreationMode) => {
+    dispatchCreateContentDialog({
+      type: "setMode",
+      mode,
+    });
+  }, []);
+
+  const setCreationIntentError = useCallback((error: string) => {
+    dispatchCreateContentDialog({
+      type: "setError",
+      error,
+    });
+  }, []);
 
   const handleOpenCreateProjectDialog = useCallback(() => {
     setNewProjectName(`${getProjectTypeLabel(theme as ProjectType)}项目`);
@@ -343,6 +444,10 @@ export function useCreationDialogs({
       await loadProjects();
     } catch (error) {
       console.error("创建项目失败:", error);
+      void reportFrontendError(error, {
+        component: "useCreationDialogs",
+        workflow_step: "workspace_creation_create_project",
+      });
       const errorMessage = extractErrorMessage(error);
       const friendlyMessage = getCreateProjectErrorMessage(errorMessage);
       toast.error(`创建项目失败: ${friendlyMessage}`);
@@ -361,21 +466,42 @@ export function useCreationDialogs({
 
   const handleCreationIntentValueChange = useCallback(
     (key: CreationIntentFieldKey, value: string) => {
-      setCreationIntentValues((previous) => ({
-        ...previous,
-        [key]: value,
-      }));
-      if (creationIntentError) {
-        setCreationIntentError("");
-      }
+      dispatchCreateContentDialog({
+        type: "updateIntentValue",
+        key,
+        value,
+      });
     },
-    [creationIntentError],
+    [],
   );
 
   const handleGoToIntentStep = useCallback(() => {
-    setCreateContentDialogStep("intent");
-    setCreationIntentError("");
-  }, []);
+    const fields = getCreationIntentFieldsSafe(
+      createContentDialogState.selectedCreationMode,
+    );
+    const hasOnlyFallbackTopicField =
+      fields.length === 1 && fields[0]?.key === "topic";
+    if (
+      hasOnlyFallbackTopicField &&
+      createContentDialogState.selectedCreationMode !== "guided"
+    ) {
+      console.warn(
+        "[useCreationDialogs] 检测到创作模式字段异常，已降级为引导模式",
+        {
+          mode: createContentDialogState.selectedCreationMode,
+          fieldCount: fields.length,
+        },
+      );
+      dispatchCreateContentDialog({
+        type: "setMode",
+        mode: "guided",
+      });
+    }
+
+    dispatchCreateContentDialog({
+      type: "goIntentStep",
+    });
+  }, [createContentDialogState.selectedCreationMode]);
 
   const handleCreateContent = useCallback(async () => {
     if (!selectedProjectId) {
@@ -403,14 +529,14 @@ export function useCreationDialogs({
         title: `新${getContentTypeLabel(defaultType)}`,
         content_type: defaultType,
         metadata: {
-          creationMode: selectedCreationMode,
+          creationMode: createContentDialogState.selectedCreationMode,
           creationIntent: creationIntentMetadata,
         },
       });
 
       setContentCreationModes((previous) => ({
         ...previous,
-        [created.id]: selectedCreationMode,
+        [created.id]: createContentDialogState.selectedCreationMode,
       }));
       setPendingInitialPromptsByContentId((previous) => ({
         ...previous,
@@ -423,6 +549,11 @@ export function useCreationDialogs({
       toast.success("已创建新文稿");
     } catch (error) {
       console.error("创建文稿失败:", error);
+      void reportFrontendError(error, {
+        component: "useCreationDialogs",
+        workflow_step: "workspace_creation_submit_intent",
+        creation_mode: createContentDialogState.selectedCreationMode,
+      });
       toast.error("创建文稿失败");
     } finally {
       setCreatingContent(false);
@@ -433,8 +564,9 @@ export function useCreationDialogs({
     minCreationIntentLength,
     onEnterWorkspace,
     resetCreateContentDialogState,
-    selectedCreationMode,
+    createContentDialogState.selectedCreationMode,
     selectedProjectId,
+    setCreationIntentError,
     theme,
   ]);
 
@@ -473,17 +605,17 @@ export function useCreationDialogs({
     setCreateProjectDialogOpen,
     createContentDialogOpen,
     setCreateContentDialogOpen,
-    createContentDialogStep,
+    createContentDialogStep: createContentDialogState.step,
     setCreateContentDialogStep,
     newProjectName,
     setNewProjectName,
     workspaceProjectsRoot,
     creatingProject,
     creatingContent,
-    selectedCreationMode,
+    selectedCreationMode: createContentDialogState.selectedCreationMode,
     setSelectedCreationMode,
-    creationIntentValues,
-    creationIntentError,
+    creationIntentValues: createContentDialogState.creationIntentValues,
+    creationIntentError: createContentDialogState.creationIntentError,
     setCreationIntentError,
     currentCreationIntentFields,
     currentIntentLength,

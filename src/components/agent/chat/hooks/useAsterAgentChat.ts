@@ -2268,7 +2268,6 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
             topicPreference.model,
           );
         }
-        toast.info("已切换话题");
       } catch (error) {
         console.error("[AsterChat] 切换话题失败:", error);
         console.error("[AsterChat] 错误详情:", JSON.stringify(error, null, 2));

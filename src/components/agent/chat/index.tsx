@@ -70,6 +70,7 @@ import { SettingsTabs } from "@/types/settings";
 import { skillsApi, type Skill } from "@/lib/api/skills";
 import { buildHomeAgentParams } from "@/lib/workspace/navigation";
 import { LatestRunStatusBadge } from "@/components/execution/LatestRunStatusBadge";
+import { setActiveContentTarget } from "@/lib/activeContentTarget";
 
 import type { MessageImage } from "./types";
 import type {
@@ -317,6 +318,10 @@ export function AgentChatPage({
   const [canvasState, setCanvasState] = useState<CanvasStateUnion | null>(null);
   const [novelChapterListCollapsed, setNovelChapterListCollapsed] =
     useState(false);
+
+  useEffect(() => {
+    setActiveContentTarget(projectId, contentId, canvasState?.type ?? null);
+  }, [canvasState?.type, contentId, projectId]);
 
   // General 主题专用画布状态
   const [generalCanvasState, setGeneralCanvasState] =
@@ -2037,6 +2042,9 @@ export function AgentChatPage({
           onClose={handleCloseCanvas}
           isStreaming={isSending}
           onSelectionTextChange={handleCanvasSelectionTextChange}
+          projectId={projectId ?? null}
+          contentId={contentId ?? null}
+          autoImageTopic={project?.name || undefined}
           novelControls={
             canvasState.type === "novel"
               ? {
@@ -2057,6 +2065,9 @@ export function AgentChatPage({
     generalCanvasState,
     canvasState,
     mappedTheme,
+    project,
+    projectId,
+    contentId,
     handleCloseCanvas,
     handleBackHome,
     isSending,

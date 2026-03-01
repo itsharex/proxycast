@@ -31,6 +31,7 @@ export interface VideoCanvasProps {
   state: VideoCanvasState;
   onStateChange: (state: VideoCanvasState) => void;
   projectId?: string | null;
+  contentId?: string | null;
   onClose?: () => void;
   onBackHome?: () => void;
 }

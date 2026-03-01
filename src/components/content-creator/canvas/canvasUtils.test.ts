@@ -18,7 +18,7 @@ import type { ThemeType } from "../types";
 
 describe("getCanvasTypeForTheme", () => {
   it("应该为每种主题返回正确的画布类型", () => {
-    expect(getCanvasTypeForTheme("video")).toBe("script");
+    expect(getCanvasTypeForTheme("video")).toBe("video");
     expect(getCanvasTypeForTheme("novel")).toBe("novel");
     expect(getCanvasTypeForTheme("poster")).toBe("poster");
     expect(getCanvasTypeForTheme("music")).toBe("music");
@@ -102,9 +102,9 @@ describe("createInitialCanvasState", () => {
     expect(novelState).not.toBeNull();
     expect(novelState?.type).toBe("novel");
 
-    const scriptState = createInitialCanvasState("video", "test content");
-    expect(scriptState).not.toBeNull();
-    expect(scriptState?.type).toBe("script");
+    const videoState = createInitialCanvasState("video", "test content");
+    expect(videoState).not.toBeNull();
+    expect(videoState?.type).toBe("video");
 
     const posterState = createInitialCanvasState("poster");
     expect(posterState).not.toBeNull();

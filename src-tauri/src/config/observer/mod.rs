@@ -8,7 +8,8 @@ mod tauri_observer;
 
 // 从 proxycast-config crate 重新导出被使用的类型
 pub use proxycast_config::observer::events::{
-    ConfigChangeEvent, ConfigChangeSource, EndpointProvidersChangeEvent, RoutingChangeEvent,
+    ConfigChangeEvent, ConfigChangeSource, EndpointProvidersChangeEvent, FullReloadEvent,
+    RoutingChangeEvent,
 };
 
 // Tauri 相关实现

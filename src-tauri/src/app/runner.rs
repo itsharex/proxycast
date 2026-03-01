@@ -35,6 +35,9 @@ pub fn run() {
         }
     };
 
+    // 初始化崩溃上报（保持 guard 生命周期直到应用退出）
+    let _crash_reporting_guard = crate::crash_reporting::init_from_config(&config);
+
     // 初始化所有应用状态
     let states = match bootstrap::init_states(&config) {
         Ok(s) => s,
@@ -765,6 +768,7 @@ pub fn run() {
             // Log commands (from app::commands)
             app_commands::get_logs,
             app_commands::clear_logs,
+            app_commands::report_frontend_crash,
             // API test commands (from app::commands)
             app_commands::test_api,
             app_commands::get_available_models,
@@ -1301,6 +1305,9 @@ pub fn run() {
             commands::material_cmd::get_material_content,
             commands::material_cmd::get_material_count,
             commands::material_cmd::get_materials_content,
+            // Image search commands
+            commands::image_search_cmd::search_pixabay_images,
+            commands::image_search_cmd::search_web_images,
             // Video generation commands
             commands::video_generation_cmd::create_video_generation_task,
             commands::video_generation_cmd::get_video_generation_task,

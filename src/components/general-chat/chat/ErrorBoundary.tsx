@@ -11,6 +11,7 @@
 
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import { AlertTriangle, RefreshCw, Home, Bug } from "lucide-react";
+import { reportFrontendError } from "@/lib/crashReporting";
 
 // ============================================================================
 // 类型定义
@@ -108,18 +109,22 @@ export class ErrorBoundary extends Component<
    * 上报错误到监控服务（预留接口）
    */
   private reportError(error: Error, errorInfo: ErrorInfo): void {
-    // TODO: 集成错误监控服务（如 Sentry）
-    // 目前仅在控制台输出
+    const componentName = this.props.componentName ?? "GeneralChatErrorBoundary";
     const errorReport = {
       name: error.name,
       message: error.message,
       stack: error.stack,
       componentStack: errorInfo.componentStack,
       timestamp: new Date().toISOString(),
-      componentName: this.props.componentName,
+      componentName,
     };
 
     console.info("[ErrorBoundary] 错误报告:", errorReport);
+    void reportFrontendError(error, {
+      component: componentName,
+      workflow_step: "general_chat_render",
+      component_stack: errorInfo.componentStack,
+    });
   }
 
   /**

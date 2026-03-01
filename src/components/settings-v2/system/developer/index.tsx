@@ -2,12 +2,81 @@
  * @file DeveloperSettings.tsx
  * @description 开发者设置页面 - 组件视图调试等开发工具
  */
-import { Code2, Eye } from "lucide-react";
+import { useCallback, useState } from "react";
+import { Bug, Code2, Eye } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useComponentDebug } from "@/contexts/ComponentDebugContext";
+import { getConfig, getLogs } from "@/hooks/useTauri";
+import {
+  buildCrashDiagnosticPayload,
+  copyCrashDiagnosticToClipboard,
+  exportCrashDiagnosticToJson,
+  normalizeCrashReportingConfig,
+} from "@/lib/crashDiagnostic";
+import { cn } from "@/lib/utils";
 
 export function DeveloperSettings() {
   const { enabled, setEnabled } = useComponentDebug();
+  const [diagnosticBusy, setDiagnosticBusy] = useState(false);
+  const [message, setMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  const buildDiagnosticPayload = useCallback(async () => {
+    const [config, logs] = await Promise.all([getConfig(), getLogs()]);
+    return buildCrashDiagnosticPayload({
+      crashConfig: normalizeCrashReportingConfig(config.crash_reporting),
+      logs,
+      appVersion: import.meta.env.VITE_APP_VERSION,
+      platform: navigator.platform,
+      userAgent: navigator.userAgent,
+    });
+  }, []);
+
+  const handleCopyDiagnostic = useCallback(async () => {
+    setDiagnosticBusy(true);
+    setMessage(null);
+    try {
+      const payload = await buildDiagnosticPayload();
+      await copyCrashDiagnosticToClipboard(payload);
+      setMessage({
+        type: "success",
+        text: "诊断信息已复制，可直接发给开发者",
+      });
+      setTimeout(() => setMessage(null), 2500);
+    } catch (err) {
+      console.error("复制诊断信息失败:", err);
+      setMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : "复制诊断信息失败",
+      });
+    } finally {
+      setDiagnosticBusy(false);
+    }
+  }, [buildDiagnosticPayload]);
+
+  const handleExportDiagnostic = useCallback(async () => {
+    setDiagnosticBusy(true);
+    setMessage(null);
+    try {
+      const payload = await buildDiagnosticPayload();
+      exportCrashDiagnosticToJson(payload);
+      setMessage({
+        type: "success",
+        text: "诊断文件已导出，可发送给开发者",
+      });
+      setTimeout(() => setMessage(null), 2500);
+    } catch (err) {
+      console.error("导出诊断信息失败:", err);
+      setMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : "导出诊断信息失败",
+      });
+    } finally {
+      setDiagnosticBusy(false);
+    }
+  }, [buildDiagnosticPayload]);
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -16,6 +85,20 @@ export function DeveloperSettings() {
         <Code2 className="w-5 h-5 text-primary" />
         <h3 className="text-lg font-semibold">开发者工具</h3>
       </div>
+
+      {/* 消息提示 */}
+      {message && (
+        <div
+          className={cn(
+            "rounded-lg px-3 py-2 text-sm",
+            message.type === "success"
+              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+              : "bg-destructive/10 text-destructive",
+          )}
+        >
+          {message.text}
+        </div>
+      )}
 
       {/* 组件视图调试 */}
       <div className="border rounded-lg p-4">
@@ -44,6 +127,46 @@ export function DeveloperSettings() {
             </ul>
           </div>
         )}
+      </div>
+
+      {/* 崩溃诊断入口 */}
+      <div className="border rounded-lg p-4 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="p-2 bg-rose-500/10 rounded-lg">
+            <Bug className="w-5 h-5 text-rose-500" />
+          </div>
+          <div>
+            <h4 className="font-medium">崩溃诊断日志（开发协作）</h4>
+            <p className="text-sm text-muted-foreground">
+              用于定位 Windows 闪退与前端异常，包含最近 30 条 FrontendCrash 日志（DSN 自动脱敏）
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void handleCopyDiagnostic()}
+            disabled={diagnosticBusy}
+            className={cn(
+              "rounded-md border px-3 py-1.5 text-xs transition-colors",
+              diagnosticBusy && "opacity-50 cursor-not-allowed",
+            )}
+          >
+            复制诊断信息
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleExportDiagnostic()}
+            disabled={diagnosticBusy}
+            className={cn(
+              "rounded-md border px-3 py-1.5 text-xs transition-colors",
+              diagnosticBusy && "opacity-50 cursor-not-allowed",
+            )}
+          >
+            导出诊断 JSON
+          </button>
+        </div>
       </div>
     </div>
   );

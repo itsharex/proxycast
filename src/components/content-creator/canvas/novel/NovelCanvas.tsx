@@ -17,9 +17,19 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { NotionEditor } from "@/components/content-creator/canvas/document/editor";
+import { toast } from "sonner";
 import type { NovelCanvasState, Chapter } from "./types";
 import { countWords } from "./types";
 import { CanvasBreadcrumbHeader } from "../shared/CanvasBreadcrumbHeader";
+import {
+  ackCanvasImageInsertRequest,
+  emitCanvasImageInsertAck,
+  getPendingCanvasImageInsertRequests,
+  matchesCanvasImageInsertTarget,
+  onCanvasImageInsertRequest,
+  type CanvasImageInsertRequest,
+  type InsertableImage,
+} from "@/lib/canvasImageInsertBus";
 
 const Container = styled.div`
   display: flex;
@@ -98,7 +108,7 @@ const StatItem = styled.div`
   justify-content: space-between;
 `;
 
-const ChapterItem = styled.div<{ $active?: boolean }>`
+const ChapterItem = styled.div<{ $active?: boolean; $flash?: boolean }>`
   padding: 10px 12px;
   margin-bottom: 8px;
   cursor: pointer;
@@ -110,11 +120,23 @@ const ChapterItem = styled.div<{ $active?: boolean }>`
     $active ? "hsl(var(--accent) / 0.55)" : "hsl(var(--background))"};
   box-shadow: ${({ $active }) =>
     $active ? "0 2px 8px hsl(var(--primary) / 0.12)" : "none"};
+  animation: ${({ $flash }) => ($flash ? "novelInsertFlash 1.8s ease" : "none")};
   transition: all 0.18s ease;
 
   &:hover {
     background: hsl(var(--accent) / 0.42);
     border-color: hsl(var(--primary) / 0.28);
+  }
+
+  @keyframes novelInsertFlash {
+    0% {
+      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.55);
+      border-color: hsl(var(--primary) / 0.7);
+    }
+    100% {
+      box-shadow: 0 0 0 0 hsl(var(--primary) / 0);
+      border-color: hsl(var(--primary) / 0.28);
+    }
   }
 `;
 
@@ -176,6 +198,8 @@ const EmptyEditorState = styled.div`
 interface NovelCanvasProps {
   state: NovelCanvasState;
   onStateChange: (state: NovelCanvasState) => void;
+  projectId?: string | null;
+  contentId?: string | null;
   onBackHome?: () => void;
   onClose: () => void;
   useExternalToolbar?: boolean;
@@ -226,10 +250,31 @@ function _sanitizeChapterContent(content: string): string {
   return content;
 }
 
+function appendImageMarkdown(content: string, image: InsertableImage): string {
+  const imageUrl = image.contentUrl?.trim();
+  if (!imageUrl) {
+    return content;
+  }
+
+  if (content.includes(`](${imageUrl})`) || content.includes(imageUrl)) {
+    return content;
+  }
+
+  const alt = image.title?.trim() || "插图";
+  const snippet = `![${alt}](${imageUrl})`;
+  const trimmed = content.trimEnd();
+  if (!trimmed) {
+    return snippet;
+  }
+  return `${trimmed}\n\n${snippet}\n`;
+}
+
 export const NovelCanvas: React.FC<NovelCanvasProps> = memo(
   ({
     state,
     onStateChange,
+    projectId,
+    contentId,
     onBackHome,
     onClose,
     useExternalToolbar = false,
@@ -240,6 +285,9 @@ export const NovelCanvas: React.FC<NovelCanvasProps> = memo(
     const [internalChapterListCollapsed, setInternalChapterListCollapsed] =
       useState(false);
     const [editorKey, setEditorKey] = useState(0);
+    const [highlightedChapterId, setHighlightedChapterId] = useState<
+      string | null
+    >(null);
     const isChapterListCollapsed =
       chapterListCollapsed ?? internalChapterListCollapsed;
     const currentChapter = state.chapters.find(
@@ -351,6 +399,112 @@ export const NovelCanvas: React.FC<NovelCanvasProps> = memo(
       onSelectionTextChange?.("");
     }, [state.currentChapterId, onSelectionTextChange]);
 
+    const matchesRequestTarget = useCallback(
+      (request: CanvasImageInsertRequest): boolean =>
+        matchesCanvasImageInsertTarget(request, {
+          projectId: projectId || null,
+          contentId: contentId || null,
+          canvasType: "novel",
+        }),
+      [contentId, projectId],
+    );
+
+    const processInsertRequest = useCallback(
+      (request: CanvasImageInsertRequest) => {
+        if (!matchesRequestTarget(request)) {
+          return;
+        }
+
+        const now = Date.now();
+        let chapters = [...state.chapters];
+        let targetChapter =
+          chapters.find((chapter) => chapter.id === state.currentChapterId) ||
+          chapters[0] ||
+          null;
+
+        if (!targetChapter) {
+          targetChapter = {
+            id: crypto.randomUUID(),
+            number: 1,
+            title: "第一章",
+            content: "# 第一章\n\n",
+            wordCount: 0,
+            status: "draft",
+            createdAt: now,
+            updatedAt: now,
+          };
+          chapters = [targetChapter];
+        }
+
+        const nextContent = appendImageMarkdown(targetChapter.content, request.image);
+        if (nextContent === targetChapter.content) {
+          emitCanvasImageInsertAck({
+            requestId: request.requestId,
+            success: false,
+            canvasType: "novel",
+            locationLabel: `${targetChapter.title} 末尾`,
+            reason: "duplicate",
+          });
+          ackCanvasImageInsertRequest(request.requestId);
+          return;
+        }
+
+        chapters = chapters.map((chapter) =>
+          chapter.id === targetChapter?.id
+            ? {
+                ...chapter,
+                content: nextContent,
+                wordCount: countWords(nextContent),
+                updatedAt: now,
+              }
+            : chapter,
+        );
+
+        onStateChange({
+          ...state,
+          chapters,
+          currentChapterId: targetChapter.id,
+        });
+        setEditorKey((prev) => prev + 1);
+        setHighlightedChapterId(targetChapter.id);
+        toast.success(`已插入到小说《${targetChapter.title}》`);
+
+        emitCanvasImageInsertAck({
+          requestId: request.requestId,
+          success: true,
+          canvasType: "novel",
+          locationLabel: `${targetChapter.title} 末尾`,
+        });
+        ackCanvasImageInsertRequest(request.requestId);
+      },
+      [matchesRequestTarget, onStateChange, state],
+    );
+
+    useEffect(() => {
+      const unsubscribe = onCanvasImageInsertRequest((request) => {
+        processInsertRequest(request);
+      });
+      return unsubscribe;
+    }, [processInsertRequest]);
+
+    useEffect(() => {
+      getPendingCanvasImageInsertRequests().forEach((request) => {
+        processInsertRequest(request);
+      });
+    }, [processInsertRequest]);
+
+    useEffect(() => {
+      if (!highlightedChapterId) {
+        return;
+      }
+      const timer = window.setTimeout(() => {
+        setHighlightedChapterId((prev) =>
+          prev === highlightedChapterId ? null : prev,
+        );
+      }, 1800);
+      return () => window.clearTimeout(timer);
+    }, [highlightedChapterId]);
+
     const totalWords = state.chapters.reduce((sum, c) => sum + c.wordCount, 0);
     const completedCount = state.chapters.filter(
       (c) => c.status === "completed",
@@ -405,6 +559,7 @@ export const NovelCanvas: React.FC<NovelCanvasProps> = memo(
                       <ChapterItem
                         key={chapter.id}
                         $active={chapter.id === state.currentChapterId}
+                        $flash={chapter.id === highlightedChapterId}
                         onClick={() => handleChapterSelect(chapter.id)}
                       >
                         <ChapterTitle>

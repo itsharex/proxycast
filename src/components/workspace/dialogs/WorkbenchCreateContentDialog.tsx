@@ -1,4 +1,5 @@
 import { type CreationMode } from "@/components/content-creator/types";
+import { useCallback, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +20,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import {
+  clearCrashContext,
+  reportFrontendError,
+  updateCrashContext,
+} from "@/lib/crashReporting";
+import { toast } from "sonner";
 import type {
   CreationIntentFieldDefinition,
   CreationIntentFieldKey,
@@ -51,6 +58,55 @@ export interface WorkbenchCreateContentDialogProps {
   onCreateContent: () => void;
 }
 
+const FALLBACK_CREATION_INTENT_FIELD: CreationIntentFieldDefinition = {
+  key: "topic",
+  label: "创作主题",
+  placeholder: "请输入创作主题",
+};
+
+function getSafeIntentFields(
+  fields: CreationIntentFieldDefinition[] | null | undefined,
+): CreationIntentFieldDefinition[] {
+  if (!Array.isArray(fields)) {
+    return [FALLBACK_CREATION_INTENT_FIELD];
+  }
+
+  const sanitized = fields
+    .filter(
+      (field): field is CreationIntentFieldDefinition =>
+        Boolean(field) &&
+        typeof field.key === "string" &&
+        typeof field.label === "string" &&
+        typeof field.placeholder === "string",
+    )
+    .map((field) => ({
+      ...field,
+      options:
+        Array.isArray(field.options) && field.options.length > 0
+          ? field.options.filter(
+              (option): option is { value: string; label: string } =>
+                Boolean(option) &&
+                typeof option.value === "string" &&
+                typeof option.label === "string",
+            )
+          : undefined,
+    }));
+
+  if (sanitized.length > 0) {
+    return sanitized;
+  }
+
+  return [FALLBACK_CREATION_INTENT_FIELD];
+}
+
+function getFieldValue(
+  values: CreationIntentFormValues,
+  key: CreationIntentFieldKey,
+): string {
+  const value = values[key];
+  return typeof value === "string" ? value : "";
+}
+
 export function WorkbenchCreateContentDialog({
   open,
   creatingContent,
@@ -70,6 +126,49 @@ export function WorkbenchCreateContentDialog({
   onGoToIntentStep,
   onCreateContent,
 }: WorkbenchCreateContentDialogProps) {
+  const safeCreationIntentFields = useMemo(
+    () => getSafeIntentFields(currentCreationIntentFields),
+    [currentCreationIntentFields],
+  );
+
+  useEffect(() => {
+    if (!open) {
+      clearCrashContext(["workflow_step", "creation_mode", "project_id"]);
+      return;
+    }
+
+    updateCrashContext({
+      workflow_step: `workspace_creation_${step}`,
+      creation_mode: selectedCreationMode,
+      project_id: selectedProjectId,
+    });
+  }, [open, selectedCreationMode, selectedProjectId, step]);
+
+  const handlePrimaryAction = useCallback(() => {
+    try {
+      if (step === "mode") {
+        onGoToIntentStep();
+        return;
+      }
+      onCreateContent();
+    } catch (error) {
+      console.error("[WorkbenchCreateContentDialog] 主操作异常:", error);
+      void reportFrontendError(error, {
+        component: "WorkbenchCreateContentDialog",
+        workflow_step: `workspace_creation_${step}`,
+        creation_mode: selectedCreationMode,
+        project_id: selectedProjectId,
+      });
+      toast.error("操作失败，请重试");
+    }
+  }, [
+    onCreateContent,
+    onGoToIntentStep,
+    selectedCreationMode,
+    selectedProjectId,
+    step,
+  ]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[560px]">
@@ -119,12 +218,12 @@ export function WorkbenchCreateContentDialog({
             </div>
           ) : (
             <div className="space-y-3">
-              {currentCreationIntentFields.map((field) => (
+              {safeCreationIntentFields.map((field) => (
                 <div key={field.key} className="grid gap-2">
                   <Label>{field.label}</Label>
                   {field.options && field.options.length > 0 ? (
                     <Select
-                      value={creationIntentValues[field.key] || undefined}
+                      value={getFieldValue(creationIntentValues, field.key) || undefined}
                       onValueChange={(value) =>
                         onCreationIntentValueChange(field.key, value)
                       }
@@ -144,7 +243,7 @@ export function WorkbenchCreateContentDialog({
                   ) : field.multiline ? (
                     <Textarea
                       id={`creation-intent-${field.key}`}
-                      value={creationIntentValues[field.key]}
+                      value={getFieldValue(creationIntentValues, field.key)}
                       onChange={(event) =>
                         onCreationIntentValueChange(field.key, event.target.value)
                       }
@@ -155,7 +254,7 @@ export function WorkbenchCreateContentDialog({
                   ) : (
                     <Input
                       id={`creation-intent-${field.key}`}
-                      value={creationIntentValues[field.key]}
+                      value={getFieldValue(creationIntentValues, field.key)}
                       onChange={(event) =>
                         onCreationIntentValueChange(field.key, event.target.value)
                       }
@@ -204,13 +303,7 @@ export function WorkbenchCreateContentDialog({
             {step === "mode" ? "取消" : "上一步"}
           </Button>
           <Button
-            onClick={() => {
-              if (step === "mode") {
-                onGoToIntentStep();
-                return;
-              }
-              onCreateContent();
-            }}
+            onClick={handlePrimaryAction}
             disabled={
               !selectedProjectId ||
               creatingContent ||

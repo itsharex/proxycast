@@ -274,7 +274,7 @@ const MAIN_MENU_ITEMS: SidebarNavItem[] = [
     params: { workspaceViewMode: "workspace" },
     isActive: (currentPage) => currentPage === getThemeWorkspacePage("video"),
   },
-  { id: "image-gen", label: "绘画", icon: Image, page: "image-gen" },
+  { id: "image-gen", label: "插图", icon: Image, page: "image-gen" },
   { id: "batch", label: "批量任务", icon: Layers, page: "batch" },
   { id: "plugins", label: "插件中心", icon: Compass, page: "plugins" },
 ];
@@ -565,7 +565,7 @@ export function AppSidebar({ currentPage, onNavigate }: AppSidebarProps) {
           ? buildWorkspaceResetParams(
             item.params as AgentPageParams | undefined,
             (item.params as AgentPageParams | undefined)?.workspaceViewMode ??
-              "project-management",
+            "project-management",
           )
           : item.params;
 

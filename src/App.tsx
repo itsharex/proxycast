@@ -21,6 +21,7 @@ import { AgentChatPage } from "./components/agent";
 import { PluginsPage } from "./components/plugins/PluginsPage";
 import { ImageGenPage } from "./components/image-gen";
 import { BatchPage } from "./components/batch";
+import { RecentImageInsertFloating } from "./components/image-gen/RecentImageInsertFloating";
 import { CreateProjectDialog } from "./components/projects/CreateProjectDialog";
 import { WorkbenchPage } from "./components/workspace";
 import {
@@ -522,6 +523,7 @@ function AppContent() {
             <AppSidebar currentPage={currentPage} onNavigate={handleNavigate} />
           )}
           <MainContent>{renderAllPages()}</MainContent>
+          <RecentImageInsertFloating onNavigate={handleNavigate} />
 
           <ConnectConfirmDialog
             open={isDialogOpen}

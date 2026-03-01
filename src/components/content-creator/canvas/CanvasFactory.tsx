@@ -47,6 +47,12 @@ interface CanvasFactoryProps {
   } | null;
   /** 画布选中文本变更 */
   onSelectionTextChange?: (text: string) => void;
+  /** 当前项目 ID（用于跨页面插图） */
+  projectId?: string | null;
+  /** 当前文稿 ID（用于跨页面插图） */
+  contentId?: string | null;
+  /** 自动配图主题关键词 */
+  autoImageTopic?: string;
 }
 
 /**
@@ -65,6 +71,9 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
     isStreaming,
     novelControls,
     onSelectionTextChange,
+    projectId,
+    contentId,
+    autoImageTopic,
   }) => {
     const resolvedBackHome = onBackHome ?? onClose;
 
@@ -89,6 +98,9 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
           onClose={onClose}
           isStreaming={isStreaming}
           onSelectionTextChange={onSelectionTextChange}
+          projectId={projectId}
+          contentId={contentId}
+          autoImageTopic={autoImageTopic}
         />
       );
     }
@@ -100,6 +112,8 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
           onStateChange={onStateChange as (s: PosterCanvasState) => void}
           onBackHome={resolvedBackHome}
           onClose={onClose}
+          projectId={projectId}
+          contentId={contentId}
         />
       );
     }
@@ -112,6 +126,8 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
           onBackHome={resolvedBackHome}
           onClose={onClose}
           isStreaming={isStreaming}
+          projectId={projectId}
+          contentId={contentId}
         />
       );
     }
@@ -123,6 +139,8 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
           onStateChange={onStateChange as (s: ScriptCanvasState) => void}
           onBackHome={resolvedBackHome}
           onClose={onClose}
+          projectId={projectId}
+          contentId={contentId}
         />
       );
     }
@@ -134,6 +152,8 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
           onStateChange={onStateChange as (s: NovelCanvasState) => void}
           onBackHome={resolvedBackHome}
           onClose={onClose}
+          projectId={projectId}
+          contentId={contentId}
           useExternalToolbar={novelControls?.useExternalToolbar}
           chapterListCollapsed={novelControls?.chapterListCollapsed}
           onChapterListCollapsedChange={
@@ -151,6 +171,8 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
           onStateChange={onStateChange as (s: VideoCanvasState) => void}
           onBackHome={resolvedBackHome}
           onClose={onClose}
+          projectId={projectId}
+          contentId={contentId}
         />
       );
     }

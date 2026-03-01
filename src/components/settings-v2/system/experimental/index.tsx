@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { FlaskConical, Camera, AlertTriangle, RefreshCw } from "lucide-react";
+import { FlaskConical, Camera, AlertTriangle, RefreshCw, Bug } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   getExperimentalConfig,
@@ -15,6 +15,11 @@ import {
   validateShortcut,
   updateScreenshotShortcut,
   ExperimentalFeatures,
+  getConfig,
+  saveConfig,
+  type Config,
+  getLogs,
+  type CrashReportingConfig,
 } from "@/hooks/useTauri";
 import { ShortcutSettings } from "@/components/smart-input/ShortcutSettings";
 import { UpdateCheckSettings } from "./UpdateCheckSettings";
@@ -24,6 +29,14 @@ import {
   saveVoiceInputConfig,
   VoiceInputConfig,
 } from "@/lib/api/asrProvider";
+import { applyCrashReportingSettings } from "@/lib/crashReporting";
+import {
+  buildCrashDiagnosticPayload,
+  copyCrashDiagnosticToClipboard,
+  DEFAULT_CRASH_REPORTING_CONFIG,
+  exportCrashDiagnosticToJson,
+  normalizeCrashReportingConfig,
+} from "@/lib/crashDiagnostic";
 
 // ============================================================
 // 组件
@@ -33,8 +46,12 @@ export function ExperimentalSettings() {
   // 状态
   const [config, setConfig] = useState<ExperimentalFeatures | null>(null);
   const [voiceConfig, setVoiceConfig] = useState<VoiceInputConfig | null>(null);
+  const [crashConfig, setCrashConfig] = useState<CrashReportingConfig>(
+    DEFAULT_CRASH_REPORTING_CONFIG,
+  );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [diagnosticBusy, setDiagnosticBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -49,12 +66,16 @@ export function ExperimentalSettings() {
     setLoading(true);
     setError(null);
     try {
-      const [experimentalConfig, voiceInputConfig] = await Promise.all([
+      const [experimentalConfig, voiceInputConfig, fullConfig] = await Promise.all([
         getExperimentalConfig(),
         getVoiceInputConfig(),
+        getConfig(),
       ]);
       setConfig(experimentalConfig);
       setVoiceConfig(voiceInputConfig);
+      setCrashConfig(
+        normalizeCrashReportingConfig(fullConfig.crash_reporting),
+      );
     } catch (err) {
       console.error("加载实验室配置失败:", err);
       setError(err instanceof Error ? err.message : "加载配置失败");
@@ -80,6 +101,7 @@ export function ExperimentalSettings() {
         sound_enabled: true,
         translate_instruction_id: "default",
       });
+      setCrashConfig(DEFAULT_CRASH_REPORTING_CONFIG);
     } finally {
       setLoading(false);
     }
@@ -178,6 +200,112 @@ export function ExperimentalSettings() {
     },
     [],
   );
+
+  const persistCrashConfig = useCallback(async (next: CrashReportingConfig) => {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const latestConfig = await getConfig();
+      const normalized = normalizeCrashReportingConfig(next);
+      const updatedConfig: Config = {
+        ...latestConfig,
+        crash_reporting: normalized,
+      };
+      await saveConfig(updatedConfig);
+      await applyCrashReportingSettings(normalized);
+      setCrashConfig(normalized);
+      setMessage({ type: "success", text: "崩溃上报配置已更新" });
+      setTimeout(() => setMessage(null), 2000);
+    } catch (err) {
+      console.error("保存崩溃上报配置失败:", err);
+      setMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : "保存崩溃上报配置失败",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }, []);
+
+  const handleCrashEnabledToggle = useCallback(() => {
+    const nextConfig = {
+      ...crashConfig,
+      enabled: !crashConfig.enabled,
+    };
+    void persistCrashConfig(nextConfig);
+  }, [crashConfig, persistCrashConfig]);
+
+  const handleCrashFieldChange = useCallback(
+    (
+      field: keyof CrashReportingConfig,
+      value: string | boolean | number | null,
+    ) => {
+      setCrashConfig((previous) => ({
+        ...previous,
+        [field]: value,
+      }));
+    },
+    [],
+  );
+
+  const handleSaveCrashConfig = useCallback(() => {
+    void persistCrashConfig(crashConfig);
+  }, [crashConfig, persistCrashConfig]);
+
+  const buildDiagnosticPayload = useCallback(async () => {
+    const logs = await getLogs();
+    return buildCrashDiagnosticPayload({
+      crashConfig,
+      logs,
+      appVersion: import.meta.env.VITE_APP_VERSION,
+      platform: navigator.platform,
+      userAgent: navigator.userAgent,
+    });
+  }, [crashConfig]);
+
+  const copyCrashDiagnostic = useCallback(async () => {
+    setDiagnosticBusy(true);
+    setMessage(null);
+    try {
+      const payload = await buildDiagnosticPayload();
+      await copyCrashDiagnosticToClipboard(payload);
+      setMessage({
+        type: "success",
+        text: "诊断信息已复制，可直接发给开发者",
+      });
+      setTimeout(() => setMessage(null), 2500);
+    } catch (err) {
+      console.error("复制诊断信息失败:", err);
+      setMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : "复制诊断信息失败",
+      });
+    } finally {
+      setDiagnosticBusy(false);
+    }
+  }, [buildDiagnosticPayload]);
+
+  const exportCrashDiagnostic = useCallback(async () => {
+    setDiagnosticBusy(true);
+    setMessage(null);
+    try {
+      const payload = await buildDiagnosticPayload();
+      exportCrashDiagnosticToJson(payload);
+      setMessage({
+        type: "success",
+        text: "诊断文件已导出，可发送给开发者",
+      });
+      setTimeout(() => setMessage(null), 2500);
+    } catch (err) {
+      console.error("导出诊断信息失败:", err);
+      setMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : "导出诊断信息失败",
+      });
+    } finally {
+      setDiagnosticBusy(false);
+    }
+  }, [buildDiagnosticPayload]);
 
   // 加载中状态
   if (loading) {
@@ -313,6 +441,140 @@ export function ExperimentalSettings() {
       {/* 自动更新检查设置 */}
       <div className="rounded-lg border p-4">
         <UpdateCheckSettings />
+      </div>
+
+      {/* 崩溃上报 */}
+      <div className="rounded-lg border p-4 space-y-4">
+        <div className="flex items-start justify-between">
+          <div className="flex items-start gap-3">
+            <Bug className="h-5 w-5 text-muted-foreground mt-0.5" />
+            <div>
+              <h4 className="text-sm font-medium">崩溃上报（Sentry）</h4>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                收集前端渲染错误与崩溃信息，用于定位 Windows 客诉闪退问题
+              </p>
+            </div>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={Boolean(crashConfig.enabled)}
+              onChange={handleCrashEnabledToggle}
+              disabled={saving}
+              className="sr-only peer"
+            />
+            <div
+              className={cn(
+                "w-9 h-5 rounded-full transition-colors",
+                "bg-muted peer-checked:bg-primary",
+                "after:content-[''] after:absolute after:top-0.5 after:left-0.5",
+                "after:bg-white after:rounded-full after:h-4 after:w-4",
+                "after:transition-transform peer-checked:after:translate-x-4",
+                saving && "opacity-50 cursor-not-allowed",
+              )}
+            />
+          </label>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1 md:col-span-2">
+            <label className="text-xs text-muted-foreground">DSN</label>
+            <input
+              value={crashConfig.dsn ?? ""}
+              onChange={(event) =>
+                handleCrashFieldChange("dsn", event.target.value || null)
+              }
+              disabled={saving}
+              placeholder="https://xxx@o0.ingest.sentry.io/0"
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Environment</label>
+            <input
+              value={crashConfig.environment ?? "production"}
+              onChange={(event) =>
+                handleCrashFieldChange("environment", event.target.value)
+              }
+              disabled={saving}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">采样率 (0-1)</label>
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.1}
+              value={Number(crashConfig.sample_rate ?? 1)}
+              onChange={(event) =>
+                handleCrashFieldChange(
+                  "sample_rate",
+                  Number(event.target.value || 1),
+                )
+              }
+              disabled={saving}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+        </div>
+
+        <label className="inline-flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+          <input
+            type="checkbox"
+            checked={Boolean(crashConfig.send_pii)}
+            onChange={(event) =>
+              handleCrashFieldChange("send_pii", event.target.checked)
+            }
+            disabled={saving}
+            className="h-4 w-4 rounded border"
+          />
+          发送默认 PII 字段（默认关闭）
+        </label>
+
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            关闭后仅写本地日志，不发送远端。若 DSN 为空，也会自动仅本地记录。
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void copyCrashDiagnostic()}
+              disabled={saving || diagnosticBusy}
+              className={cn(
+                "rounded-md border px-3 py-1.5 text-xs transition-colors",
+                (saving || diagnosticBusy) && "opacity-50 cursor-not-allowed",
+              )}
+            >
+              复制诊断信息
+            </button>
+            <button
+              type="button"
+              onClick={() => void exportCrashDiagnostic()}
+              disabled={saving || diagnosticBusy}
+              className={cn(
+                "rounded-md border px-3 py-1.5 text-xs transition-colors",
+                (saving || diagnosticBusy) && "opacity-50 cursor-not-allowed",
+              )}
+            >
+              导出诊断 JSON
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveCrashConfig}
+              disabled={saving || diagnosticBusy}
+              className={cn(
+                "rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-colors",
+                (saving || diagnosticBusy) && "opacity-50 cursor-not-allowed",
+              )}
+            >
+              保存配置
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* 语音输入功能 */}

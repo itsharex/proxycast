@@ -168,6 +168,10 @@ export interface PosterCanvasProps {
   state: PosterCanvasState;
   /** 状态变更回调 */
   onStateChange: (state: PosterCanvasState) => void;
+  /** 当前项目 ID（用于跨页插图） */
+  projectId?: string | null;
+  /** 当前内容 ID（用于跨页插图） */
+  contentId?: string | null;
   /** 返回首页回调 */
   onBackHome?: () => void;
   /** 关闭画布回调 */

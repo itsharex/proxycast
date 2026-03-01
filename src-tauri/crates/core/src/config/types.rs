@@ -429,6 +429,9 @@ pub struct Config {
     /// 速率限制配置
     #[serde(default)]
     pub rate_limit: RateLimitSettings,
+    /// 崩溃上报配置（Sentry 协议兼容）
+    #[serde(default)]
+    pub crash_reporting: CrashReportingConfig,
     /// 对话管理配置
     #[serde(default)]
     pub conversation: ConversationSettings,
@@ -1285,6 +1288,50 @@ pub struct LoggingConfig {
     pub include_request_body: bool,
 }
 
+/// 崩溃上报配置
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CrashReportingConfig {
+    /// 是否启用崩溃上报
+    #[serde(default = "default_crash_reporting_enabled")]
+    pub enabled: bool,
+    /// Sentry DSN（为空时不发送远端）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dsn: Option<String>,
+    /// 上报环境（如 prod/dev）
+    #[serde(default = "default_crash_reporting_environment")]
+    pub environment: String,
+    /// 采样率（0.0 - 1.0）
+    #[serde(default = "default_crash_reporting_sample_rate")]
+    pub sample_rate: f64,
+    /// 是否发送可能包含 PII 的默认字段
+    #[serde(default)]
+    pub send_pii: bool,
+}
+
+fn default_crash_reporting_enabled() -> bool {
+    true
+}
+
+fn default_crash_reporting_environment() -> String {
+    "production".to_string()
+}
+
+fn default_crash_reporting_sample_rate() -> f64 {
+    1.0
+}
+
+impl Default for CrashReportingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_crash_reporting_enabled(),
+            dsn: None,
+            environment: default_crash_reporting_environment(),
+            sample_rate: default_crash_reporting_sample_rate(),
+            send_pii: false,
+        }
+    }
+}
+
 fn default_logging_enabled() -> bool {
     true
 }
@@ -1788,6 +1835,7 @@ impl Default for Config {
             assistant: AssistantConfig::default(),
             user_profile: UserProfile::default(),
             rate_limit: RateLimitSettings::default(),
+            crash_reporting: CrashReportingConfig::default(),
             conversation: ConversationSettings::default(),
             hint_router: HintRouterSettings::default(),
             pairing: PairingSettings::default(),
@@ -2054,6 +2102,12 @@ pub struct ImageGenConfig {
     /// 自动下载生成的图像
     #[serde(default)]
     pub auto_download: Option<bool>,
+    /// 图片搜索（Pexels）API Key
+    #[serde(default)]
+    pub image_search_pexels_api_key: Option<String>,
+    /// 图片搜索（Pixabay）API Key
+    #[serde(default)]
+    pub image_search_pixabay_api_key: Option<String>,
 }
 
 /// 助理配置
@@ -2139,6 +2193,11 @@ mod unit_tests {
         assert_eq!(config.auth_dir, "~/.proxycast/auth");
         assert!(config.credential_pool.kiro.is_empty());
         assert!(config.credential_pool.openai.is_empty());
+        assert!(config.crash_reporting.enabled);
+        assert!(config.crash_reporting.dsn.is_none());
+        assert_eq!(config.crash_reporting.environment, "production");
+        assert_eq!(config.crash_reporting.sample_rate, 1.0);
+        assert!(!config.crash_reporting.send_pii);
     }
 
     #[test]
