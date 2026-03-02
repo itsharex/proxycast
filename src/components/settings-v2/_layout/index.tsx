@@ -5,7 +5,7 @@
  * 参考成熟产品的设置布局设计
  */
 
-import { useState, ReactNode, useEffect } from "react";
+import { useState, ReactNode, useEffect, useRef } from "react";
 import styled from "styled-components";
 import { SettingsSidebar } from "./SettingsSidebar";
 import { SettingsTabs } from "@/types/settings";
@@ -323,12 +323,17 @@ export function SettingsLayoutV2({
   const [activeTab, setActiveTab] = useState<SettingsTabs>(
     initialTab || SettingsTabs.Appearance,
   );
+  const contentContainerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (initialTab) {
       setActiveTab(initialTab);
     }
   }, [initialTab]);
+
+  useEffect(() => {
+    contentContainerRef.current?.scrollTo({ top: 0, behavior: "auto" });
+  }, [activeTab]);
 
   const handleBackToHome = () => {
     if (onNavigate) {
@@ -345,7 +350,7 @@ export function SettingsLayoutV2({
       {/* 设置内容 */}
       <LayoutContainer>
         <SettingsSidebar activeTab={activeTab} onTabChange={setActiveTab} />
-        <ContentContainer>
+        <ContentContainer ref={contentContainerRef}>
           <ContentWrapper $wide={WIDE_CONTENT_TABS.has(activeTab)}>
             {renderSettingsContent(activeTab)}
           </ContentWrapper>

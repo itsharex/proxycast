@@ -902,6 +902,43 @@ export function ApiServerPage({ hideHeader = false }: ApiServerPageProps) {
       ),
     [status, editHost],
   );
+  const cacheHitRate = useMemo(() => {
+    const hits = status?.response_cache?.hits ?? 0;
+    const misses = status?.response_cache?.misses ?? 0;
+    const total = hits + misses;
+    if (total === 0) return 0;
+    return (hits / total) * 100;
+  }, [status]);
+  const capabilityExcludedReasonTotal = useMemo(() => {
+    const capability = status?.capability_routing;
+    if (!capability) return 0;
+    return (
+      capability.filter_excluded_tools_total +
+      capability.filter_excluded_vision_total +
+      capability.filter_excluded_context_total
+    );
+  }, [status]);
+  const requestDedupReplayRate = useMemo(() => {
+    const dedup = status?.request_dedup;
+    if (!dedup) return 0;
+    const totalChecks =
+      dedup.check_new_total +
+      dedup.check_in_progress_total +
+      dedup.check_completed_total;
+    const replayCount = dedup.check_completed_total + dedup.wait_success_total;
+    if (totalChecks === 0) return 0;
+    return (replayCount / totalChecks) * 100;
+  }, [status]);
+  const idempotencyReplayRate = useMemo(() => {
+    const idempotency = status?.idempotency;
+    if (!idempotency) return 0;
+    const totalChecks =
+      idempotency.check_new_total +
+      idempotency.check_in_progress_total +
+      idempotency.check_completed_total;
+    if (totalChecks === 0) return 0;
+    return (idempotency.check_completed_total / totalChecks) * 100;
+  }, [status]);
 
   const handleGatewayModeChange = async (mode: GatewayMode) => {
     const nextHost = mode === "local" ? "127.0.0.1" : "0.0.0.0";
@@ -1311,6 +1348,182 @@ export function ApiServerPage({ hideHeader = false }: ApiServerPageProps) {
                 </span>
               </div>
             )}
+          </div>
+
+          {/* 观测面板（对标 ClawRouter） */}
+          <div className="rounded-lg border bg-card p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium">观测面板</h3>
+              <span className="text-xs text-muted-foreground">
+                实时统计（每 3 秒刷新）
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="rounded-md border bg-muted/30 px-3 py-2">
+                <p className="text-xs text-muted-foreground">最近1分钟错误率</p>
+                <p className="text-sm font-medium">
+                  {((status?.error_rate_1m ?? 0) * 100).toFixed(1)}%
+                </p>
+              </div>
+              <div className="rounded-md border bg-muted/30 px-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  最近1分钟 P95 延迟
+                </p>
+                <p className="text-sm font-medium">
+                  {status?.p95_latency_ms_1m != null
+                    ? `${status.p95_latency_ms_1m}ms`
+                    : "-"}
+                </p>
+              </div>
+              <div className="rounded-md border bg-muted/30 px-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  活跃请求（近似）
+                </p>
+                <p className="text-sm font-medium">
+                  {status?.active_requests ?? 0}
+                </p>
+              </div>
+              <div className="rounded-md border bg-muted/30 px-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  熔断上游数（近似）
+                </p>
+                <p className="text-sm font-medium">
+                  {status?.open_circuit_count ?? 0}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+              <div className="rounded-md border p-3 space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  响应缓存（非流式）
+                </p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>命中：{status?.response_cache?.hits ?? 0}</div>
+                  <div>未命中：{status?.response_cache?.misses ?? 0}</div>
+                  <div>缓存条目：{status?.response_cache?.size ?? 0}</div>
+                  <div>淘汰次数：{status?.response_cache?.evictions ?? 0}</div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  缓存命中率：{cacheHitRate.toFixed(1)}%
+                </p>
+              </div>
+
+              <div className="rounded-md border p-3 space-y-2">
+                <p className="text-xs text-muted-foreground">请求去重</p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    新请求：
+                    {status?.request_dedup?.check_new_total ?? 0}
+                  </div>
+                  <div>
+                    In-Flight 等待：
+                    {status?.request_dedup?.check_in_progress_total ?? 0}
+                  </div>
+                  <div>
+                    直接回放：
+                    {status?.request_dedup?.check_completed_total ?? 0}
+                  </div>
+                  <div>
+                    等待回放成功：
+                    {status?.request_dedup?.wait_success_total ?? 0}
+                  </div>
+                  <div>
+                    等待超时：
+                    {status?.request_dedup?.wait_timeout_total ?? 0}
+                  </div>
+                  <div>
+                    当前 In-Flight：
+                    {status?.request_dedup?.inflight_size ?? 0}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  去重回放率：{requestDedupReplayRate.toFixed(1)}%
+                </p>
+              </div>
+
+              <div className="rounded-md border p-3 space-y-2">
+                <p className="text-xs text-muted-foreground">幂等闭环</p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    新键：
+                    {status?.idempotency?.check_new_total ?? 0}
+                  </div>
+                  <div>
+                    处理中冲突：
+                    {status?.idempotency?.check_in_progress_total ?? 0}
+                  </div>
+                  <div>
+                    已完成回放：
+                    {status?.idempotency?.check_completed_total ?? 0}
+                  </div>
+                  <div>
+                    完成写入：
+                    {status?.idempotency?.complete_total ?? 0}
+                  </div>
+                  <div>
+                    当前 In-Progress：
+                    {status?.idempotency?.in_progress_size ?? 0}
+                  </div>
+                  <div>
+                    当前 Completed：
+                    {status?.idempotency?.completed_size ?? 0}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  幂等回放率：{idempotencyReplayRate.toFixed(1)}%
+                </p>
+              </div>
+
+              <div className="rounded-md border p-3 space-y-2">
+                <p className="text-xs text-muted-foreground">能力路由与回退</p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    过滤评估：
+                    {status?.capability_routing?.filter_eval_total ?? 0}
+                  </div>
+                  <div>
+                    过滤排除：
+                    {status?.capability_routing?.filter_excluded_total ?? 0}
+                  </div>
+                  <div>
+                    Provider 回退：
+                    {status?.capability_routing?.provider_fallback_total ?? 0}
+                  </div>
+                  <div>
+                    模型回退：
+                    {status?.capability_routing?.model_fallback_total ?? 0}
+                  </div>
+                  <div>
+                    候选全排空：
+                    {status?.capability_routing
+                      ?.all_candidates_excluded_total ?? 0}
+                  </div>
+                  <div>
+                    原因样本：
+                    {capabilityExcludedReasonTotal}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  <span>
+                    tools:{" "}
+                    {status?.capability_routing?.filter_excluded_tools_total ??
+                      0}
+                  </span>
+                  <span>
+                    vision:{" "}
+                    {status?.capability_routing?.filter_excluded_vision_total ??
+                      0}
+                  </span>
+                  <span>
+                    context:{" "}
+                    {status?.capability_routing
+                      ?.filter_excluded_context_total ?? 0}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Default Provider - 动态显示有凭证的 Provider */}

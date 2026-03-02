@@ -6,14 +6,18 @@ import { useCallback, useState } from "react";
 import { Bug, Code2, Eye } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useComponentDebug } from "@/contexts/ComponentDebugContext";
-import { getConfig, getLogs } from "@/hooks/useTauri";
+import { getConfig, getLogs, getPersistedLogsTail } from "@/hooks/useTauri";
 import {
   buildCrashDiagnosticPayload,
   copyCrashDiagnosticToClipboard,
+  copyCrashDiagnosticJsonToClipboard,
   exportCrashDiagnosticToJson,
+  isClipboardPermissionDeniedError,
   normalizeCrashReportingConfig,
+  openCrashDiagnosticDownloadDirectory,
 } from "@/lib/crashDiagnostic";
 import { cn } from "@/lib/utils";
+import { ClipboardPermissionGuideCard } from "../shared/ClipboardPermissionGuideCard";
 
 export function DeveloperSettings() {
   const { enabled, setEnabled } = useComponentDebug();
@@ -22,12 +26,18 @@ export function DeveloperSettings() {
     type: "success" | "error";
     text: string;
   } | null>(null);
+  const [showClipboardGuide, setShowClipboardGuide] = useState(false);
 
   const buildDiagnosticPayload = useCallback(async () => {
-    const [config, logs] = await Promise.all([getConfig(), getLogs()]);
+    const [config, logs, persistedLogs] = await Promise.all([
+      getConfig(),
+      getLogs(),
+      getPersistedLogsTail(200),
+    ]);
     return buildCrashDiagnosticPayload({
       crashConfig: normalizeCrashReportingConfig(config.crash_reporting),
       logs,
+      persistedLogTail: persistedLogs,
       appVersion: import.meta.env.VITE_APP_VERSION,
       platform: navigator.platform,
       userAgent: navigator.userAgent,
@@ -37,6 +47,7 @@ export function DeveloperSettings() {
   const handleCopyDiagnostic = useCallback(async () => {
     setDiagnosticBusy(true);
     setMessage(null);
+    setShowClipboardGuide(false);
     try {
       const payload = await buildDiagnosticPayload();
       await copyCrashDiagnosticToClipboard(payload);
@@ -47,6 +58,8 @@ export function DeveloperSettings() {
       setTimeout(() => setMessage(null), 2500);
     } catch (err) {
       console.error("复制诊断信息失败:", err);
+      const isPermissionDenied = isClipboardPermissionDeniedError(err);
+      setShowClipboardGuide(isPermissionDenied);
       setMessage({
         type: "error",
         text: err instanceof Error ? err.message : "复制诊断信息失败",
@@ -56,15 +69,52 @@ export function DeveloperSettings() {
     }
   }, [buildDiagnosticPayload]);
 
+  const handleCopyDiagnosticJson = useCallback(async () => {
+    setDiagnosticBusy(true);
+    setMessage(null);
+    setShowClipboardGuide(false);
+    try {
+      const payload = await buildDiagnosticPayload();
+      await copyCrashDiagnosticJsonToClipboard(payload);
+      setMessage({
+        type: "success",
+        text: "纯 JSON 诊断信息已复制",
+      });
+      setTimeout(() => setMessage(null), 2500);
+    } catch (err) {
+      console.error("复制纯 JSON 失败:", err);
+      const isPermissionDenied = isClipboardPermissionDeniedError(err);
+      setShowClipboardGuide(isPermissionDenied);
+      setMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : "复制纯 JSON 失败",
+      });
+    } finally {
+      setDiagnosticBusy(false);
+    }
+  }, [buildDiagnosticPayload]);
+
   const handleExportDiagnostic = useCallback(async () => {
     setDiagnosticBusy(true);
     setMessage(null);
+    setShowClipboardGuide(false);
     try {
       const payload = await buildDiagnosticPayload();
-      exportCrashDiagnosticToJson(payload);
+      const result = exportCrashDiagnosticToJson(payload, {
+        sceneTag: "settings-developer",
+      });
+      let openedPath: string | null = null;
+      try {
+        const opened = await openCrashDiagnosticDownloadDirectory();
+        openedPath = opened.openedPath;
+      } catch {
+        openedPath = null;
+      }
       setMessage({
         type: "success",
-        text: "诊断文件已导出，可发送给开发者",
+        text: openedPath
+          ? `诊断文件已导出：${result.fileName}，并已打开目录：${openedPath}`
+          : `诊断文件已导出：${result.fileName}（位置：${result.locationHint}）`,
       });
       setTimeout(() => setMessage(null), 2500);
     } catch (err) {
@@ -77,6 +127,27 @@ export function DeveloperSettings() {
       setDiagnosticBusy(false);
     }
   }, [buildDiagnosticPayload]);
+
+  const handleOpenDownloadDirectory = useCallback(async () => {
+    setDiagnosticBusy(true);
+    setMessage(null);
+    try {
+      const result = await openCrashDiagnosticDownloadDirectory();
+      setMessage({
+        type: "success",
+        text: `已打开下载目录：${result.openedPath}`,
+      });
+      setTimeout(() => setMessage(null), 2500);
+    } catch (err) {
+      console.error("打开下载目录失败:", err);
+      setMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : "打开下载目录失败",
+      });
+    } finally {
+      setDiagnosticBusy(false);
+    }
+  }, []);
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -99,6 +170,8 @@ export function DeveloperSettings() {
           {message.text}
         </div>
       )}
+
+      {showClipboardGuide && <ClipboardPermissionGuideCard />}
 
       {/* 组件视图调试 */}
       <div className="border rounded-lg p-4">
@@ -157,6 +230,17 @@ export function DeveloperSettings() {
           </button>
           <button
             type="button"
+            onClick={() => void handleCopyDiagnosticJson()}
+            disabled={diagnosticBusy}
+            className={cn(
+              "rounded-md border px-3 py-1.5 text-xs transition-colors",
+              diagnosticBusy && "opacity-50 cursor-not-allowed",
+            )}
+          >
+            复制纯 JSON
+          </button>
+          <button
+            type="button"
             onClick={() => void handleExportDiagnostic()}
             disabled={diagnosticBusy}
             className={cn(
@@ -165,6 +249,17 @@ export function DeveloperSettings() {
             )}
           >
             导出诊断 JSON
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleOpenDownloadDirectory()}
+            disabled={diagnosticBusy}
+            className={cn(
+              "rounded-md border px-3 py-1.5 text-xs transition-colors",
+              diagnosticBusy && "opacity-50 cursor-not-allowed",
+            )}
+          >
+            打开下载目录
           </button>
         </div>
       </div>

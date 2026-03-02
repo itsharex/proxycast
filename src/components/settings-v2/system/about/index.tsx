@@ -23,6 +23,8 @@ interface DownloadResult {
   filePath?: string;
 }
 
+const FALLBACK_TAGS_URL = "https://github.com/aiclientproxy/proxycast/tags";
+
 const CREATIVE_THEMES = [
   "通用对话",
   "社媒内容",
@@ -63,6 +65,7 @@ export function AboutSection() {
   const [downloadResult, setDownloadResult] = useState<DownloadResult | null>(
     null,
   );
+  const manualDownloadUrl = versionInfo.downloadUrl || FALLBACK_TAGS_URL;
 
   // 加载当前版本号（从后端获取，确保与 Cargo.toml 同步）
   useEffect(() => {
@@ -73,9 +76,14 @@ export function AboutSection() {
         setVersionInfo((prev) => ({
           ...prev,
           current: result.current,
+          downloadUrl: result.downloadUrl || FALLBACK_TAGS_URL,
         }));
       } catch (error) {
         console.error("Failed to load version:", error);
+        setVersionInfo((prev) => ({
+          ...prev,
+          downloadUrl: prev.downloadUrl || FALLBACK_TAGS_URL,
+        }));
       }
     };
     loadCurrentVersion();
@@ -86,12 +94,16 @@ export function AboutSection() {
     setDownloadResult(null);
     try {
       const result = await safeInvoke<VersionInfo>("check_for_updates");
-      setVersionInfo(result);
+      setVersionInfo({
+        ...result,
+        downloadUrl: result.downloadUrl || FALLBACK_TAGS_URL,
+      });
     } catch (error) {
       console.error("Failed to check for updates:", error);
       setVersionInfo((prev) => ({
         ...prev,
         error: t("检查更新失败", "检查更新失败"),
+        downloadUrl: prev.downloadUrl || FALLBACK_TAGS_URL,
       }));
     } finally {
       setChecking(false);
@@ -124,7 +136,7 @@ export function AboutSection() {
       console.error("Failed to download update:", error);
       setDownloadResult({
         success: false,
-        message: t("下载失败，请手动下载", "下载失败，请手动下载"),
+        message: t("下载失败，请手动下载最新版", "下载失败，请手动下载最新版"),
         filePath: undefined,
       });
     } finally {
@@ -207,17 +219,15 @@ export function AboutSection() {
                   : t("下载更新", "下载更新")}
               </button>
 
-              {versionInfo.downloadUrl && (
-                <a
-                  href={versionInfo.downloadUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border text-sm hover:bg-muted"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  {t("网页下载", "网页下载")}
-                </a>
-              )}
+              <a
+                href={manualDownloadUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border text-sm hover:bg-muted"
+              >
+                <ExternalLink className="h-4 w-4" />
+                {t("网页下载", "网页下载")}
+              </a>
             </>
           )}
         </div>
@@ -239,14 +249,14 @@ export function AboutSection() {
               )}
               <div className="flex-1">
                 <p>{downloadResult.message}</p>
-                {!downloadResult.success && versionInfo.downloadUrl && (
+                {!downloadResult.success && (
                   <a
-                    href={versionInfo.downloadUrl}
+                    href={manualDownloadUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 mt-2 underline hover:no-underline"
-                >
-                  <ExternalLink className="h-3 w-3" />
+                    className="inline-flex items-center gap-1 mt-2 underline hover:no-underline"
+                  >
+                    <ExternalLink className="h-3 w-3" />
                     {t("前往网页下载", "前往网页下载")}
                   </a>
                 )}

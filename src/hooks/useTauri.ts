@@ -7,6 +7,56 @@ export interface ServerStatus {
   port: number;
   requests: number;
   uptime_secs: number;
+  error_rate_1m: number;
+  p95_latency_ms_1m: number | null;
+  open_circuit_count: number;
+  active_requests: number;
+  capability_routing: CapabilityRoutingMetricsSnapshot;
+  response_cache: ResponseCacheStats;
+  request_dedup: RequestDedupStats;
+  idempotency: IdempotencyStats;
+}
+
+export interface CapabilityRoutingMetricsSnapshot {
+  filter_eval_total: number;
+  filter_excluded_total: number;
+  filter_excluded_tools_total: number;
+  filter_excluded_vision_total: number;
+  filter_excluded_context_total: number;
+  provider_fallback_total: number;
+  model_fallback_total: number;
+  all_candidates_excluded_total: number;
+}
+
+export interface ResponseCacheStats {
+  size: number;
+  hits: number;
+  misses: number;
+  evictions: number;
+}
+
+export interface RequestDedupStats {
+  inflight_size: number;
+  completed_size: number;
+  check_new_total: number;
+  check_in_progress_total: number;
+  check_completed_total: number;
+  wait_success_total: number;
+  wait_timeout_total: number;
+  wait_no_result_total: number;
+  complete_total: number;
+  remove_total: number;
+}
+
+export interface IdempotencyStats {
+  entries_size: number;
+  in_progress_size: number;
+  completed_size: number;
+  check_new_total: number;
+  check_in_progress_total: number;
+  check_completed_total: number;
+  complete_total: number;
+  remove_total: number;
 }
 
 // TLS Configuration
@@ -14,6 +64,15 @@ export interface TlsConfig {
   enable: boolean;
   cert_path: string | null;
   key_path: string | null;
+}
+
+// Response Cache Configuration
+export interface ResponseCacheConfig {
+  enabled: boolean;
+  ttl_secs: number;
+  max_entries: number;
+  max_body_bytes: number;
+  cacheable_status_codes: number[];
 }
 
 // Remote Management Configuration
@@ -381,6 +440,7 @@ export interface Config {
     port: number;
     api_key: string;
     tls: TlsConfig;
+    response_cache: ResponseCacheConfig;
   };
   providers: {
     kiro: {
@@ -479,6 +539,29 @@ export async function setDefaultProvider(provider: string): Promise<string> {
   return safeInvoke("set_default_provider", { provider });
 }
 
+export interface WorkspaceEnsureResult {
+  workspaceId: string;
+  rootPath: string;
+  existed: boolean;
+  created: boolean;
+  repaired: boolean;
+  relocated?: boolean;
+  previousRootPath?: string | null;
+  warning?: string | null;
+}
+
+export async function workspaceEnsureReady(
+  id: string,
+): Promise<WorkspaceEnsureResult> {
+  return safeInvoke("workspace_ensure_ready", { id });
+}
+
+export async function workspaceEnsureDefaultReady(): Promise<
+  WorkspaceEnsureResult | null
+> {
+  return safeInvoke("workspace_ensure_default_ready");
+}
+
 /**
  * 更新 Provider 的环境变量
  *
@@ -512,6 +595,17 @@ export async function reloadCredentials(): Promise<string> {
 export async function getLogs(): Promise<LogEntry[]> {
   try {
     return await safeInvoke("get_logs");
+  } catch {
+    return [];
+  }
+}
+
+export async function getPersistedLogsTail(lines = 200): Promise<LogEntry[]> {
+  const safeLines = Number.isFinite(lines)
+    ? Math.min(1000, Math.max(20, Math.floor(lines)))
+    : 200;
+  try {
+    return await safeInvoke("get_persisted_logs_tail", { lines: safeLines });
   } catch {
     return [];
   }
