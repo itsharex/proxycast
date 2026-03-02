@@ -767,6 +767,7 @@ pub fn run() {
             app_commands::set_claude_custom_config,
             // Log commands (from app::commands)
             app_commands::get_logs,
+            app_commands::get_persisted_logs_tail,
             app_commands::clear_logs,
             app_commands::report_frontend_crash,
             // API test commands (from app::commands)
@@ -1272,6 +1273,8 @@ pub fn run() {
             commands::workspace_cmd::workspace_delete,
             commands::workspace_cmd::workspace_set_default,
             commands::workspace_cmd::workspace_get_default,
+            commands::workspace_cmd::workspace_ensure_ready,
+            commands::workspace_cmd::workspace_ensure_default_ready,
             commands::workspace_cmd::workspace_get_by_path,
             commands::workspace_cmd::workspace_get_projects_root,
             commands::workspace_cmd::workspace_resolve_project_path,

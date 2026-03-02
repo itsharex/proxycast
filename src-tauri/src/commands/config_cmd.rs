@@ -5,6 +5,7 @@ use crate::config::{
 use crate::models::app_type::AppType;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::ManagerExt;
 
@@ -596,6 +597,16 @@ pub struct VersionCheckResult {
     pub error: Option<String>,
 }
 
+const FALLBACK_TAGS_URL: &str = "https://github.com/aiclientproxy/proxycast/tags";
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct UpdateCheckCache {
+    latest: Option<String>,
+    download_url: Option<String>,
+    etag: Option<String>,
+    last_checked_unix: u64,
+}
+
 /// 检查应用更新
 ///
 /// 从 GitHub Releases API 获取最新版本信息并与当前版本比较
@@ -604,17 +615,60 @@ pub async fn check_for_updates() -> Result<VersionCheckResult, String> {
     const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
     const GITHUB_API_URL: &str =
         "https://api.github.com/repos/aiclientproxy/proxycast/releases/latest";
+    const UPDATE_CHECK_CACHE_TTL_SECS: u64 = 10 * 60;
+
+    let now_unix = current_unix_timestamp();
+    let cache_path = get_update_check_cache_path();
+    let cached = load_update_check_cache(&cache_path);
+
+    if let Some(cache) = &cached {
+        if is_update_cache_fresh(cache, now_unix, UPDATE_CHECK_CACHE_TTL_SECS) {
+            return Ok(build_version_check_result(
+                CURRENT_VERSION,
+                cache.latest.clone(),
+                cache.download_url.clone(),
+                None,
+            ));
+        }
+    }
 
     let client = reqwest::Client::new();
-
-    match client
+    let mut request = client
         .get(GITHUB_API_URL)
         .header("User-Agent", "ProxyCast")
-        .send()
-        .await
-    {
+        .header("Accept", "application/vnd.github+json");
+
+    if let Some(cache) = &cached {
+        if let Some(etag) = &cache.etag {
+            request = request.header("If-None-Match", etag);
+        }
+    }
+
+    match request.send().await {
         Ok(response) => {
+            if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+                if let Some(cache) = cached {
+                    let refreshed_cache = UpdateCheckCache {
+                        last_checked_unix: now_unix,
+                        ..cache.clone()
+                    };
+                    let _ = save_update_check_cache(&cache_path, &refreshed_cache);
+                    return Ok(build_version_check_result(
+                        CURRENT_VERSION,
+                        refreshed_cache.latest,
+                        refreshed_cache.download_url,
+                        None,
+                    ));
+                }
+            }
+
             if response.status().is_success() {
+                let etag = response
+                    .headers()
+                    .get(reqwest::header::ETAG)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string());
+
                 match response.json::<serde_json::Value>().await {
                     Ok(data) => {
                         let latest_version = data["tag_name"]
@@ -624,42 +678,123 @@ pub async fn check_for_updates() -> Result<VersionCheckResult, String> {
 
                         let download_url = data["html_url"].as_str().map(|s| s.to_string());
 
-                        let has_update = version_compare(CURRENT_VERSION, latest_version);
-
-                        Ok(VersionCheckResult {
-                            current: CURRENT_VERSION.to_string(),
+                        let new_cache = UpdateCheckCache {
                             latest: Some(latest_version.to_string()),
-                            has_update,
+                            download_url: download_url.clone(),
+                            etag,
+                            last_checked_unix: now_unix,
+                        };
+                        let _ = save_update_check_cache(&cache_path, &new_cache);
+
+                        Ok(build_version_check_result(
+                            CURRENT_VERSION,
+                            Some(latest_version.to_string()),
                             download_url,
-                            error: None,
-                        })
+                            None,
+                        ))
                     }
-                    Err(e) => Ok(VersionCheckResult {
-                        current: CURRENT_VERSION.to_string(),
-                        latest: None,
-                        has_update: false,
-                        download_url: None,
-                        error: Some(format!("解析响应失败: {e}")),
-                    }),
+                    Err(e) => Ok(build_version_from_cache_or_default(
+                        CURRENT_VERSION,
+                        cached.as_ref(),
+                        Some(format!("解析更新信息失败，已回退本地缓存: {e}")),
+                    )),
                 }
             } else {
-                Ok(VersionCheckResult {
-                    current: CURRENT_VERSION.to_string(),
-                    latest: None,
-                    has_update: false,
-                    download_url: None,
-                    error: Some(format!("GitHub API 请求失败: {}", response.status())),
-                })
+                let error_message = match response.status() {
+                    reqwest::StatusCode::FORBIDDEN | reqwest::StatusCode::TOO_MANY_REQUESTS => {
+                        "GitHub API 限流，已回退本地缓存，请稍后重试".to_string()
+                    }
+                    status => format!("GitHub API 请求失败: {status}，已回退本地缓存"),
+                };
+
+                Ok(build_version_from_cache_or_default(
+                    CURRENT_VERSION,
+                    cached.as_ref(),
+                    Some(error_message),
+                ))
             }
         }
-        Err(e) => Ok(VersionCheckResult {
-            current: CURRENT_VERSION.to_string(),
-            latest: None,
-            has_update: false,
-            download_url: None,
-            error: Some(format!("网络请求失败: {e}")),
-        }),
+        Err(e) => Ok(build_version_from_cache_or_default(
+            CURRENT_VERSION,
+            cached.as_ref(),
+            Some(format!("网络请求失败，已回退本地缓存: {e}")),
+        )),
     }
+}
+
+fn current_unix_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
+fn get_update_check_cache_path() -> PathBuf {
+    let base_dir = dirs::cache_dir()
+        .or_else(dirs::config_dir)
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    base_dir.join("proxycast").join("update-check-cache.json")
+}
+
+fn is_update_cache_fresh(cache: &UpdateCheckCache, now_unix: u64, ttl_secs: u64) -> bool {
+    if cache.latest.is_none() {
+        return false;
+    }
+
+    now_unix.saturating_sub(cache.last_checked_unix) < ttl_secs
+}
+
+fn load_update_check_cache(path: &PathBuf) -> Option<UpdateCheckCache> {
+    let content = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str::<UpdateCheckCache>(&content).ok()
+}
+
+fn save_update_check_cache(path: &PathBuf, cache: &UpdateCheckCache) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    let content = serde_json::to_string(cache).map_err(|e| e.to_string())?;
+    std::fs::write(path, content).map_err(|e| e.to_string())
+}
+
+fn build_version_check_result(
+    current: &str,
+    latest: Option<String>,
+    download_url: Option<String>,
+    error: Option<String>,
+) -> VersionCheckResult {
+    let resolved_download_url = download_url.or_else(|| Some(FALLBACK_TAGS_URL.to_string()));
+    let has_update = latest
+        .as_deref()
+        .map(|latest_version| version_compare(current, latest_version))
+        .unwrap_or(false);
+
+    VersionCheckResult {
+        current: current.to_string(),
+        latest,
+        has_update,
+        download_url: resolved_download_url,
+        error,
+    }
+}
+
+fn build_version_from_cache_or_default(
+    current: &str,
+    cache: Option<&UpdateCheckCache>,
+    error: Option<String>,
+) -> VersionCheckResult {
+    if let Some(cached) = cache {
+        return build_version_check_result(
+            current,
+            cached.latest.clone(),
+            cached.download_url.clone(),
+            error,
+        );
+    }
+
+    build_version_check_result(current, None, None, error)
 }
 
 /// 简单的版本比较函数
@@ -744,6 +879,25 @@ mod tests {
         {
             assert!(patterns.is_empty());
         }
+    }
+
+    #[test]
+    fn test_is_update_cache_fresh() {
+        let cache = UpdateCheckCache {
+            latest: Some("0.76.0".to_string()),
+            download_url: Some("https://example.com".to_string()),
+            etag: Some("etag".to_string()),
+            last_checked_unix: 100,
+        };
+
+        assert!(is_update_cache_fresh(&cache, 150, 60));
+        assert!(!is_update_cache_fresh(&cache, 170, 60));
+
+        let cache_without_latest = UpdateCheckCache {
+            latest: None,
+            ..cache
+        };
+        assert!(!is_update_cache_fresh(&cache_without_latest, 120, 60));
     }
 }
 

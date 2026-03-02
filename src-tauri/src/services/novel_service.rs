@@ -1558,27 +1558,235 @@ fn row_to_run(row: &rusqlite::Row<'_>) -> Result<NovelGenerationRun, rusqlite::E
 }
 
 fn parse_character_cards(raw: &str) -> Vec<Value> {
-    if let Ok(value) = serde_json::from_str::<Value>(raw) {
-        if let Some(arr) = value.as_array() {
-            return arr.clone();
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+
+    if let Some(cards) = parse_character_cards_from_json_text(trimmed) {
+        return cards;
+    }
+
+    let fenced = extract_first_markdown_code_block(trimmed);
+    if let Some(code) = fenced.as_ref() {
+        if let Some(cards) = parse_character_cards_from_json_text(code) {
+            return cards;
         }
     }
 
-    // 兜底：按行解析成简单角色卡
+    if let Some(array_text) = extract_json_array_text(trimmed) {
+        if let Some(cards) = parse_character_cards_from_json_text(&array_text) {
+            return cards;
+        }
+    }
+
+    if let Some(code) = fenced.as_ref() {
+        if let Some(array_text) = extract_json_array_text(code) {
+            if let Some(cards) = parse_character_cards_from_json_text(&array_text) {
+                return cards;
+            }
+        }
+    }
+
+    // 兜底：按行解析成简单角色卡（过滤 JSON 噪音行）
     raw.lines()
         .filter_map(|line| {
-            let name = line.trim().trim_start_matches('-').trim();
-            if name.is_empty() {
-                None
-            } else {
-                Some(json!({
-                    "name": name,
-                    "role_type": "support",
-                    "description": ""
-                }))
-            }
+            let name = sanitize_fallback_name(line)?;
+            Some(json!({
+                "name": name,
+                "role_type": "support",
+                "description": ""
+            }))
         })
         .collect()
+}
+
+fn parse_character_cards_from_json_text(text: &str) -> Option<Vec<Value>> {
+    let value = serde_json::from_str::<Value>(text).ok()?;
+    extract_character_cards_from_value(&value)
+}
+
+fn extract_character_cards_from_value(value: &Value) -> Option<Vec<Value>> {
+    if let Some(arr) = value.as_array() {
+        return Some(
+            arr.iter()
+                .enumerate()
+                .map(|(idx, item)| normalize_character_card(item, idx))
+                .collect(),
+        );
+    }
+
+    let obj = value.as_object()?;
+    for key in [
+        "characters",
+        "character_cards",
+        "cards",
+        "result",
+        "data",
+        "roles",
+    ] {
+        if let Some(arr) = obj.get(key).and_then(Value::as_array) {
+            return Some(
+                arr.iter()
+                    .enumerate()
+                    .map(|(idx, item)| normalize_character_card(item, idx))
+                    .collect(),
+            );
+        }
+    }
+
+    if obj.get("name").is_some() || obj.get("role_type").is_some() {
+        return Some(vec![normalize_character_card(value, 0)]);
+    }
+
+    None
+}
+
+fn normalize_character_card(value: &Value, index: usize) -> Value {
+    let mut obj = value.as_object().cloned().unwrap_or_default();
+    let name = extract_character_name(&obj).unwrap_or_else(|| format!("角色{}", index + 1));
+    let role_type = extract_role_type(&obj);
+    obj.insert("name".to_string(), Value::String(name));
+    obj.insert("role_type".to_string(), Value::String(role_type));
+    Value::Object(obj)
+}
+
+fn extract_character_name(obj: &serde_json::Map<String, Value>) -> Option<String> {
+    let candidate_keys = ["name", "character_name", "characterName", "角色名", "角色"];
+    for key in candidate_keys {
+        if let Some(raw_name) = obj.get(key).and_then(Value::as_str) {
+            if let Some(name) = sanitize_candidate_name(raw_name) {
+                return Some(name);
+            }
+        }
+    }
+    None
+}
+
+fn extract_role_type(obj: &serde_json::Map<String, Value>) -> String {
+    let candidate_keys = ["role_type", "roleType", "type", "role", "角色类型"];
+    for key in candidate_keys {
+        if let Some(value) = obj.get(key).and_then(Value::as_str) {
+            return normalize_role_type(value);
+        }
+    }
+    "support".to_string()
+}
+
+fn normalize_role_type(raw: &str) -> String {
+    let lowered = raw.trim().to_lowercase();
+    if lowered.contains("main")
+        || lowered.contains("protagonist")
+        || lowered.contains("主角")
+        || lowered.contains("主人公")
+    {
+        return "main".to_string();
+    }
+    if lowered.contains("antagonist")
+        || lowered.contains("villain")
+        || lowered.contains("反派")
+        || lowered.contains("敌人")
+    {
+        return "antagonist".to_string();
+    }
+    "support".to_string()
+}
+
+fn extract_first_markdown_code_block(raw: &str) -> Option<String> {
+    let start = raw.find("```")?;
+    let remain = &raw[start + 3..];
+    let content_start = remain.find('\n')?;
+    let content = &remain[content_start + 1..];
+    let end = content.find("```")?;
+    Some(content[..end].trim().to_string())
+}
+
+fn extract_json_array_text(raw: &str) -> Option<String> {
+    let mut depth = 0usize;
+    let mut start_index: Option<usize> = None;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (idx, ch) in raw.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' => in_string = true,
+            '[' => {
+                if depth == 0 {
+                    start_index = Some(idx);
+                }
+                depth += 1;
+            }
+            ']' => {
+                if depth == 0 {
+                    continue;
+                }
+                depth -= 1;
+                if depth == 0 {
+                    if let Some(start) = start_index {
+                        return Some(raw[start..idx + 1].to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+fn sanitize_fallback_name(line: &str) -> Option<String> {
+    let mut normalized = line.trim();
+    normalized = normalized
+        .trim_start_matches('-')
+        .trim_start_matches('*')
+        .trim();
+    if normalized.is_empty() {
+        return None;
+    }
+    sanitize_candidate_name(normalized)
+}
+
+fn sanitize_candidate_name(raw: &str) -> Option<String> {
+    let normalized = raw.trim().trim_matches('"').trim_end_matches(',').trim();
+    if normalized.is_empty() {
+        return None;
+    }
+    if looks_like_json_noise_line(normalized) {
+        return None;
+    }
+    Some(normalized.to_string())
+}
+
+fn looks_like_json_noise_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    if matches!(trimmed, "{" | "}" | "[" | "]" | ",") {
+        return true;
+    }
+    if trimmed.starts_with("//") {
+        return true;
+    }
+    if trimmed.contains("\":") || trimmed.ends_with(':') {
+        return true;
+    }
+    false
 }
 
 fn split_title_and_content(raw: &str, chapter_no: i32) -> (String, String) {
@@ -2404,4 +2612,52 @@ fn value_as_f64(value: Option<&Value>, fallback: f64) -> f64 {
         .or_else(|| value.as_i64().map(|v| v as f64))
         .or_else(|| value.as_u64().map(|v| v as f64))
         .unwrap_or(fallback)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_character_cards_should_support_markdown_json_block() {
+        let raw = r#"
+这里是角色卡：
+```json
+[
+  {
+    "name": "顾清",
+    "role_type": "main",
+    "relationship": "主角"
+  },
+  {
+    "name": "宿敌",
+    "role_type": "antagonist"
+  }
+]
+```
+"#;
+
+        let cards = parse_character_cards(raw);
+        assert_eq!(cards.len(), 2);
+        assert_eq!(cards[0]["name"], Value::String("顾清".to_string()));
+        assert_eq!(cards[0]["role_type"], Value::String("main".to_string()));
+        assert_eq!(
+            cards[1]["role_type"],
+            Value::String("antagonist".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_character_cards_should_filter_json_noise_in_fallback_lines() {
+        let raw = r#"
+{
+  "relationship": "上司",
+  "arc": "成长",
+  "abilities": "强大的调查能力",
+}
+"#;
+
+        let cards = parse_character_cards(raw);
+        assert!(cards.is_empty());
+    }
 }

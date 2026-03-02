@@ -26,6 +26,7 @@ use aster::agents::{Agent, SessionConfig};
 use aster::model::ModelConfig;
 #[cfg(test)]
 use aster::skills::{global_registry, load_skills_from_directory, SkillSource};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -87,6 +88,50 @@ impl AsterAgentState {
         }
     }
 
+    fn resolve_aster_path_root() -> Result<PathBuf, String> {
+        if let Ok(raw) = std::env::var("ASTER_PATH_ROOT") {
+            let trimmed = raw.trim();
+            if !trimmed.is_empty() {
+                return Ok(PathBuf::from(trimmed));
+            }
+        }
+
+        let home_dir = dirs::home_dir().ok_or_else(|| "无法获取用户目录".to_string())?;
+        Ok(home_dir.join(".proxycast").join("aster"))
+    }
+
+    fn ensure_aster_runtime_dirs() -> Result<PathBuf, String> {
+        let root = Self::resolve_aster_path_root()?;
+        let root_string = root.to_string_lossy().to_string();
+
+        if std::env::var("ASTER_PATH_ROOT")
+            .ok()
+            .map(|value| value.trim().is_empty())
+            .unwrap_or(true)
+        {
+            std::env::set_var("ASTER_PATH_ROOT", &root_string);
+        }
+
+        let dirs = [
+            root.join("config"),
+            root.join("data"),
+            root.join("state"),
+            root.join("state").join("logs"),
+        ];
+
+        for dir in dirs {
+            std::fs::create_dir_all(&dir).map_err(|e| {
+                format!(
+                    "初始化 Aster 运行目录失败: {} ({})",
+                    dir.to_string_lossy(),
+                    e
+                )
+            })?;
+        }
+
+        Ok(root)
+    }
+
     /// 初始化 Agent（带数据库连接）
     ///
     /// 创建 Agent 并注入 ProxyCastSessionStore，确保消息存储到 ProxyCast 数据库。
@@ -98,6 +143,12 @@ impl AsterAgentState {
     /// # 参数
     /// - `db`: 数据库连接，用于创建 SessionStore
     pub async fn init_agent_with_db(&self, db: &DbConnection) -> Result<(), String> {
+        let runtime_root = Self::ensure_aster_runtime_dirs()?;
+        tracing::info!(
+            "[AsterAgent] Aster 运行目录已准备: {}",
+            runtime_root.to_string_lossy()
+        );
+
         // 快速路径：检查缓存
         if self.initialized_cache.load(Ordering::Relaxed) {
             return Ok(());

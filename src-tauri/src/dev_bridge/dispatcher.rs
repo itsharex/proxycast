@@ -93,6 +93,33 @@ pub async fn handle_command(
             Ok(serde_json::to_value(recent)?)
         }
 
+        "get_persisted_logs_tail" => {
+            let requested = args
+                .as_ref()
+                .and_then(|value| value.get("lines"))
+                .and_then(|value| value.as_u64())
+                .map(|value| value as usize)
+                .unwrap_or(200)
+                .clamp(20, 1000);
+
+            let logs = state.logs.read().await;
+            let entries = logs.get_logs();
+            let limit = entries.len().min(requested);
+            let recent: Vec<_> = entries
+                .into_iter()
+                .rev()
+                .take(limit)
+                .map(|e| {
+                    serde_json::json!({
+                        "timestamp": e.timestamp,
+                        "level": e.level,
+                        "message": e.message,
+                    })
+                })
+                .collect();
+            Ok(serde_json::to_value(recent)?)
+        }
+
         "clear_logs" => {
             state.logs.write().await.clear();
             Ok(serde_json::json!({ "success": true }))

@@ -10,6 +10,7 @@ use crate::database::dao::agent::AgentDao;
 use crate::database::DbConnection;
 use crate::services::memory_profile_prompt_service::merge_system_prompt_with_memory_profile;
 use crate::services::web_search_prompt_service::merge_system_prompt_with_web_search;
+use crate::services::workspace_health_service::ensure_workspace_ready_with_auto_relocate;
 use crate::workspace::WorkspaceManager;
 use crate::AppState;
 use serde::{Deserialize, Serialize};
@@ -195,7 +196,19 @@ pub async fn agent_create_session(
         .get(&workspace_id)
         .map_err(|e| format!("读取 workspace 失败: {e}"))?
         .ok_or_else(|| format!("Workspace 不存在: {workspace_id}"))?;
-    let workspace_root = workspace.root_path.to_string_lossy().to_string();
+    let ensured = ensure_workspace_ready_with_auto_relocate(&workspace_manager, &workspace)?;
+    if ensured.repaired {
+        tracing::warn!(
+            "[Agent] Workspace 路径异常已自动修复: {}{}",
+            ensured.root_path.to_string_lossy(),
+            if ensured.relocated {
+                "（已迁移）"
+            } else {
+                ""
+            }
+        );
+    }
+    let workspace_root = ensured.root_path.to_string_lossy().to_string();
 
     // 初始化 Agent（使用带数据库的版本）
     agent_state.init_agent_with_db(&db).await?;

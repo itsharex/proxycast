@@ -12,7 +12,9 @@ use aster::model::ModelConfig;
 use aster::recipe::Recipe;
 use aster::session::extension_data::ExtensionData;
 use aster::session::{
-    ChatHistoryMatch, Session, SessionInsights, SessionStore, SessionType, TokenStatsUpdate,
+    ChatHistoryMatch, CommitOptions, CommitReport, MemoryCategory, MemoryHealth, MemoryRecord,
+    MemorySearchResult, MemoryStats, Session, SessionInsights, SessionStore, SessionType,
+    TokenStatsUpdate,
 };
 use async_trait::async_trait;
 use chrono::Utc;
@@ -663,6 +665,48 @@ impl SessionStore for ProxyCastSessionStore {
             .collect();
 
         Ok(matches)
+    }
+
+    async fn commit_session(&self, id: &str, _options: CommitOptions) -> Result<CommitReport> {
+        Ok(CommitReport {
+            session_id: id.to_string(),
+            messages_scanned: 0,
+            memories_created: 0,
+            memories_merged: 0,
+            source_start_ts: None,
+            source_end_ts: None,
+            warnings: vec!["ProxyCastSessionStore: memory commit skipped".to_string()],
+        })
+    }
+
+    async fn search_memories(
+        &self,
+        _query: &str,
+        _limit: Option<usize>,
+        _session_scope: Option<&str>,
+        _categories: Option<Vec<MemoryCategory>>,
+    ) -> Result<Vec<MemorySearchResult>> {
+        Ok(vec![])
+    }
+
+    async fn retrieve_context_memories(
+        &self,
+        _session_id: &str,
+        _query: &str,
+        _limit: usize,
+    ) -> Result<Vec<MemoryRecord>> {
+        Ok(vec![])
+    }
+
+    async fn memory_stats(&self) -> Result<MemoryStats> {
+        Ok(MemoryStats::default())
+    }
+
+    async fn memory_health(&self) -> Result<MemoryHealth> {
+        Ok(MemoryHealth {
+            healthy: true,
+            message: "ProxyCastSessionStore: memory subsystem disabled".to_string(),
+        })
     }
 }
 

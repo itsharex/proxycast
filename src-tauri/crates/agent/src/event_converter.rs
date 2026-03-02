@@ -20,6 +20,20 @@ fn push_non_empty(target: &mut Vec<String>, value: Option<&str>) {
     }
 }
 
+fn enhance_execution_error_text(raw: &str) -> String {
+    if !raw.contains("Execution error: No such file or directory (os error 2)") {
+        return raw.to_string();
+    }
+
+    if raw.contains("排查建议：") {
+        return raw.to_string();
+    }
+
+    format!(
+        "{raw}\n\n排查建议：\n1) 检查工作区目录是否仍然存在（目录被移动/删除会触发该错误）。\n2) 若使用本地 CLI Provider，请确认对应命令已安装且在 PATH 中。\n3) 重启应用后重试；若仍失败，请复制该错误并附上系统信息。"
+    )
+}
+
 fn dedupe_preserve_order(items: Vec<String>) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut deduped = Vec::new();
@@ -422,7 +436,7 @@ fn convert_message(message: Message) -> Vec<TauriAgentEvent> {
         match content {
             MessageContent::Text(text_content) => {
                 events.push(TauriAgentEvent::TextDelta {
-                    text: text_content.text.clone(),
+                    text: enhance_execution_error_text(&text_content.text),
                 });
             }
             MessageContent::Thinking(thinking) => {

@@ -20,7 +20,9 @@ use crate::services::execution_tracker_service::{ExecutionTracker, RunFinalizeOp
 use crate::services::heartbeat_service::HeartbeatServiceState;
 use crate::services::memory_profile_prompt_service::merge_system_prompt_with_memory_profile;
 use crate::services::web_search_prompt_service::merge_system_prompt_with_web_search;
+use crate::services::workspace_health_service::ensure_workspace_ready_with_auto_relocate;
 use crate::workspace::WorkspaceManager;
+use crate::LogState;
 use aster::agents::extension::{Envs, ExtensionConfig};
 use aster::agents::{Agent, AgentEvent};
 use aster::chrome_mcp::get_chrome_mcp_tools;
@@ -56,6 +58,7 @@ const WORKSPACE_SANDBOX_ENABLED_ENV: &str = "PROXYCAST_WORKSPACE_SANDBOX_ENABLED
 const WORKSPACE_SANDBOX_STRICT_ENV: &str = "PROXYCAST_WORKSPACE_SANDBOX_STRICT";
 const WORKSPACE_SANDBOX_NOTIFY_ENV: &str = "PROXYCAST_WORKSPACE_SANDBOX_NOTIFY_ON_FALLBACK";
 const WORKSPACE_SANDBOX_FALLBACK_WARNING_CODE: &str = "workspace_sandbox_fallback";
+const WORKSPACE_PATH_AUTO_CREATED_WARNING_CODE: &str = "workspace_path_auto_created";
 
 static SHARED_TASK_MANAGER: OnceLock<Arc<TaskManager>> = OnceLock::new();
 
@@ -372,6 +375,29 @@ struct ReplyAttemptError {
     emitted_any: bool,
 }
 
+fn extract_inline_agent_provider_error(message: &Message) -> Option<String> {
+    let text = message.as_concat_text();
+    if !text.contains("Ran into this error:") {
+        return None;
+    }
+    if !text.contains("Please retry if you think this is a transient or recoverable error.") {
+        return None;
+    }
+
+    let after_prefix = text.split_once("Ran into this error:")?.1.trim();
+    let detail = after_prefix
+        .split_once("\n\nPlease retry if you think this is a transient or recoverable error.")
+        .map(|(left, _)| left.trim())
+        .unwrap_or(after_prefix)
+        .trim_end_matches('.');
+
+    if detail.is_empty() {
+        return Some("Agent provider execution failed".to_string());
+    }
+
+    Some(format!("Agent provider execution failed: {detail}"))
+}
+
 fn should_use_code_orchestrated_for_message(message: &str) -> bool {
     let lowered = message.to_lowercase();
     let keywords = [
@@ -427,11 +453,22 @@ async fn stream_reply_once(
         match event_result {
             Ok(agent_event) => {
                 emitted_any = true;
+                let inline_provider_error = match &agent_event {
+                    AgentEvent::Message(message) => extract_inline_agent_provider_error(message),
+                    _ => None,
+                };
                 let tauri_events = convert_agent_event(agent_event);
                 for tauri_event in tauri_events {
                     if let Err(e) = app.emit(event_name, &tauri_event) {
                         tracing::error!("[AsterAgent] 发送事件失败: {}", e);
                     }
+                }
+                if let Some(message) = inline_provider_error {
+                    tracing::warn!("[AsterAgent] 捕获到消息级 Provider 错误: {}", message);
+                    return Err(ReplyAttemptError {
+                        message,
+                        emitted_any: true,
+                    });
                 }
             }
             Err(e) => {
@@ -1556,6 +1593,7 @@ pub async fn aster_agent_chat_stream(
     app: AppHandle,
     state: State<'_, AsterAgentState>,
     db: State<'_, DbConnection>,
+    logs: State<'_, LogState>,
     config_manager: State<'_, GlobalConfigManagerState>,
     mcp_manager: State<'_, McpManagerState>,
     heartbeat_state: State<'_, HeartbeatServiceState>,
@@ -1592,15 +1630,59 @@ pub async fn aster_agent_chat_stream(
 
     let workspace_id = request.workspace_id.trim().to_string();
     if workspace_id.is_empty() {
-        return Err("workspace_id 必填，请先选择项目工作区".to_string());
+        let message = "workspace_id 必填，请先选择项目工作区".to_string();
+        logs.write()
+            .await
+            .add("error", &format!("[AsterAgent] {}", message));
+        return Err(message);
     }
 
     let manager = WorkspaceManager::new(db.inner().clone());
-    let workspace = manager
-        .get(&workspace_id)
-        .map_err(|e| format!("读取 workspace 失败: {e}"))?
-        .ok_or_else(|| format!("Workspace 不存在: {workspace_id}"))?;
-    let workspace_root = workspace.root_path.to_string_lossy().to_string();
+    let workspace = match manager.get(&workspace_id) {
+        Ok(Some(workspace)) => workspace,
+        Ok(None) => {
+            let message = format!("Workspace 不存在: {workspace_id}");
+            logs.write()
+                .await
+                .add("error", &format!("[AsterAgent] {}", message));
+            return Err(message);
+        }
+        Err(error) => {
+            let message = format!("读取 workspace 失败: {error}");
+            logs.write()
+                .await
+                .add("error", &format!("[AsterAgent] {}", message));
+            return Err(message);
+        }
+    };
+    let ensured = match ensure_workspace_ready_with_auto_relocate(&manager, &workspace) {
+        Ok(result) => result,
+        Err(message) => {
+            logs.write()
+                .await
+                .add("error", &format!("[AsterAgent] {}", message));
+            return Err(message);
+        }
+    };
+    let workspace_root = ensured.root_path.to_string_lossy().to_string();
+    if ensured.repaired {
+        let warning_message = ensured.warning.unwrap_or_else(|| {
+            format!(
+                "检测到工作区目录缺失，已自动创建并继续执行: {}",
+                workspace_root
+            )
+        });
+        logs.write()
+            .await
+            .add("warn", &format!("[AsterAgent] {}", warning_message));
+        let warning_event = TauriAgentEvent::Warning {
+            code: Some(WORKSPACE_PATH_AUTO_CREATED_WARNING_CODE.to_string()),
+            message: warning_message,
+        };
+        if let Err(error) = app.emit(&request.event_name, &warning_event) {
+            tracing::error!("[AsterAgent] 发送工作区自动恢复提醒失败: {}", error);
+        }
+    }
 
     {
         let db_conn = db.lock().map_err(|e| format!("获取数据库连接失败: {e}"))?;
@@ -1962,10 +2044,37 @@ pub async fn aster_session_create(
         return Err("workspace_id 必填，请先选择项目工作区".to_string());
     }
 
+    let manager = WorkspaceManager::new(db.inner().clone());
+    let workspace = manager
+        .get(&workspace_id)
+        .map_err(|e| format!("读取 workspace 失败: {e}"))?
+        .ok_or_else(|| format!("Workspace 不存在: {workspace_id}"))?;
+    let ensured = ensure_workspace_ready_with_auto_relocate(&manager, &workspace)?;
+    let workspace_root = ensured.root_path.to_string_lossy().to_string();
+
+    if ensured.repaired {
+        tracing::warn!(
+            "[AsterAgent] 会话创建阶段检测到 workspace 目录异常并已修复: {}{}",
+            workspace_root,
+            if ensured.relocated {
+                "（已迁移）"
+            } else {
+                ""
+            }
+        );
+    }
+
+    let resolved_working_dir = working_dir
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .or_else(|| Some(workspace_root.clone()));
+
     AsterAgentWrapper::create_session_sync(
         &db,
         name,
-        working_dir,
+        resolved_working_dir,
         workspace_id,
         Some(
             execution_strategy

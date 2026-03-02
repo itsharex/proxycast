@@ -39,6 +39,7 @@ fn arb_server_config() -> impl Strategy<Value = ServerConfig> {
         port,
         api_key,
         tls: proxycast_core::config::TlsConfig::default(),
+        response_cache: proxycast_core::config::ResponseCacheSettings::default(),
     })
 }
 
@@ -371,6 +372,7 @@ fn arb_valid_server_config() -> impl Strategy<Value = ServerConfig> {
         port,
         api_key,
         tls: proxycast_core::config::TlsConfig::default(),
+        response_cache: proxycast_core::config::ResponseCacheSettings::default(),
     })
 }
 
