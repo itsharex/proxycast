@@ -10,6 +10,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import styled from "styled-components";
+import { invoke } from "@tauri-apps/api/core";
 import { withI18nPatch } from "./i18n/withI18nPatch";
 import { SplashScreen } from "./components/SplashScreen";
 import { AppSidebar } from "./components/AppSidebar";
@@ -60,6 +61,7 @@ import {
 } from "./types/page";
 import { SettingsTabs } from "./types/settings";
 import { toast } from "sonner";
+import { recordWorkspaceRepair } from "@/lib/workspaceHealthTelemetry";
 
 const AppContainer = styled.div`
   display: flex;
@@ -326,6 +328,32 @@ function AppContent() {
       showRegistryLoadError(registryError.message);
     }
   }, [registryError]);
+
+  useEffect(() => {
+    void invoke<{
+      workspaceId: string;
+      rootPath: string;
+      created: boolean;
+      repaired: boolean;
+      relocated?: boolean;
+    } | null>("workspace_ensure_default_ready")
+      .then((result) => {
+        if (result?.repaired) {
+          recordWorkspaceRepair({
+            workspaceId: result.workspaceId,
+            rootPath: result.rootPath,
+            source: "app_startup",
+          });
+          console.info(
+            "[App] 启动时检测到默认工作区目录缺失，已自动修复:",
+            result.rootPath,
+          );
+        }
+      })
+      .catch((error) => {
+        console.warn("[App] 启动时工作区健康检查失败:", error);
+      });
+  }, []);
 
   useEffect(() => {
     const mainElement = document.querySelector("main");

@@ -21,6 +21,7 @@ import {
   polishNovelChapter,
   rewriteNovelChapter,
   updateNovelSettings,
+  type NovelCharacterRecord,
   type NovelGenerationRun,
   type NovelProjectSnapshot,
 } from "@/lib/api/novel";
@@ -43,10 +44,13 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Copy,
+  Download,
   Loader2,
   RefreshCw,
   Sparkles,
   Users,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -106,6 +110,14 @@ type FlowAction =
 export interface NovelFlowWorkbenchProps {
   projectId: string;
   projectName?: string;
+}
+
+interface RecentNovelActionError {
+  message: string;
+  context: string;
+  stage: NovelPipelineStage;
+  action?: FlowAction;
+  occurredAt: number;
 }
 
 function getSettingsModeStorageKey(projectId: string): string {
@@ -277,6 +289,160 @@ function getStageStatusLabel(status: NovelStageStatus): string {
   return "待开始";
 }
 
+function normalizeCharacterText(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().replace(/^["']+|["',\s]+$/g, "").trim();
+  if (!normalized) {
+    return null;
+  }
+  if (normalized.includes('":') || ["{", "}", "[", "]", ","].includes(normalized)) {
+    return null;
+  }
+  return normalized;
+}
+
+function getCardField(
+  card: Record<string, unknown>,
+  keys: string[],
+): string | null {
+  for (const key of keys) {
+    const value = normalizeCharacterText(card[key]);
+    if (value) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function formatCharacterRole(roleType: string): string {
+  const normalized = roleType.trim().toLowerCase();
+  if (normalized === "main") return "主角";
+  if (normalized === "antagonist") return "反派";
+  if (normalized === "support") return "配角";
+  return roleType || "配角";
+}
+
+function buildCharacterDisplay(
+  character: NovelCharacterRecord,
+  index: number,
+): {
+  name: string;
+  roleLabel: string;
+  details: Array<{ label: string; value: string }>;
+} {
+  const rawCard = character.card_json;
+  const card =
+    rawCard && typeof rawCard === "object" && !Array.isArray(rawCard)
+      ? (rawCard as Record<string, unknown>)
+      : {};
+
+  const name =
+    normalizeCharacterText(character.name) ||
+    getCardField(card, ["name", "character_name", "characterName", "角色名"]) ||
+    `角色${index + 1}`;
+
+  const roleLabel = formatCharacterRole(
+    normalizeCharacterText(character.role_type) ||
+      getCardField(card, ["role_type", "roleType", "type", "role"]) ||
+      "support",
+  );
+
+  const details = [
+    {
+      label: "关系",
+      value:
+        getCardField(card, ["relationship", "relation", "关系"]) || "未提供",
+    },
+    {
+      label: "弧线",
+      value: getCardField(card, ["arc", "character_arc", "人物弧线"]) || "未提供",
+    },
+    {
+      label: "能力",
+      value: getCardField(card, ["abilities", "ability", "能力"]) || "未提供",
+    },
+  ];
+
+  return { name, roleLabel, details };
+}
+
+function copyTextWithExecCommand(text: string): boolean {
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+  document.body.appendChild(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, text.length);
+  const copied = document.execCommand("copy");
+  document.body.removeChild(textarea);
+  return copied;
+}
+
+async function copyTextToClipboard(text: string): Promise<void> {
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch {
+    // 忽略并走降级方案
+  }
+
+  if (copyTextWithExecCommand(text)) {
+    return;
+  }
+
+  throw new Error("复制失败，请检查剪贴板权限后重试");
+}
+
+function buildNovelActionErrorReport(options: {
+  projectId: string;
+  projectName?: string;
+  preferredProvider?: string;
+  preferredModel?: string;
+  selectedChapterId?: string;
+  error: RecentNovelActionError;
+}): string {
+  const payload = {
+    project_id: options.projectId,
+    project_name: options.projectName ?? "",
+    stage: options.error.stage,
+    action: options.error.action ?? "",
+    context: options.error.context,
+    message: options.error.message,
+    selected_chapter_id: options.selectedChapterId ?? "",
+    preferred_provider: options.preferredProvider ?? "",
+    preferred_model: options.preferredModel ?? "",
+    occurred_at: options.error.occurredAt,
+    occurred_at_text: formatDateTime(options.error.occurredAt),
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+function downloadTextFile(filename: string, content: string): void {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    throw new Error("当前环境不支持导出文件");
+  }
+  const blob = new Blob([content], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
 export function NovelFlowWorkbench({
   projectId,
   projectName,
@@ -303,6 +469,7 @@ export function NovelFlowWorkbench({
   const [settingsSaveError, setSettingsSaveError] = useState<string | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [activeStage, setActiveStage] = useState<NovelPipelineStage>("setup");
+  const [lastActionError, setLastActionError] = useState<RecentNovelActionError | null>(null);
 
   const autoSaveTimerRef = useRef<number | null>(null);
 
@@ -346,6 +513,21 @@ export function NovelFlowWorkbench({
     }
   }, []);
 
+  const recordActionError = useCallback(
+    (context: string, error: unknown, action?: FlowAction): string => {
+      const message = getErrorMessage(error);
+      setLastActionError({
+        message,
+        context,
+        action,
+        stage: activeStage,
+        occurredAt: Date.now(),
+      });
+      return message;
+    },
+    [activeStage],
+  );
+
   const runAction = useCallback(
     async (action: FlowAction, successText: string, fn: () => Promise<void>) => {
       setRunningAction(action);
@@ -353,12 +535,13 @@ export function NovelFlowWorkbench({
         await fn();
         toast.success(successText);
       } catch (error) {
-        toast.error(`${successText}失败: ${getErrorMessage(error)}`);
+        const message = recordActionError(`${successText}失败`, error, action);
+        toast.error(`${successText}失败: ${message}`);
       } finally {
         setRunningAction(null);
       }
     },
-    [],
+    [recordActionError],
   );
 
   const loadSnapshot = useCallback(async () => {
@@ -393,12 +576,13 @@ export function NovelFlowWorkbench({
       if (isNovelProjectNotFound(message)) {
         setRuns([]);
       } else {
+        recordActionError("加载运行记录失败", error, "refresh");
         toast.error(`加载运行记录失败: ${message}`);
       }
     } finally {
       setLoadingRuns(false);
     }
-  }, [projectId]);
+  }, [projectId, recordActionError]);
 
   const refreshNovelData = useCallback(async () => {
     await Promise.all([loadSnapshot(), loadRuns()]);
@@ -461,11 +645,12 @@ export function NovelFlowWorkbench({
       toast.success("小说项目初始化完成");
       await refreshNovelData();
     } catch (error) {
-      toast.error(`初始化失败: ${getErrorMessage(error)}`);
+      const message = recordActionError("初始化小说项目失败", error);
+      toast.error(`初始化失败: ${message}`);
     } finally {
       setInitializing(false);
     }
-  }, [projectId, projectName, refreshNovelData]);
+  }, [projectId, projectName, recordActionError, refreshNovelData]);
 
   const handleSaveSettings = useCallback(
     async (silent = false): Promise<boolean> => {
@@ -496,7 +681,7 @@ export function NovelFlowWorkbench({
         }
         return true;
       } catch (error) {
-        const message = getErrorMessage(error);
+        const message = recordActionError("保存创作设定失败", error, "save-settings");
         setSettingsSaveError(message);
         if (!silent) {
           toast.error(`保存创作设定失败: ${message}`);
@@ -506,7 +691,15 @@ export function NovelFlowWorkbench({
         setSavingSettings(false);
       }
     },
-    [clearAutoSaveTimer, projectId, savingSettings, settingsDirty, settingsDraft, snapshot],
+    [
+      clearAutoSaveTimer,
+      projectId,
+      recordActionError,
+      savingSettings,
+      settingsDirty,
+      settingsDraft,
+      snapshot,
+    ],
   );
 
   useEffect(() => {
@@ -752,6 +945,70 @@ export function NovelFlowWorkbench({
     pipelineState.primaryAction,
   ]);
 
+  const handleCopyLastActionError = useCallback(async () => {
+    if (!lastActionError) {
+      toast.info("暂无可复制错误");
+      return;
+    }
+    const content = buildNovelActionErrorReport({
+      projectId,
+      projectName,
+      preferredProvider,
+      preferredModel,
+      selectedChapterId,
+      error: lastActionError,
+    });
+    try {
+      await copyTextToClipboard(content);
+      toast.success("错误信息已复制");
+    } catch (error) {
+      toast.error(`复制失败: ${getErrorMessage(error)}`);
+    }
+  }, [
+    lastActionError,
+    preferredModel,
+    preferredProvider,
+    projectId,
+    projectName,
+    selectedChapterId,
+  ]);
+
+  const handleExportLastActionError = useCallback(() => {
+    if (!lastActionError) {
+      toast.info("暂无可导出错误");
+      return;
+    }
+    const content = buildNovelActionErrorReport({
+      projectId,
+      projectName,
+      preferredProvider,
+      preferredModel,
+      selectedChapterId,
+      error: lastActionError,
+    });
+    const date = new Date(lastActionError.occurredAt);
+    const pad = (value: number) => value.toString().padStart(2, "0");
+    const filename = `proxycast-novel-error-${date.getFullYear()}${pad(
+      date.getMonth() + 1,
+    )}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(
+      date.getSeconds(),
+    )}.json`;
+
+    try {
+      downloadTextFile(filename, content);
+      toast.success("错误 JSON 已导出到系统默认下载目录");
+    } catch (error) {
+      toast.error(`导出失败: ${getErrorMessage(error)}`);
+    }
+  }, [
+    lastActionError,
+    preferredModel,
+    preferredProvider,
+    projectId,
+    projectName,
+    selectedChapterId,
+  ]);
+
   if (loadingSnapshot && !hasSnapshot) {
     return (
       <div className="p-4">
@@ -855,6 +1112,58 @@ export function NovelFlowWorkbench({
           </div>
         </CardHeader>
       </Card>
+
+      {lastActionError && (
+        <Card className="border-destructive/40 bg-destructive/[0.04]">
+          <CardHeader className="py-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <CardTitle className="text-sm text-destructive">最近错误</CardTitle>
+                <CardDescription>
+                  {lastActionError.context} · {formatDateTime(lastActionError.occurredAt)}
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    void handleCopyLastActionError();
+                  }}
+                >
+                  <Copy className="h-3.5 w-3.5 mr-1" />
+                  复制错误
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleExportLastActionError}
+                >
+                  <Download className="h-3.5 w-3.5 mr-1" />
+                  导出 JSON
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => {
+                    setLastActionError(null);
+                  }}
+                  aria-label="关闭错误提示"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="text-sm text-destructive break-words">{lastActionError.message}</div>
+            <div className="mt-2 text-[11px] text-muted-foreground">
+              阶段：{STAGE_METAS.find((item) => item.id === lastActionError.stage)?.title ?? "未知"}
+              {lastActionError.action ? ` · 动作：${lastActionError.action}` : ""}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-3 xl:grid-cols-[220px_minmax(0,1fr)] 2xl:grid-cols-[220px_minmax(0,1fr)_280px]">
         <Card className="min-w-0">
@@ -1035,14 +1344,25 @@ export function NovelFlowWorkbench({
                   <div className="text-sm text-muted-foreground">暂无角色数据</div>
                 ) : (
                   <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                    {snapshot.characters.map((character) => (
-                      <div key={character.id} className="rounded-md border p-3">
-                        <div className="text-sm font-medium">{character.name}</div>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {character.role_type} · 版本 {character.version}
+                    {snapshot.characters.map((character, index) => {
+                      const display = buildCharacterDisplay(character, index);
+                      return (
+                        <div key={character.id} className="rounded-md border p-3 space-y-2">
+                          <div className="text-sm font-medium break-words">{display.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {display.roleLabel} · 版本 {character.version}
+                          </div>
+                          <div className="space-y-1 text-sm">
+                            {display.details.map((item) => (
+                              <div key={item.label} className="leading-6 break-words">
+                                <span className="text-muted-foreground">{item.label}：</span>
+                                <span>{item.value}</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>
@@ -1296,6 +1616,11 @@ export function NovelFlowWorkbench({
                         {formatRunStatus(run.result_status)}
                       </Badge>
                     </div>
+                    {run.error_message && (
+                      <div className="mt-1 text-[11px] leading-5 text-destructive break-words">
+                        {run.error_message}
+                      </div>
+                    )}
                   </div>
                 ))
               )}
