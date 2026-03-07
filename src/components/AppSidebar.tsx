@@ -609,7 +609,7 @@ export function AppSidebar({ currentPage, onNavigate }: AppSidebarProps) {
           ? buildWorkspaceResetParams(
             item.params as AgentPageParams | undefined,
             (item.params as AgentPageParams | undefined)?.workspaceViewMode ??
-            "workspace",
+              "project-management",
           )
           : item.params;
 

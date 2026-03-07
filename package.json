@@ -1,7 +1,7 @@
 {
   "name": "proxycast",
   "private": true,
-  "version": "0.80.0",
+  "version": "0.81.0",
   "type": "module",
   "repository": {
     "type": "git",
@@ -31,7 +31,8 @@
     "ai-verify:level2": "tsx scripts/ai-code-verify.ts --level 2",
     "ai-verify:prompt": "tsx scripts/ai-code-verify.ts --generate-prompt",
     "ai-verify:file": "tsx scripts/ai-code-verify.ts --files",
-    "bridge:e2e": "node scripts/chrome-bridge-e2e.mjs"
+    "bridge:e2e": "node scripts/chrome-bridge-e2e.mjs",
+    "smoke:social-workbench": "node scripts/social-workbench-e2e-smoke.mjs"
   },
   "dependencies": {
     "@babel/standalone": "^7.29.0",

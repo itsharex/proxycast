@@ -208,6 +208,30 @@ describe("useWorkbenchProjectData", () => {
     expect(root?.dataset.filteredProjectIds).toBe("project-manual");
   });
 
+  it("无 previousId 与 initialContentId 时加载文稿不应自动选中首篇", async () => {
+    mockListContents.mockResolvedValue([
+      createWorkspaceContentFixture({
+        id: "content-first",
+        project_id: "project-a",
+        title: "第一篇文稿",
+      }),
+      createWorkspaceContentFixture({
+        id: "content-second",
+        project_id: "project-a",
+        title: "第二篇文稿",
+      }),
+    ]);
+
+    const { container } = renderHarness();
+
+    click(container, "load-contents-project-a");
+    await flushEffects();
+
+    const root = getRootElement(container);
+    expect(root?.dataset.contentIds).toBe("content-first,content-second");
+    expect(root?.dataset.selectedContentId).toBe("");
+  });
+
   it("文稿选择优先级应为 previousId > initialContentId，且支持筛选", async () => {
     mockListContents.mockResolvedValue([
       createWorkspaceContentFixture({

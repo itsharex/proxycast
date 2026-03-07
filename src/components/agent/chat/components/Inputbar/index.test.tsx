@@ -16,6 +16,12 @@ const mockInputbarCore = vi.fn(
   (props: {
     onToolClick?: (tool: string) => void;
     activeTools?: Record<string, boolean>;
+    onSend?: () => void;
+    rightExtra?: React.ReactNode;
+    topExtra?: React.ReactNode;
+    placeholder?: string;
+    toolMode?: "default" | "attach-only";
+    showTranslate?: boolean;
   }) => (
     <div data-testid="inputbar-core">
       <button
@@ -28,6 +34,11 @@ const mockInputbarCore = vi.fn(
       <span data-testid="web-search-state">
         {props.activeTools?.web_search ? "on" : "off"}
       </span>
+      <button type="button" data-testid="send-btn" onClick={() => props.onSend?.()}>
+        发送
+      </button>
+      <div data-testid="right-extra">{props.rightExtra}</div>
+      <div data-testid="top-extra">{props.topExtra}</div>
     </div>
   ),
 );
@@ -36,6 +47,12 @@ vi.mock("./components/InputbarCore", () => ({
   InputbarCore: (props: {
     onToolClick?: (tool: string) => void;
     activeTools?: Record<string, boolean>;
+    onSend?: () => void;
+    rightExtra?: React.ReactNode;
+    topExtra?: React.ReactNode;
+    placeholder?: string;
+    toolMode?: "default" | "attach-only";
+    showTranslate?: boolean;
   }) => mockInputbarCore(props),
 }));
 
@@ -152,22 +169,22 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function renderInputbar() {
+function renderInputbar(props?: Partial<React.ComponentProps<typeof Inputbar>>) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
 
+  const defaultProps: React.ComponentProps<typeof Inputbar> = {
+    input: "",
+    setInput: vi.fn(),
+    onSend: vi.fn(),
+    isLoading: false,
+    characters: [],
+    skills: [],
+  };
+
   act(() => {
-    root.render(
-      <Inputbar
-        input=""
-        setInput={vi.fn()}
-        onSend={vi.fn()}
-        isLoading={false}
-        characters={[]}
-        skills={[]}
-      />,
-    );
+    root.render(<Inputbar {...defaultProps} {...props} />);
   });
 
   mountedRoots.push({ root, container });
@@ -175,17 +192,22 @@ function renderInputbar() {
 }
 
 describe("Inputbar", () => {
-  it("即使角色和技能为空，也应挂载 CharacterMention", () => {
+  it("即使角色和技能为空，也应挂载 CharacterMention", async () => {
     const container = renderInputbar();
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     const mention = container.querySelector('[data-testid="character-mention-stub"]');
     expect(mention).toBeTruthy();
-    expect(mockCharacterMention).toHaveBeenCalledTimes(1);
-    expect(mockCharacterMention.mock.calls[0][0].characters).toEqual([]);
-    expect(mockCharacterMention.mock.calls[0][0].skills).toEqual([]);
+    expect(mockCharacterMention.mock.calls.length).toBeGreaterThan(0);
+    const latestCall =
+      mockCharacterMention.mock.calls[mockCharacterMention.mock.calls.length - 1][0];
+    expect(latestCall.characters).toEqual([]);
+    expect(latestCall.skills).toEqual([]);
   });
 
-  it("受控模式下点击联网搜索应透传状态变更", () => {
+  it("受控模式下点击联网搜索应透传状态变更", async () => {
     const onToolStatesChange = vi.fn();
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -207,6 +229,9 @@ describe("Inputbar", () => {
     });
 
     mountedRoots.push({ root, container });
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     const toggleButton = container.querySelector(
       '[data-testid="toggle-web-search"]',
@@ -222,4 +247,258 @@ describe("Inputbar", () => {
       thinking: false,
     });
   });
+
+  it("社媒主题默认应自动注入 social_post_with_cover skill", async () => {
+    const onSend = vi.fn();
+    const container = renderInputbar({
+      activeTheme: "social-media",
+      input: "写一篇春季上新种草文案",
+      onSend,
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const sendButton = container.querySelector(
+      '[data-testid="send-btn"]',
+    ) as HTMLButtonElement | null;
+    expect(sendButton).toBeTruthy();
+
+    act(() => {
+      sendButton?.click();
+    });
+
+    expect(onSend).toHaveBeenCalledWith(
+      undefined,
+      false,
+      false,
+      "/social_post_with_cover 写一篇春季上新种草文案",
+      "react",
+    );
+  });
+
+  it("社媒主题输入 slash 命令时不应重复注入默认 skill", async () => {
+    const onSend = vi.fn();
+    const container = renderInputbar({
+      activeTheme: "social-media",
+      input: "/custom_skill 写一篇品牌故事",
+      onSend,
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const sendButton = container.querySelector(
+      '[data-testid="send-btn"]',
+    ) as HTMLButtonElement | null;
+    expect(sendButton).toBeTruthy();
+
+    act(() => {
+      sendButton?.click();
+    });
+
+    expect(onSend).toHaveBeenCalledWith(
+      undefined,
+      false,
+      false,
+      undefined,
+      "react",
+    );
+  });
+
+  it("主题工作台模式应启用 PRD 浮层输入配置", async () => {
+    renderInputbar({
+      variant: "theme_workbench",
+      providerType: "openai",
+      setProviderType: vi.fn(),
+      model: "gpt-4.1",
+      setModel: vi.fn(),
+      executionStrategy: "auto",
+      setExecutionStrategy: vi.fn(),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const latestCall =
+      mockInputbarCore.mock.calls[mockInputbarCore.mock.calls.length - 1]?.[0];
+    expect(latestCall).toBeTruthy();
+    expect(latestCall.toolMode).toBe("attach-only");
+    expect(latestCall.showTranslate).toBe(false);
+    expect(latestCall.placeholder).toContain("试着输入任何指令");
+    expect(latestCall.rightExtra).toBeUndefined();
+  });
+
+  it("主题工作台在待启动状态下不应显示闸门条", async () => {
+    const container = renderInputbar({
+      variant: "theme_workbench",
+      themeWorkbenchGate: {
+        key: "draft_start",
+        title: "编排待启动",
+        status: "idle",
+        description: "输入目标后将自动进入编排执行。",
+      },
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).not.toContain("编排待启动");
+    expect(container.textContent).not.toContain("待启动");
+  });
+
+  it("主题工作台闸门快捷操作应能快速填充输入", async () => {
+    const setInput = vi.fn();
+    const container = renderInputbar({
+      variant: "theme_workbench",
+      setInput,
+      themeWorkbenchGate: {
+        key: "topic_select",
+        title: "选题闸门",
+        status: "waiting",
+        description: "请选择优先推进的选题方向。",
+      },
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("选题闸门");
+    expect(container.textContent).not.toContain("当前闸门");
+    expect(container.textContent).not.toContain("请选择优先推进的选题方向。");
+
+    const quickActionButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("生成 3 个选题"),
+    );
+    expect(quickActionButton).toBeTruthy();
+
+    act(() => {
+      quickActionButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(setInput).toHaveBeenCalledWith(
+      "请给我 3 个可执行选题方向，并说明目标读者与传播价值。",
+    );
+  });
+
+  it("主题工作台生成中应展示任务面板并支持停止", async () => {
+    const onStop = vi.fn();
+    const container = renderInputbar({
+      variant: "theme_workbench",
+      isLoading: true,
+      onStop,
+      workflowSteps: [
+        { id: "research", title: "检索项目素材", status: "active" },
+        { id: "write", title: "编写正文草稿", status: "pending" },
+      ],
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("当前待办");
+    expect(container.textContent).toContain("正在生成中");
+    expect(container.querySelector('[data-testid="inputbar-core"]')).toBeNull();
+
+    const stopButton = container.querySelector(
+      '[data-testid="theme-workbench-stop"]',
+    ) as HTMLButtonElement | null;
+    expect(stopButton).toBeTruthy();
+    act(() => {
+      stopButton?.click();
+    });
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it("主题工作台生成中应支持折叠与展开待办列表", async () => {
+    const container = renderInputbar({
+      variant: "theme_workbench",
+      isLoading: true,
+      workflowSteps: [
+        { id: "research", title: "检索项目素材", status: "active" },
+        { id: "write", title: "编写正文草稿", status: "pending" },
+      ],
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("检索项目素材");
+
+    const collapseButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.getAttribute("aria-label") === "折叠待办列表",
+    );
+    expect(collapseButton).toBeTruthy();
+
+    act(() => {
+      collapseButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).not.toContain("检索项目素材");
+
+    const expandButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.getAttribute("aria-label") === "展开待办列表",
+    );
+    expect(expandButton).toBeTruthy();
+
+    act(() => {
+      expandButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain("检索项目素材");
+  });
+
+  it("主题工作台在 auto_running 状态下应展示生成面板（不依赖 isLoading）", async () => {
+    const container = renderInputbar({
+      variant: "theme_workbench",
+      isLoading: false,
+      themeWorkbenchRunState: "auto_running",
+      workflowSteps: [
+        { id: "research", title: "检索项目素材", status: "active" },
+        { id: "write", title: "编写正文草稿", status: "pending" },
+      ],
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("当前待办");
+    expect(container.textContent).toContain("正在生成中");
+    expect(container.querySelector('[data-testid="inputbar-core"]')).toBeNull();
+  });
+
+  it("主题工作台在 await_user_decision 状态下应显示输入框", async () => {
+    const container = renderInputbar({
+      variant: "theme_workbench",
+      isLoading: true,
+      themeWorkbenchRunState: "await_user_decision",
+      workflowSteps: [
+        { id: "topic", title: "等待用户确认选题", status: "pending" },
+      ],
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[data-testid="inputbar-core"]')).toBeTruthy();
+    expect(container.textContent).not.toContain("正在生成中");
+  });
+
 });

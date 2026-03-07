@@ -58,8 +58,8 @@ import {
   onResourceProjectChange,
   setStoredResourceProjectId,
 } from "@/lib/resourceProjectSelection";
-import { cn } from "@/lib/utils";
 import { buildHomeAgentParams } from "@/lib/workspace/navigation";
+import { cn } from "@/lib/utils";
 import type { Page, PageParams } from "@/types/page";
 import { CanvasBreadcrumbHeader } from "@/components/content-creator/canvas/shared/CanvasBreadcrumbHeader";
 import { fetchDocumentDetail } from "./services/resourceAdapter";
@@ -588,6 +588,10 @@ export function ResourcesPage({ onNavigate }: ResourcesPageProps) {
     setCurrentFolderId(currentFolder?.parentId ?? null);
   }, [canNavigateUp, currentFolder?.parentId, setCurrentFolderId]);
 
+  const handleBackHome = useCallback(() => {
+    onNavigate?.("agent", buildHomeAgentParams());
+  }, [onNavigate]);
+
   const headingDescription = useMemo(() => {
     if (!projectId) return "请选择左侧资源库";
     if (currentFolderId && currentFolder) {
@@ -623,17 +627,10 @@ export function ResourcesPage({ onNavigate }: ResourcesPageProps) {
 
   const showEmptyState = projectId && !loading && displayItems.length === 0;
 
-  const handleBackToHome = useCallback(() => {
-    if (onNavigate) {
-      onNavigate("agent", buildHomeAgentParams());
-    }
-  }, [onNavigate]);
-
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       <div className="flex items-center justify-between border-b bg-background px-6 py-3">
-        <CanvasBreadcrumbHeader label="资源" onBackHome={handleBackToHome} />
-
+        <CanvasBreadcrumbHeader label="资源" onBackHome={handleBackHome} />
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           {saving && <RefreshCw className="h-4 w-4 animate-spin" />}
           <span>{selectedProject?.name ?? "未选择资源库"}</span>

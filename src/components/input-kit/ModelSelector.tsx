@@ -18,9 +18,6 @@ import { cn } from "@/lib/utils";
 import { ProviderIcon } from "@/icons/providers";
 import { useConfiguredProviders } from "@/hooks/useConfiguredProviders";
 import { useProviderModels } from "@/hooks/useProviderModels";
-import { providerPoolApi } from "@/lib/api/providerPool";
-import { apiKeyProviderApi } from "@/lib/api/apiKeyProvider";
-import { emitProviderDataChanged } from "@/lib/providerDataEvents";
 import { filterModelsByTheme } from "@/components/agent/chat/utils/modelThemePolicy";
 
 const THEME_LABEL_MAP: Record<string, string> = {
@@ -136,34 +133,6 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   ]);
 
   useEffect(() => {
-    if (!open) return;
-    if (disabled) return;
-
-    let cancelled = false;
-
-    const refreshProviderData = async () => {
-      try {
-        await Promise.all([
-          providerPoolApi.getOverview(),
-          apiKeyProviderApi.getProviders(),
-        ]);
-
-        if (!cancelled) {
-          emitProviderDataChanged("provider_pool");
-        }
-      } catch (error) {
-        console.error("[ModelSelector] 刷新 Provider 数据失败:", error);
-      }
-    };
-
-    void refreshProviderData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [disabled, open]);
-
-  useEffect(() => {
     if (!disabled) return;
     if (!open) return;
     setOpen(false);
@@ -222,8 +191,9 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   }
 
   return (
-    <div className={cn("flex items-center", className)}>
+    <div className={cn("flex items-center min-w-0", className)}>
       <Popover
+        modal={false}
         open={open}
         onOpenChange={(nextOpen) => {
           if (disabled) {
@@ -259,15 +229,15 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
               role="combobox"
               aria-expanded={open}
               disabled={disabled}
-              className="h-9 px-3 gap-2 font-normal bg-background hover:bg-muted/60"
+              className="h-9 w-full min-w-0 px-3 gap-2 font-normal bg-background hover:bg-muted/60 justify-start"
             >
               <Bot size={16} className="text-primary" />
-              <span className="font-medium truncate max-w-[160px]">
-                {selectedProviderLabel}
-              </span>
-              <span className="text-muted-foreground">/</span>
-              <span className="text-sm text-muted-foreground truncate max-w-[180px]">
-                {model || "选择模型"}
+              <span className="min-w-0 flex-1 flex items-center gap-1.5">
+                <span className="font-medium truncate">{selectedProviderLabel}</span>
+                <span className="text-muted-foreground shrink-0">/</span>
+                <span className="text-sm text-muted-foreground truncate">
+                  {model || "选择模型"}
+                </span>
               </span>
               <ChevronDown className="ml-1 h-3 w-3 text-muted-foreground opacity-50" />
             </Button>
@@ -275,11 +245,13 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         </PopoverTrigger>
 
         <PopoverContent
-          className="w-[420px] p-0 bg-background/95 backdrop-blur-sm border-border shadow-lg"
+          data-model-selector-popover="true"
+          className="z-[80] w-[420px] max-w-[calc(100vw-24px)] p-0 bg-background border-border shadow-lg opacity-100"
           align="start"
           side={popoverSide}
           sideOffset={8}
           avoidCollisions
+          collisionPadding={8}
         >
           <div className="flex h-[320px]">
             <div className="w-[140px] border-r bg-muted/30 p-2 flex flex-col gap-1 overflow-y-auto">

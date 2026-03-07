@@ -8,6 +8,9 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ProjectType } from "@/lib/api/project";
 import { recordWorkspaceRepair } from "@/lib/workspaceHealthTelemetry";
+import type { WorkspaceSettings } from "@/types/workspace";
+
+export type { WorkspaceSettings } from "@/types/workspace";
 
 /** Workspace 列表项 */
 export interface Workspace {
@@ -16,15 +19,9 @@ export interface Workspace {
   workspaceType: ProjectType;
   rootPath: string;
   isDefault: boolean;
+  settings?: WorkspaceSettings;
   createdAt: number;
   updatedAt: number;
-}
-
-/** Workspace 设置 */
-export interface WorkspaceSettings {
-  mcpConfig?: Record<string, unknown>;
-  defaultProvider?: string;
-  autoCompact?: boolean;
 }
 
 /** 创建 Workspace 请求 */

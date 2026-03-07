@@ -12,7 +12,7 @@ export type PlatformType = "wechat" | "xiaohongshu" | "zhihu" | "markdown";
 /**
  * 导出格式
  */
-export type ExportFormat = "markdown" | "text" | "clipboard";
+export type ExportFormat = "markdown" | "word" | "text" | "clipboard";
 
 /**
  * 文档版本
@@ -68,34 +68,170 @@ export interface DocumentCanvasProps {
   contentId?: string | null;
   /** 自动配图的主题关键词 */
   autoImageTopic?: string;
+  /** 自动续写同步的 Provider */
+  autoContinueProviderType?: string;
+  /** 自动续写 Provider 切换 */
+  onAutoContinueProviderTypeChange?: (providerType: string) => void;
+  /** 自动续写同步的模型 */
+  autoContinueModel?: string;
+  /** 自动续写模型切换 */
+  onAutoContinueModelChange?: (model: string) => void;
+  /** 自动续写同步的思考开关 */
+  autoContinueThinkingEnabled?: boolean;
+  /** 自动续写思考开关切换 */
+  onAutoContinueThinkingEnabledChange?: (enabled: boolean) => void;
+  /** 自动续写执行回调 */
+  onAutoContinueRun?: (payload: AutoContinueRunPayload) => Promise<void> | void;
+  /** 添加图片动作 */
+  onAddImage?: () => Promise<void> | void;
+  /** 导入文稿动作 */
+  onImportDocument?: () => Promise<void> | void;
+  /** 内容评审执行回调 */
+  onContentReviewRun?: (
+    payload: ContentReviewRunPayload,
+  ) => Promise<string> | string;
+  /** 内容评审面板位置 */
+  contentReviewPlacement?: "inline" | "external-rail";
+  /** 文本风格化执行回调 */
+  onTextStylizeRun?: (payload: TextStylizeRunPayload) => Promise<string> | string;
+}
+
+/**
+ * 自动续写设置
+ */
+export interface AutoContinueSettings {
+  /** 自动续写主开关 */
+  enabled: boolean;
+  /** 是否开启快速模式 */
+  fastModeEnabled: boolean;
+  /** 续写长度：0=短，1=中，2=长 */
+  continuationLength: number;
+  /** 续写灵敏度：0-100 */
+  sensitivity: number;
+}
+
+/**
+ * 自动续写执行参数
+ */
+export interface AutoContinueRunPayload {
+  /** 续写提示词 */
+  prompt: string;
+  /** 是否启用思考过程 */
+  thinkingEnabled: boolean;
+  /** 续写设置快照 */
+  settings: AutoContinueSettings;
+}
+
+/**
+ * 内容评审执行参数
+ */
+export interface ContentReviewRunPayload {
+  /** 评审提示词 */
+  prompt: string;
+  /** 是否启用思考过程 */
+  thinkingEnabled: boolean;
+  /** 已选中的评审专家 */
+  experts: ContentReviewExpert[];
+}
+
+/**
+ * 文本风格化执行参数
+ */
+export interface TextStylizeRunPayload {
+  /** 风格化提示词 */
+  prompt: string;
+  /** 是否启用思考过程 */
+  thinkingEnabled: boolean;
+  /** 原始内容 */
+  originalContent: string;
+}
+
+/**
+ * 内容评审专家
+ */
+export interface ContentReviewExpert {
+  /** 专家 ID */
+  id: string;
+  /** 专家名称 */
+  name: string;
+  /** 专家定位 */
+  title: string;
+  /** 专家描述 */
+  description: string;
+  /** 专家标签 */
+  tags: string[];
+  /** 角标文案 */
+  badgeText?: string;
+  /** 头像文字 */
+  avatarLabel: string;
+  /** 头像底色 */
+  avatarColor: string;
+  /** 自定义头像 */
+  avatarImageUrl?: string;
+}
+
+/**
+ * 自定义内容评审专家输入
+ */
+export interface CustomContentReviewExpertInput {
+  /** 专家名称 */
+  name: string;
+  /** 专家背景描述 */
+  description: string;
+  /** 自定义头像 */
+  avatarImageUrl?: string;
 }
 
 /**
  * 文档工具栏 Props
  */
 export interface DocumentToolbarProps {
-  /** 当前版本 */
-  currentVersion: DocumentVersion | null;
-  /** 版本列表 */
-  versions: DocumentVersion[];
-  /** 是否处于编辑模式 */
-  isEditing: boolean;
-  /** 版本切换回调 */
-  onVersionChange: (versionId: string) => void;
-  /** 编辑模式切换回调 */
-  onEditToggle: () => void;
-  /** 保存回调 */
-  onSave: () => void;
-  /** 切换到预览回调（不保存） */
-  onCancel: () => void;
+  /** 是否正在流式输出 */
+  isStreaming?: boolean;
   /** 导出回调 */
   onExport: (format: ExportFormat) => void;
-  /** 主题自动配图 */
+  /** 自动配图动作 */
   onAutoInsertImages?: () => void;
-  /** 自动配图执行中 */
-  autoInsertLoading?: boolean;
-  /** 关闭回调 */
-  onClose: () => void;
+  /** 添加图片动作 */
+  onAddImage?: () => Promise<void> | void;
+  /** 导入文稿动作 */
+  onImportDocument?: () => Promise<void> | void;
+  /** 文本风格化动作 */
+  onTextStylize?: () => void;
+  /** 内容评审动作 */
+  onContentReview?: () => void;
+  /** 内容评审是否已打开 */
+  contentReviewActive?: boolean;
+  /** 撤销动作 */
+  onUndo?: () => void;
+  /** 重做动作 */
+  onRedo?: () => void;
+  /** 是否可以撤销 */
+  canUndo?: boolean;
+  /** 是否可以重做 */
+  canRedo?: boolean;
+  /** 自动续写设置 */
+  autoContinueSettings: AutoContinueSettings;
+  /** 自动续写当前 Provider */
+  autoContinueProviderType: string;
+  /** 自动续写 Provider 切换 */
+  onAutoContinueProviderChange?: (providerType: string) => void;
+  /** 自动续写当前模型 */
+  selectedAutoContinueModel: string;
+  /** 自动续写模型是否加载中 */
+  autoContinueModelLoading?: boolean;
+  /** 自动续写模型切换 */
+  onAutoContinueModelChange?: (model: string) => void;
+  /** 思考过程开关（沿用通用对话设置） */
+  thinkingEnabled: boolean;
+  /** 思考过程变更 */
+  onThinkingChange?: (enabled: boolean) => void;
+  /** 自动续写设置变更 */
+  onAutoContinueSettingsChange?: (patch: Partial<AutoContinueSettings>) => void;
+  /** 执行自动续写 */
+  onAutoContinueRun?: () => void;
+  /** 自动续写执行是否禁用 */
+  autoContinueRunDisabled?: boolean;
 }
 
 /**

@@ -21,6 +21,7 @@ import {
 import { toast } from "sonner";
 import { useImageGen } from "../useImageGen";
 import type { GeneratedImage } from "../types";
+import { useProject } from "@/hooks/useProject";
 import { useProjects } from "@/hooks/useProjects";
 import {
   getStoredResourceProjectId,
@@ -31,6 +32,8 @@ import { CharacterMention } from "@/components/agent/chat/components/Inputbar/co
 import { SkillBadge } from "@/components/agent/chat/components/Inputbar/components/SkillBadge";
 import { useActiveSkill } from "@/components/agent/chat/components/Inputbar/hooks/useActiveSkill";
 import { skillsApi, type Skill } from "@/lib/api/skills";
+import { useGlobalMediaGenerationDefaults } from "@/hooks/useGlobalMediaGenerationDefaults";
+import { resolveMediaGenerationPreference } from "@/lib/mediaGeneration";
 import type { Page } from "@/types/page";
 
 export interface AiImageGenTabProps {
@@ -782,6 +785,16 @@ const HistoryEmpty = styled.div`
 // ==================== Component ====================
 
 export function AiImageGenTab({ projectId, onNavigate }: AiImageGenTabProps) {
+  const { project } = useProject(projectId ?? null);
+  const { mediaDefaults } = useGlobalMediaGenerationDefaults();
+  const effectiveImagePreference = useMemo(
+    () =>
+      resolveMediaGenerationPreference(
+        project?.settings?.imageGeneration,
+        mediaDefaults.image,
+      ),
+    [mediaDefaults.image, project?.settings?.imageGeneration],
+  );
   const {
     availableProviders,
     selectedProvider,
@@ -804,7 +817,10 @@ export function AiImageGenTab({ projectId, onNavigate }: AiImageGenTabProps) {
     backfillImagesToResource,
     deleteImage,
     newImage,
-  } = useImageGen();
+  } = useImageGen({
+    preferredProviderId: effectiveImagePreference.preferredProviderId,
+    preferredModelId: effectiveImagePreference.preferredModelId,
+  });
 
   const { projects, defaultProject, loading: projectsLoading } = useProjects();
 
@@ -872,12 +888,17 @@ export function AiImageGenTab({ projectId, onNavigate }: AiImageGenTabProps) {
       }
 
       // 如果当前值有效且在可用项目中，保持不变
-      if (current && availableProjects.some((project) => project.id === current)) {
+      if (
+        current &&
+        availableProjects.some((project) => project.id === current)
+      ) {
         return current;
       }
 
       // 尝试从存储中获取
-      const storedProjectId = getStoredResourceProjectId({ includeLegacy: true });
+      const storedProjectId = getStoredResourceProjectId({
+        includeLegacy: true,
+      });
       if (
         storedProjectId &&
         availableProjects.some((project) => project.id === storedProjectId)
@@ -887,8 +908,9 @@ export function AiImageGenTab({ projectId, onNavigate }: AiImageGenTabProps) {
 
       // 使用默认项目
       const preferredProject =
-        (defaultProject && !defaultProject.isArchived ? defaultProject : null) ??
-        availableProjects[0];
+        (defaultProject && !defaultProject.isArchived
+          ? defaultProject
+          : null) ?? availableProjects[0];
 
       return preferredProject?.id || "";
     });
@@ -1103,8 +1125,12 @@ export function AiImageGenTab({ projectId, onNavigate }: AiImageGenTabProps) {
             onClick={() => {
               void handleBackfillToResource();
             }}
-            $disabled={savingToResource || !targetProjectId || images.length === 0}
-            disabled={savingToResource || !targetProjectId || images.length === 0}
+            $disabled={
+              savingToResource || !targetProjectId || images.length === 0
+            }
+            disabled={
+              savingToResource || !targetProjectId || images.length === 0
+            }
           >
             {savingToResource ? "补录中..." : "补录历史到资源库"}
           </FullButton>

@@ -23,6 +23,7 @@ import {
   emitProviderDataChanged,
   subscribeProviderDataChanged,
 } from "@/lib/providerDataEvents";
+import { isDebugFlagEnabled } from "@/lib/perfDebug";
 
 // ============================================================================
 // Hook 返回类型
@@ -119,6 +120,45 @@ const UI_STATE_KEYS = {
   PROVIDER_SORT_ORDERS: "provider_sort_orders",
 } as const;
 
+const PROVIDER_DEBUG_KEY = "proxycast:provider-debug";
+
+interface ProviderCacheState {
+  providers: ProviderWithKeysDisplay[] | null;
+  inFlight: Promise<ProviderWithKeysDisplay[]> | null;
+}
+
+const providerCacheState: ProviderCacheState = {
+  providers: null,
+  inFlight: null,
+};
+
+function cloneProviders(
+  providers: ProviderWithKeysDisplay[],
+): ProviderWithKeysDisplay[] {
+  return providers.map((provider) => ({
+    ...provider,
+    api_keys: provider.api_keys.map((apiKey) => ({ ...apiKey })),
+  }));
+}
+
+function readProvidersFromCache(): ProviderWithKeysDisplay[] | null {
+  if (!providerCacheState.providers) {
+    return null;
+  }
+  return cloneProviders(providerCacheState.providers);
+}
+
+function writeProvidersToCache(providers: ProviderWithKeysDisplay[]): void {
+  providerCacheState.providers = cloneProviders(providers);
+}
+
+function providerDebugLog(...args: unknown[]): void {
+  if (!isDebugFlagEnabled(PROVIDER_DEBUG_KEY)) {
+    return;
+  }
+  console.debug(...args);
+}
+
 // ============================================================================
 // Hook 实现
 // ============================================================================
@@ -135,40 +175,67 @@ export function useApiKeyProvider(): UseApiKeyProviderReturn {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<ProviderGroup>>(
     new Set(),
   );
-  // 版本号，用于强制刷新
-  const [refreshVersion, setRefreshVersion] = useState(0);
+
+  const applyCachedProviders = useCallback((): boolean => {
+    const cached = readProvidersFromCache();
+    if (!cached) {
+      return false;
+    }
+    setProviders(cached);
+    setError(null);
+    setLoading(false);
+    providerDebugLog(
+      `[useApiKeyProvider] 使用缓存数据，provider 数量=${cached.length}`,
+    );
+    return true;
+  }, []);
 
   // ===== 加载 Provider 列表 =====
-  const fetchProviders = useCallback(async () => {
+  const fetchProviders = useCallback(async (force = false) => {
     try {
-      console.log("[useApiKeyProvider] 开始获取 Provider 列表...");
-      setLoading(true);
+      if (!force && applyCachedProviders()) {
+        return;
+      }
+
+      if (providerCacheState.inFlight) {
+        providerDebugLog("[useApiKeyProvider] 复用进行中的 Provider 请求");
+        const inFlightData = await providerCacheState.inFlight;
+        setProviders(cloneProviders(inFlightData));
+        setError(null);
+        setLoading(false);
+        return;
+      }
+
+      providerDebugLog("[useApiKeyProvider] 开始获取 Provider 列表...");
+      if (providers.length === 0) {
+        setLoading(true);
+      }
       setError(null);
-      const data = await apiKeyProviderApi.getProviders();
-      console.log("[useApiKeyProvider] 获取到", data.length, "个 Provider");
+      providerCacheState.inFlight = apiKeyProviderApi.getProviders();
+      const data = await providerCacheState.inFlight;
+      providerDebugLog("[useApiKeyProvider] 获取到", data.length, "个 Provider");
 
       // 打印每个 Provider 的 API Key 数量
       data.forEach((p) => {
-        console.log(
+        providerDebugLog(
           `[useApiKeyProvider] Provider ${p.id} (${p.name}): ${p.api_keys?.length || 0} 个 API Key`,
         );
       });
 
-      // 创建新数组引用，确保 React 检测到状态变化
-      setProviders([...data]);
-      // 增加版本号，强制重新计算 selectedProvider
-      setRefreshVersion((v) => v + 1);
-      console.log("[useApiKeyProvider] 状态已更新，providers 数组已刷新");
+      writeProvidersToCache(data);
+      setProviders(cloneProviders(data));
+      providerDebugLog("[useApiKeyProvider] 状态已更新，providers 数组已刷新");
     } catch (e) {
       console.error("[useApiKeyProvider] 获取 Provider 列表失败:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      providerCacheState.inFlight = null;
       setLoading(false);
     }
-  }, []);
+  }, [applyCachedProviders, providers.length]);
 
   const refreshAndNotify = useCallback(async () => {
-    await fetchProviders();
+    await fetchProviders(true);
     emitProviderDataChanged("api_key");
   }, [fetchProviders]);
 
@@ -198,36 +265,26 @@ export function useApiKeyProvider(): UseApiKeyProviderReturn {
 
   // ===== 初始化 =====
   useEffect(() => {
-    fetchProviders();
+    if (!applyCachedProviders()) {
+      void fetchProviders(true);
+    }
     loadUiState();
 
-    if (typeof window === "undefined" || typeof document === "undefined") {
-      return;
-    }
-
-    const handleFocus = () => {
-      void fetchProviders();
-    };
-
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        void fetchProviders();
+    const unsubscribe = subscribeProviderDataChanged((source) => {
+      if (source === "api_key") {
+        if (!applyCachedProviders()) {
+          void fetchProviders(true);
+        }
+        return;
       }
-    };
 
-    const unsubscribe = subscribeProviderDataChanged(() => {
-      void fetchProviders();
+      void fetchProviders(true);
     });
 
-    window.addEventListener("focus", handleFocus);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
     return () => {
-      window.removeEventListener("focus", handleFocus);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
       unsubscribe();
     };
-  }, [fetchProviders, loadUiState]);
+  }, [applyCachedProviders, fetchProviders, loadUiState]);
 
   // ===== 保存折叠状态 =====
   const saveCollapsedGroups = useCallback(
@@ -366,17 +423,17 @@ export function useApiKeyProvider(): UseApiKeyProviderReturn {
         alias,
       };
 
-      console.log("[useApiKeyProvider] 开始添加 API Key:", {
+      providerDebugLog("[useApiKeyProvider] 开始添加 API Key:", {
         providerId,
         alias,
       });
       const result = await apiKeyProviderApi.addApiKey(request);
-      console.log("[useApiKeyProvider] API Key 添加成功:", result.id);
+      providerDebugLog("[useApiKeyProvider] API Key 添加成功:", result.id);
 
       // 强制刷新 Provider 列表以确保新添加的 API Key 显示
-      console.log("[useApiKeyProvider] 刷新 Provider 列表...");
+      providerDebugLog("[useApiKeyProvider] 刷新 Provider 列表...");
       await refreshAndNotify();
-      console.log("[useApiKeyProvider] Provider 列表刷新完成");
+      providerDebugLog("[useApiKeyProvider] Provider 列表刷新完成");
 
       return result;
     },
@@ -434,26 +491,23 @@ export function useApiKeyProvider(): UseApiKeyProviderReturn {
 
   /** 当前选中的 Provider */
   const selectedProvider = useMemo(() => {
-    // refreshVersion 用于强制重新计算
-    console.log(
-      `[useApiKeyProvider] 计算 selectedProvider, refreshVersion=${refreshVersion}`,
-    );
+    providerDebugLog("[useApiKeyProvider] 计算 selectedProvider");
     if (!selectedProviderId) {
-      console.log("[useApiKeyProvider] selectedProvider: 没有选中的 Provider");
+      providerDebugLog("[useApiKeyProvider] selectedProvider: 没有选中的 Provider");
       return null;
     }
     const found = providers.find((p) => p.id === selectedProviderId);
     if (found) {
-      console.log(
+      providerDebugLog(
         `[useApiKeyProvider] selectedProvider: ${found.name}, api_keys: ${found.api_keys?.length || 0}`,
       );
     } else {
-      console.log(
+      providerDebugLog(
         `[useApiKeyProvider] selectedProvider: 未找到 ID=${selectedProviderId}`,
       );
     }
     return found ?? null;
-  }, [providers, selectedProviderId, refreshVersion]);
+  }, [providers, selectedProviderId]);
 
   /** 按搜索过滤后的 Provider 列表 */
   const filteredProviders = useMemo(() => {
@@ -512,7 +566,7 @@ export function useApiKeyProvider(): UseApiKeyProviderReturn {
     searchQuery,
     collapsedGroups,
 
-    refresh: fetchProviders,
+    refresh: () => fetchProviders(true),
     selectProvider,
     setSearchQuery,
     toggleGroup,

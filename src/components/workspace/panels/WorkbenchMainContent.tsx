@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import { type ComponentType } from "react";
 import { FolderOpen, Plus, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Page, PageParams, WorkspaceTheme, WorkspaceViewMode } from "@/types/page";
@@ -15,6 +15,12 @@ import type { Project } from "@/lib/api/project";
 import { AgentChatPage } from "@/components/agent";
 import type { WorkflowProgressSnapshot } from "@/components/agent/chat";
 import type { CreationMode } from "@/components/content-creator/types";
+import { A2UIRenderer } from "@/components/content-creator/a2ui/components";
+import type { A2UIFormData } from "@/components/content-creator/a2ui/types";
+import {
+  buildCreateConfirmationA2UI,
+  type PendingCreateConfirmation,
+} from "@/components/workspace/utils/createConfirmationPolicy";
 
 type ThemeWorkspaceRenderer = ComponentType<ThemeWorkspaceRendererProps> | null | undefined;
 
@@ -43,9 +49,13 @@ export interface WorkbenchMainContentProps {
   onNavigate?: (page: Page, params?: PageParams) => void;
   theme: WorkspaceTheme;
   pendingInitialPromptsByContentId: Record<string, string>;
+  pendingCreateConfirmation?: PendingCreateConfirmation;
+  onSubmitCreateConfirmation?: (formData: A2UIFormData) => Promise<void> | void;
+  onCancelCreateConfirmation?: () => void;
   onConsumePendingInitialPrompt: (contentId: string) => void;
   contentCreationModes: Record<string, CreationMode>;
   showChatPanel: boolean;
+  showCreateContentEntryHome: boolean;
   onWorkflowProgressChange: (progress: WorkflowProgressSnapshot | null) => void;
   onChatSessionChange?: (sessionId: string | null) => void;
   activePanelRenderer?: ThemeWorkspaceRenderer;
@@ -71,13 +81,21 @@ export function WorkbenchMainContent({
   onNavigate,
   theme,
   pendingInitialPromptsByContentId,
+  pendingCreateConfirmation,
+  onSubmitCreateConfirmation,
+  onCancelCreateConfirmation,
   onConsumePendingInitialPrompt,
   contentCreationModes,
   showChatPanel,
+  showCreateContentEntryHome,
   onWorkflowProgressChange,
   onChatSessionChange,
   activePanelRenderer: ActivePanelRenderer,
 }: WorkbenchMainContentProps) {
+  const createConfirmationResponse = pendingCreateConfirmation
+    ? buildCreateConfirmationA2UI(pendingCreateConfirmation)
+    : null;
+
   if (workspaceMode === "project-management") {
     return (
       <div className="h-full min-h-0 p-4">
@@ -173,19 +191,55 @@ export function WorkbenchMainContent({
     );
   }
 
+  if (activeWorkspaceView === "create" && showCreateContentEntryHome) {
+    return (
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div className="border-b px-3 py-2 bg-muted/20 text-xs text-muted-foreground">
+          当前项目暂无文稿。请先确认创建意图，提交后才会生成新文稿。
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto p-4">
+          {createConfirmationResponse ? (
+            <div
+              className="mx-auto w-full max-w-3xl rounded-lg border bg-card p-4"
+              data-testid="workspace-create-confirmation-card"
+            >
+              <A2UIRenderer
+                response={createConfirmationResponse}
+                onSubmit={(formData) => {
+                  void onSubmitCreateConfirmation?.(formData);
+                }}
+              />
+              {pendingCreateConfirmation?.initialUserPrompt ? (
+                <div className="mt-4 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+                  已附带提示词：{pendingCreateConfirmation.initialUserPrompt}
+                </div>
+              ) : null}
+              <div className="mt-4 flex justify-end">
+                <Button variant="ghost" onClick={onCancelCreateConfirmation}>
+                  稍后再说
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="h-full rounded-lg border border-dashed flex flex-col items-center justify-center gap-3 text-muted-foreground">
+              <Sparkles className="h-8 w-8 opacity-60" />
+              <p className="text-sm">请先发起创建确认，再生成新文稿</p>
+              <Button variant="outline" onClick={onOpenCreateContentDialog}>
+                <Plus className="h-4 w-4 mr-1" />
+                发起创建确认
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (activeWorkspaceView === "create" && !selectedContentId) {
     return (
       <div className="h-full rounded-lg border bg-card flex flex-col items-center justify-center gap-3 text-muted-foreground m-4">
         <Sparkles className="h-8 w-8 opacity-60" />
-        <p className="text-sm">请先在左侧选择文稿后进入创作</p>
-        <Button
-          variant="outline"
-          onClick={onOpenCreateContentDialog}
-          disabled={!selectedProjectId}
-        >
-          <Plus className="h-4 w-4 mr-1" />
-          新建文稿
-        </Button>
+        <p className="text-sm">正在打开最近文稿...</p>
       </div>
     );
   }
@@ -234,6 +288,7 @@ export function WorkbenchMainContent({
             hideInlineStepProgress={true}
             onWorkflowProgressChange={onWorkflowProgressChange}
             onSessionChange={onChatSessionChange}
+            preferContentReviewInRightRail={true}
           />
         </div>
       </div>

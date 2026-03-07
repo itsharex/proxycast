@@ -64,6 +64,8 @@ import iconToutiao from "@/assets/platforms/toutiao.png";
 import iconJuejin from "@/assets/platforms/juejin.png";
 import iconCsdn from "@/assets/platforms/csdn.png";
 
+const SOCIAL_ARTICLE_SKILL_KEY = "social_post_with_cover";
+
 // --- Animations ---
 const fadeIn = keyframes`
   from { opacity: 0; transform: translateY(10px); }
@@ -548,12 +550,13 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   useEffect(() => {
     const loadConfigPreferences = async () => {
       try {
-        const config = await getConfig();
-        if (config.content_creator?.enabled_themes) {
-          setEnabledThemes(config.content_creator.enabled_themes);
+        const loadedConfig = await getConfig();
+        if (loadedConfig.content_creator?.enabled_themes) {
+          setEnabledThemes(loadedConfig.content_creator.enabled_themes);
         }
         setAppendSelectedTextToRecommendation(
-          config.chat_appearance?.append_selected_text_to_recommendation ?? true,
+          loadedConfig.chat_appearance?.append_selected_text_to_recommendation ??
+            true,
         );
       } catch (e) {
         console.error("加载主题配置失败:", e);
@@ -609,6 +612,20 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   // Popover 打开状态
   const [ratioPopoverOpen, setRatioPopoverOpen] = useState(false);
   const [stylePopoverOpen, setStylePopoverOpen] = useState(false);
+
+  const wrapTextWithDefaultSkill = (text: string) => {
+    const wrappedByActiveSkill = wrapTextWithSkill(text);
+    if (wrappedByActiveSkill !== text) {
+      return wrappedByActiveSkill;
+    }
+    if (
+      activeTheme === "social-media" &&
+      !text.trimStart().startsWith("/")
+    ) {
+      return `/${SOCIAL_ARTICLE_SKILL_KEY} ${text}`.trim();
+    }
+    return text;
+  };
 
   const isEntryTheme = activeTheme === ENTRY_THEME_ID;
 
@@ -738,7 +755,11 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
         },
       });
 
-      onSend(wrapTextWithSkill(composedPrompt), executionStrategy, imagesToSend);
+      onSend(
+        wrapTextWithDefaultSkill(composedPrompt),
+        executionStrategy,
+        imagesToSend,
+      );
       setPendingImages([]);
       clearActiveSkill();
       return;
@@ -755,7 +776,11 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
       prefix = `[知识探索: ${depth === "deep" ? "深度" : "快速"}] `;
     if (activeTheme === "planning") prefix = `[计划规划] `;
 
-    onSend(wrapTextWithSkill(prefix + input), executionStrategy, imagesToSend);
+    onSend(
+      wrapTextWithDefaultSkill(prefix + input),
+      executionStrategy,
+      imagesToSend,
+    );
     setPendingImages([]);
     clearActiveSkill();
   };

@@ -26,6 +26,46 @@ export interface AgentRun {
   updated_at: string;
 }
 
+export interface ThemeWorkbenchRunTodoItem {
+  run_id: string;
+  execution_id?: string | null;
+  session_id?: string | null;
+  artifact_paths?: string[];
+  title: string;
+  gate_key?: "topic_select" | "write_mode" | "publish_confirm" | null;
+  status: AgentRunStatus;
+  source: AgentRunSource | string;
+  source_ref: string | null;
+  started_at: string;
+}
+
+export interface ThemeWorkbenchRunTerminalItem {
+  run_id: string;
+  execution_id?: string | null;
+  session_id?: string | null;
+  artifact_paths?: string[];
+  title: string;
+  gate_key?: "topic_select" | "write_mode" | "publish_confirm" | null;
+  status: AgentRunStatus;
+  source: AgentRunSource | string;
+  source_ref: string | null;
+  started_at: string;
+  finished_at: string | null;
+}
+
+export interface ThemeWorkbenchRunState {
+  run_state: "idle" | "auto_running";
+  current_gate_key?:
+    | "idle"
+    | "topic_select"
+    | "write_mode"
+    | "publish_confirm"
+    | null;
+  queue_items: ThemeWorkbenchRunTodoItem[];
+  latest_terminal: ThemeWorkbenchRunTerminalItem | null;
+  updated_at: string;
+}
+
 export async function executionRunList(
   limit: number = 50,
   offset: number = 0,
@@ -37,4 +77,15 @@ export async function executionRunGet(
   runId: string,
 ): Promise<AgentRun | null> {
   return await safeInvoke("execution_run_get", { runId });
+}
+
+export async function executionRunGetThemeWorkbenchState(
+  sessionId: string,
+  limit: number = 3,
+): Promise<ThemeWorkbenchRunState> {
+  return await safeInvoke("execution_run_get_theme_workbench_state", {
+    sessionId,
+    session_id: sessionId,
+    limit,
+  });
 }

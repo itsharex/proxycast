@@ -223,6 +223,29 @@ impl SessionFileStorage {
         fs::read_to_string(&file_path).map_err(|e| format!("读取文件失败: {e}"))
     }
 
+    /// 解析会话文件的绝对路径
+    pub fn resolve_file_path(&self, session_id: &str, file_name: &str) -> Result<String, String> {
+        let files_dir = self.get_files_dir(session_id);
+        let file_path = files_dir.join(file_name);
+
+        if !file_path.exists() {
+            return Err("文件不存在".to_string());
+        }
+
+        let canonical_file_path = file_path
+            .canonicalize()
+            .map_err(|e| format!("解析文件路径失败: {e}"))?;
+        let canonical_files_dir = files_dir
+            .canonicalize()
+            .map_err(|e| format!("解析会话目录失败: {e}"))?;
+
+        if !canonical_file_path.starts_with(&canonical_files_dir) {
+            return Err("非法文件路径".to_string());
+        }
+
+        Ok(canonical_file_path.to_string_lossy().to_string())
+    }
+
     /// 删除会话文件
     pub fn delete_file(&self, session_id: &str, file_name: &str) -> Result<(), String> {
         let file_path = self.get_files_dir(session_id).join(file_name);
@@ -425,5 +448,19 @@ mod tests {
         assert!(storage.session_exists("test-session-4"));
         storage.delete_session("test-session-4").unwrap();
         assert!(!storage.session_exists("test-session-4"));
+    }
+
+    #[test]
+    fn test_resolve_file_path() {
+        let (storage, _temp) = create_test_storage();
+        storage.create_session("test-session-5").unwrap();
+        storage
+            .save_file("test-session-5", "demo.md", "content")
+            .unwrap();
+
+        let resolved = storage
+            .resolve_file_path("test-session-5", "demo.md")
+            .unwrap();
+        assert!(resolved.ends_with("/test-session-5/files/demo.md"));
     }
 }

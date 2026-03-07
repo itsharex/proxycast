@@ -273,9 +273,23 @@ export interface ToolCallingConfig {
 /**
  * 内容创作配置
  */
+export interface MediaGenerationPreferenceConfig {
+  preferredProviderId?: string;
+  preferredModelId?: string;
+  allowFallback?: boolean;
+}
+
+export interface MediaGenerationDefaultsConfig {
+  image?: MediaGenerationPreferenceConfig;
+  video?: MediaGenerationPreferenceConfig;
+  voice?: MediaGenerationPreferenceConfig;
+}
+
 export interface ContentCreatorConfig {
   /** 启用的主题列表 */
   enabled_themes: string[];
+  /** 全局媒体生成默认设置 */
+  media_defaults?: MediaGenerationDefaultsConfig;
 }
 
 /**

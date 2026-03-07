@@ -86,6 +86,21 @@ export const BaseComposer: React.FC<BaseComposerProps> = ({
     textareaRef.current?.focus();
   }, [autoFocus, disabled, textareaRef]);
 
+  const isImeComposing = useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      const nativeEvent = event.nativeEvent as KeyboardEvent & {
+        isComposing?: boolean;
+      };
+      return Boolean(
+        event.isComposing ||
+          nativeEvent.isComposing ||
+          nativeEvent.key === "Process" ||
+          nativeEvent.keyCode === 229,
+      );
+    },
+    [],
+  );
+
   const onPrimaryAction = useCallback(() => {
     if (isLoading) {
       onStop?.();
@@ -106,6 +121,10 @@ export const BaseComposer: React.FC<BaseComposerProps> = ({
         return;
       }
 
+      if (isImeComposing(event)) {
+        return;
+      }
+
       if (event.key === "Enter" && sendOnEnter && !event.shiftKey) {
         event.preventDefault();
         if (canSend) {
@@ -118,7 +137,7 @@ export const BaseComposer: React.FC<BaseComposerProps> = ({
         onEscape?.();
       }
     },
-    [canSend, isFullscreen, onEscape, onKeyDown, onSend, sendOnEnter],
+    [canSend, isFullscreen, isImeComposing, onEscape, onKeyDown, onSend, sendOnEnter],
   );
 
   const textareaProps: React.TextareaHTMLAttributes<HTMLTextAreaElement> = {

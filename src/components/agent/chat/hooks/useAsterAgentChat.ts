@@ -27,6 +27,7 @@ import {
   type ContextTraceStep,
   type AsterSessionInfo,
   type AsterExecutionStrategy,
+  type AutoContinueRequestPayload,
   type ToolResultImage,
 } from "@/lib/api/agent";
 import {
@@ -42,6 +43,10 @@ import {
   type Question,
 } from "../types";
 import { activityLogger } from "@/components/content-creator/utils/activityLogger";
+import {
+  parseSkillSlashCommand,
+  tryExecuteSlashSkillCommand,
+} from "./skillCommand";
 
 /** 话题信息 */
 export interface Topic {
@@ -58,6 +63,17 @@ interface UseAsterAgentChatOptions {
   systemPrompt?: string;
   onWriteFile?: (content: string, fileName: string) => void;
   workspaceId: string;
+}
+
+interface SendMessageObserver {
+  onTextDelta?: (delta: string, accumulated: string) => void;
+  onComplete?: (content: string) => void;
+  onError?: (message: string) => void;
+}
+
+interface SendMessageOptions {
+  purpose?: Message["purpose"];
+  observer?: SendMessageObserver;
 }
 
 const normalizeExecutionStrategy = (
@@ -1519,11 +1535,15 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
       skipUserMessage = false,
       executionStrategyOverride?: AsterExecutionStrategy,
       modelOverride?: string,
+      autoContinue?: AutoContinueRequestPayload,
+      options?: SendMessageOptions,
     ) => {
       const effectiveExecutionStrategy =
         executionStrategyOverride || executionStrategy;
       const effectiveProviderType = providerTypeRef.current;
       const effectiveModel = modelOverride?.trim() || modelRef.current;
+      const observer = options?.observer;
+      const messagePurpose = options?.purpose;
       // 助手消息占位符
       const assistantMsgId = crypto.randomUUID();
       const assistantMsg: Message = {
@@ -1534,6 +1554,7 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
         isThinking: true,
         thinkingContent: "思考中...",
         contentParts: [],
+        purpose: messagePurpose,
       };
 
       if (skipUserMessage) {
@@ -1546,11 +1567,46 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
           content,
           images: images.length > 0 ? images : undefined,
           timestamp: new Date(),
+          purpose: messagePurpose,
         };
         setMessages((prev) => [...prev, userMsg, assistantMsg]);
       }
       setIsSending(true);
       currentAssistantMsgIdRef.current = assistantMsgId;
+
+      if (!skipUserMessage) {
+        const parsedSkillCommand = parseSkillSlashCommand(content);
+        if (parsedSkillCommand) {
+          const skillHandled = await tryExecuteSlashSkillCommand({
+            command: parsedSkillCommand,
+            rawContent: content,
+            assistantMsgId,
+            providerType: effectiveProviderType,
+            model: effectiveModel || undefined,
+            ensureSession,
+            setMessages,
+            setIsSending,
+            setCurrentAssistantMsgId: (id) => {
+              currentAssistantMsgIdRef.current = id;
+            },
+            setStreamUnlisten: (unlistenFn) => {
+              unlistenRef.current = unlistenFn;
+            },
+            setActiveSessionIdForStop: (sessionIdForStop) => {
+              currentStreamingSessionIdRef.current = sessionIdForStop;
+            },
+            isExecutionCancelled: () =>
+              currentAssistantMsgIdRef.current !== assistantMsgId,
+            playTypewriterSound,
+            playToolcallSound,
+            onWriteFile,
+          });
+
+          if (skillHandled) {
+            return;
+          }
+        }
+      }
 
       let accumulatedContent = "";
       let unlisten: UnlistenFn | null = null;
@@ -1584,6 +1640,8 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
             executionStrategy: effectiveExecutionStrategy,
             contentLength: content.trim().length,
             skipUserMessage,
+            autoContinueEnabled: autoContinue?.enabled ?? false,
+            autoContinue: autoContinue?.enabled ? autoContinue : undefined,
           },
         });
 
@@ -1671,6 +1729,7 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
           switch (data.type) {
             case "text_delta":
               accumulatedContent += data.text;
+              observer?.onTextDelta?.(data.text, accumulatedContent);
               playTypewriterSound();
               setMessages((prev) =>
                 prev.map((msg) =>
@@ -1986,7 +2045,7 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
               );
               break;
 
-            case "final_done":
+            case "final_done": {
               if (requestLogId && !requestFinished) {
                 requestFinished = true;
                 activityLogger.updateLog(requestLogId, {
@@ -1996,13 +2055,15 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
                   description: `请求完成，工具调用 ${toolLogIdByToolId.size} 次`,
                 });
               }
+              const finalContent = accumulatedContent || "(无响应)";
+              observer?.onComplete?.(finalContent);
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === assistantMsgId
                     ? {
                         ...msg,
                         isThinking: false,
-                        content: accumulatedContent || "(无响应)",
+                        content: finalContent,
                       }
                     : msg,
                 ),
@@ -2016,6 +2077,7 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
                 unlisten = null;
               }
               break;
+            }
 
             case "error":
               if (requestLogId && !requestFinished) {
@@ -2027,6 +2089,7 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
                   error: data.message,
                 });
               }
+              observer?.onError?.(data.message);
               if (
                 data.message.includes("429") ||
                 data.message.toLowerCase().includes("rate limit")
@@ -2097,6 +2160,7 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
           providerConfig,
           effectiveExecutionStrategy,
           webSearch,
+          autoContinue,
         );
       } catch (error) {
         if (requestLogId && !requestFinished) {
@@ -2110,6 +2174,7 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
         }
         console.error("[AsterChat] 发送失败:", error);
         const errMsg = error instanceof Error ? error.message : String(error);
+        observer?.onError?.(errMsg);
         if (
           errMsg.includes("429") ||
           errMsg.toLowerCase().includes("rate limit")
@@ -2344,6 +2409,10 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
     ) => {
       const { showToast = true, toastMessage = "新话题已创建" } = options;
 
+      const scopedSessionKey = getScopedSessionKey();
+      const scopedPersistedSessionKey = getScopedPersistedSessionKey();
+      const scopedMessagesKey = getScopedMessagesKey();
+
       setMessages([]);
       setSessionId(null);
       setPendingActions([]);
@@ -2353,11 +2422,15 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
       currentAssistantMsgIdRef.current = null;
       currentStreamingSessionIdRef.current = null;
 
+      saveTransient(scopedSessionKey, null);
+      savePersisted(scopedPersistedSessionKey, null);
+      saveTransient(scopedMessagesKey, []);
+
       if (showToast) {
         toast.success(toastMessage);
       }
     },
-    [],
+    [getScopedMessagesKey, getScopedPersistedSessionKey, getScopedSessionKey],
   );
 
   // 删除消息

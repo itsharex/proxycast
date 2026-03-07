@@ -42,6 +42,34 @@ const VALID_ACTION_TYPES = new Set<ActionRequired["actionType"]>([
   "ask_user",
   "elicitation",
 ]);
+const SOCIAL_ARTICLE_SKILL_KEY = "social_post_with_cover";
+const WRITE_FILE_TAG_REGEX =
+  /<write_file(?:\s+path=["'][^"']+["'])?\s*>[\s\S]*?<\/write_file>/i;
+
+function hasWriteFileTag(content: string | undefined): boolean {
+  if (!content) {
+    return false;
+  }
+  return WRITE_FILE_TAG_REGEX.test(content);
+}
+
+function buildSocialPostSlug(seed: string): string {
+  const normalized = seed
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 24);
+  return normalized || "post";
+}
+
+function buildSocialPostFallbackPath(seed: string, assistantMsgId: string): string {
+  const now = new Date();
+  const format2 = (value: number) => String(value).padStart(2, "0");
+  const timestamp = `${now.getFullYear()}${format2(now.getMonth() + 1)}${format2(now.getDate())}-${format2(now.getHours())}${format2(now.getMinutes())}${format2(now.getSeconds())}`;
+  const slug = buildSocialPostSlug(seed);
+  const suffix = assistantMsgId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 6) || "run";
+  return `social-posts/${timestamp}-${slug}-${suffix.toLowerCase()}.md`;
+}
 
 /**
  * 解析 slash skill 命令。
@@ -570,6 +598,8 @@ export async function tryExecuteSlashSkillCommand(
       : null;
 
     const failureText = failure ? formatSkillFailureMessage(failure) : "";
+    const resultHasWriteFile = hasWriteFileTag(result.output);
+    const shouldForceResultOutput = !failure && resultHasWriteFile;
 
     const finalContent = failure
       ? hasStreamedContent
@@ -577,7 +607,9 @@ export async function tryExecuteSlashSkillCommand(
 
 ${failureText}`
         : failureText
-      : hasStreamedContent
+      : shouldForceResultOutput
+        ? result.output || "Skill 执行完成"
+        : hasStreamedContent
         ? accumulatedContent
         : result.output || "Skill 执行完成";
 
@@ -591,7 +623,14 @@ ${failureText}`
       prev.map((msg) => {
         if (msg.id !== assistantMsgId) return msg;
 
-        const nextParts = [...(msg.contentParts || [])];
+        const nextParts = shouldForceResultOutput
+          ? [
+              ...(msg.contentParts || []).filter(
+                (part) => part.type !== "text" && part.type !== "thinking",
+              ),
+              { type: "text" as const, text: finalContent },
+            ]
+          : [...(msg.contentParts || [])];
         if (nextParts.length === 0 && finalContent) {
           nextParts.push({ type: "text", text: finalContent });
         }
@@ -605,6 +644,18 @@ ${failureText}`
         };
       }),
     );
+
+    if (
+      !failure &&
+      command.skillName === SOCIAL_ARTICLE_SKILL_KEY &&
+      onWriteFile &&
+      finalContent.trim().length > 0 &&
+      !hasWriteFileTag(finalContent)
+    ) {
+      const seed = command.userInput || rawContent;
+      const fallbackPath = buildSocialPostFallbackPath(seed, assistantMsgId);
+      onWriteFile(finalContent, fallbackPath);
+    }
 
     cleanup();
     return true;

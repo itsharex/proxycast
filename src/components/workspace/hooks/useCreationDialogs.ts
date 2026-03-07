@@ -3,6 +3,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
   type Dispatch,
   type SetStateAction,
@@ -37,6 +38,17 @@ import {
   type CreationIntentInput,
   validateCreationIntent,
 } from "@/components/workspace/utils/creationIntentPrompt";
+import type { A2UIFormData } from "@/components/content-creator/a2ui/types";
+import {
+  type CreateConfirmationSource,
+  type PendingCreateConfirmation,
+} from "@/components/workspace/utils/createConfirmationPolicy";
+import {
+  consumePendingCreateConfirmationMap,
+  resolveContinuationTargetContent,
+  resolveCreateConfirmationDecision,
+  upsertPendingCreateConfirmationMap,
+} from "@/components/workspace/services/createConfirmationService";
 import { reportFrontendError } from "@/lib/crashReporting";
 
 type CreateContentDialogStep = "mode" | "intent";
@@ -323,11 +335,18 @@ export interface UseCreationDialogsParams {
     contentId: string,
     options?: {
       showChatPanel?: boolean;
+      createEntryHome?: boolean;
     },
   ) => void;
   onProjectCreated: (projectId: string) => void;
   defaultCreationMode: CreationMode;
   minCreationIntentLength: number;
+  initialCreateConfirmation?: {
+    prompt?: string;
+    source?: CreateConfirmationSource;
+    creationMode?: CreationMode;
+    fallbackContentTitle?: string;
+  };
 }
 
 export interface QuickCreateProjectAndContentOptions {
@@ -354,6 +373,7 @@ export function useCreationDialogs({
   onProjectCreated,
   defaultCreationMode,
   minCreationIntentLength,
+  initialCreateConfirmation,
 }: UseCreationDialogsParams) {
   const [createProjectDialogOpen, setCreateProjectDialogOpen] = useState(false);
   const [createContentDialogOpen, setCreateContentDialogOpen] = useState(false);
@@ -371,9 +391,15 @@ export function useCreationDialogs({
   const [pathConflictMessage, setPathConflictMessage] = useState("");
   const [pendingInitialPromptsByContentId, setPendingInitialPromptsByContentId] =
     useState<Record<string, string>>({});
+  const [pendingCreateConfirmationByProjectId, setPendingCreateConfirmationByProjectId] =
+    useState<Record<string, PendingCreateConfirmation>>({});
   const [contentCreationModes, setContentCreationModes] = useState<
     Record<string, CreationMode>
   >({});
+  const createConfirmationSubmittingProjectsRef = useRef<Record<string, boolean>>(
+    {},
+  );
+  const initialCreateConfirmationAppliedRef = useRef(false);
 
   const resetProjectPathState = useCallback(() => {
     setResolvedProjectPath("");
@@ -431,6 +457,40 @@ export function useCreationDialogs({
     });
   }, []);
 
+  const upsertPendingCreateConfirmation = useCallback(
+    (
+      projectId: string,
+      source: CreateConfirmationSource,
+      options?: {
+        initialUserPrompt?: string;
+        creationMode?: CreationMode;
+        preferredContentId?: string;
+        fallbackContentTitle?: string;
+      },
+    ) => {
+      if (!projectId) {
+        return;
+      }
+      setPendingCreateConfirmationByProjectId((previous) => ({
+        ...upsertPendingCreateConfirmationMap(previous, projectId, {
+          source,
+          defaultCreationMode,
+          creationMode: normalizeCreationMode(options?.creationMode),
+          initialUserPrompt: options?.initialUserPrompt,
+          preferredContentId: options?.preferredContentId,
+          fallbackContentTitle: options?.fallbackContentTitle,
+        }),
+      }));
+    },
+    [defaultCreationMode],
+  );
+
+  const consumePendingCreateConfirmation = useCallback((projectId: string) => {
+    setPendingCreateConfirmationByProjectId((previous) => {
+      return consumePendingCreateConfirmationMap(previous, projectId);
+    });
+  }, []);
+
   const handleOpenCreateProjectDialog = useCallback(() => {
     setNewProjectName(`${getProjectTypeLabel(theme as ProjectType)}项目`);
     resetProjectPathState();
@@ -457,25 +517,11 @@ export function useCreationDialogs({
       onProjectCreated(createdProject.id);
       toast.success("已创建新项目");
       await loadProjects();
-
-      // 自动创建默认文稿并进入创作页面
-      try {
-        const defaultContentType = getDefaultContentTypeForProject(createdProject.workspaceType);
-        const contentTypeLabel = getContentTypeLabel(defaultContentType);
-        const defaultContent = await createContent({
-          project_id: createdProject.id,
-          title: `新${contentTypeLabel}`,
-          content_type: defaultContentType,
-        });
-
-        // 加载文稿列表并进入创作页面
-        await loadContents(createdProject.id);
-        onEnterWorkspace(defaultContent.id);
-      } catch (contentError) {
-        console.error("自动创建默认文稿失败:", contentError);
-        // 文稿创建失败不影响项目创建成功的提示
-        // 用户可以手动创建文稿
-      }
+      await loadContents(createdProject.id);
+      upsertPendingCreateConfirmation(createdProject.id, "project_created", {
+        creationMode: defaultCreationMode,
+      });
+      onEnterWorkspace("", { createEntryHome: true });
     } catch (error) {
       console.error("创建项目失败:", error);
       void reportFrontendError(error, {
@@ -488,7 +534,16 @@ export function useCreationDialogs({
     } finally {
       setCreatingProject(false);
     }
-  }, [loadProjects, loadContents, newProjectName, onProjectCreated, onEnterWorkspace, theme]);
+  }, [
+    defaultCreationMode,
+    loadContents,
+    loadProjects,
+    newProjectName,
+    onEnterWorkspace,
+    onProjectCreated,
+    theme,
+    upsertPendingCreateConfirmation,
+  ]);
 
   const handleQuickCreateProjectAndContent = useCallback(
     async (options: QuickCreateProjectAndContentOptions) => {
@@ -514,40 +569,17 @@ export function useCreationDialogs({
         onProjectCreated(createdProject.id);
         await loadProjects();
 
-        const defaultContentType = getDefaultContentTypeForProject(
-          createdProject.workspaceType,
-        );
-        const contentTitle =
-          options.contentTitle?.trim() ||
-          `新${getContentTypeLabel(defaultContentType)}`;
-        const createdContent = await createContent({
-          project_id: createdProject.id,
-          title: contentTitle,
-          content_type: defaultContentType,
-          metadata: {
-            creationMode,
-            quickCreate: true,
-          },
-        });
-
-        setContentCreationModes((previous) => ({
-          ...previous,
-          [createdContent.id]: creationMode,
-        }));
-
-        if (initialPrompt) {
-          setPendingInitialPromptsByContentId((previous) => ({
-            ...previous,
-            [createdContent.id]: initialPrompt,
-          }));
-        }
-
         await loadContents(createdProject.id);
-        onEnterWorkspace(createdContent.id, { showChatPanel: true });
+        upsertPendingCreateConfirmation(createdProject.id, "quick_create", {
+          creationMode,
+          initialUserPrompt: initialPrompt,
+          fallbackContentTitle: options.contentTitle,
+        });
+        onEnterWorkspace("", { createEntryHome: true });
 
         return {
           projectId: createdProject.id,
-          contentId: createdContent.id,
+          contentId: "",
         };
       } catch (error) {
         console.error("快速创建项目与文稿失败:", error);
@@ -559,7 +591,15 @@ export function useCreationDialogs({
         throw error;
       }
     },
-    [defaultCreationMode, loadContents, loadProjects, onEnterWorkspace, onProjectCreated, theme],
+    [
+      defaultCreationMode,
+      loadContents,
+      loadProjects,
+      onEnterWorkspace,
+      onProjectCreated,
+      theme,
+      upsertPendingCreateConfirmation,
+    ],
   );
 
   const handleOpenProjectForWriting = useCallback(
@@ -578,38 +618,32 @@ export function useCreationDialogs({
         let targetContentId = latestContent?.id || "";
 
         if (!targetContentId) {
-          const defaultContentType = getDefaultContentTypeForProject(
-            theme as ProjectType,
-          );
-          const fallbackTitle =
-            options?.fallbackContentTitle?.trim() ||
-            `新${getContentTypeLabel(defaultContentType)}`;
-          const createdContent = await createContent({
-            project_id: projectId,
-            title: fallbackTitle,
-            content_type: defaultContentType,
-            metadata: {
-              creationMode,
-              quickCreate: true,
-            },
+          onProjectCreated(projectId);
+          await loadContents(projectId);
+          upsertPendingCreateConfirmation(projectId, "open_project_for_writing", {
+            initialUserPrompt: initialPrompt,
+            creationMode,
+            fallbackContentTitle: options?.fallbackContentTitle,
           });
-          targetContentId = createdContent.id;
-          setContentCreationModes((previous) => ({
-            ...previous,
-            [createdContent.id]: creationMode,
-          }));
+          onEnterWorkspace("", { createEntryHome: true });
+          return "";
         }
+        consumePendingCreateConfirmation(projectId);
 
         if (initialPrompt) {
           setPendingInitialPromptsByContentId((previous) => ({
             ...previous,
             [targetContentId]: initialPrompt,
           }));
+          setContentCreationModes((previous) => ({
+            ...previous,
+            [targetContentId]: creationMode,
+          }));
         }
 
         onProjectCreated(projectId);
         await loadContents(projectId);
-        onEnterWorkspace(targetContentId, { showChatPanel: true });
+        onEnterWorkspace(targetContentId, {});
         return targetContentId;
       } catch (error) {
         console.error("打开项目写作失败:", error);
@@ -621,7 +655,14 @@ export function useCreationDialogs({
         throw error;
       }
     },
-    [defaultCreationMode, loadContents, onEnterWorkspace, onProjectCreated, theme],
+    [
+      consumePendingCreateConfirmation,
+      defaultCreationMode,
+      loadContents,
+      onEnterWorkspace,
+      onProjectCreated,
+      upsertPendingCreateConfirmation,
+    ],
   );
 
   const handleOpenCreateContentDialog = useCallback(() => {
@@ -629,8 +670,190 @@ export function useCreationDialogs({
       return;
     }
     resetCreateContentDialogState();
-    setCreateContentDialogOpen(true);
-  }, [resetCreateContentDialogState, selectedProjectId]);
+    upsertPendingCreateConfirmation(selectedProjectId, "workspace_create_entry", {
+      creationMode: defaultCreationMode,
+      preferredContentId: selectedContentId || undefined,
+    });
+    onEnterWorkspace("", { createEntryHome: true });
+  }, [
+    defaultCreationMode,
+    onEnterWorkspace,
+    resetCreateContentDialogState,
+    selectedContentId,
+    selectedProjectId,
+    upsertPendingCreateConfirmation,
+  ]);
+
+  const handleCreateContentFromWorkspaceEntry = useCallback(() => {
+    if (!selectedProjectId) {
+      return;
+    }
+    resetCreateContentDialogState();
+    upsertPendingCreateConfirmation(selectedProjectId, "workspace_create_entry", {
+      creationMode: defaultCreationMode,
+      preferredContentId: selectedContentId || undefined,
+    });
+    onEnterWorkspace("", { createEntryHome: true });
+  }, [
+    defaultCreationMode,
+    onEnterWorkspace,
+    resetCreateContentDialogState,
+    selectedContentId,
+    selectedProjectId,
+    upsertPendingCreateConfirmation,
+  ]);
+
+  const handleCreateContentFromWorkspacePrompt = useCallback(
+    async (initialUserPrompt: string) => {
+      if (!selectedProjectId || creatingContent) {
+        return;
+      }
+
+      const normalizedPrompt = initialUserPrompt.trim();
+      if (!normalizedPrompt) {
+        return;
+      }
+
+      upsertPendingCreateConfirmation(selectedProjectId, "workspace_prompt", {
+        initialUserPrompt: normalizedPrompt,
+        creationMode: defaultCreationMode,
+        preferredContentId: selectedContentId || undefined,
+      });
+      resetCreateContentDialogState();
+      onEnterWorkspace("", { createEntryHome: true });
+      toast.success("已记录创建请求，请确认后生成");
+    },
+    [
+      creatingContent,
+      defaultCreationMode,
+      onEnterWorkspace,
+      resetCreateContentDialogState,
+      selectedContentId,
+      selectedProjectId,
+      upsertPendingCreateConfirmation,
+    ],
+  );
+
+  const submitCreateConfirmation = useCallback(
+    async (projectId: string, formData: A2UIFormData) => {
+      if (!projectId) {
+        return;
+      }
+      if (creatingContent) {
+        return;
+      }
+      if (createConfirmationSubmittingProjectsRef.current[projectId]) {
+        return;
+      }
+      const pending = pendingCreateConfirmationByProjectId[projectId];
+      if (!pending) {
+        toast.error("当前没有待确认的创建请求");
+        return;
+      }
+
+      const defaultType = getDefaultContentTypeForProject(theme as ProjectType);
+      const defaultTitle = `新${getContentTypeLabel(defaultType)}`;
+      const decisionResult = resolveCreateConfirmationDecision({
+        pending,
+        formData,
+        defaultContentTitle: defaultTitle,
+      });
+      if (!decisionResult.ok) {
+        toast.error(decisionResult.message);
+        return;
+      }
+      const decision = decisionResult.decision;
+
+      createConfirmationSubmittingProjectsRef.current[projectId] = true;
+
+      if (decision.type === "continue_history") {
+        try {
+          const existingContents = await listContents(projectId);
+          const latestContent = resolveContinuationTargetContent(
+            existingContents,
+            decision.preferredContentId,
+          );
+
+          if (!latestContent?.id) {
+            toast.error("当前项目暂无历史文稿，请选择新开帖子或新建版本");
+            return;
+          }
+
+          if (decision.initialUserPrompt) {
+            setPendingInitialPromptsByContentId((previous) => ({
+              ...previous,
+              [latestContent.id]: decision.initialUserPrompt,
+            }));
+          }
+
+          setContentCreationModes((previous) => ({
+            ...previous,
+            [latestContent.id]: decision.creationMode,
+          }));
+
+          await loadContents(projectId);
+          onEnterWorkspace(latestContent.id, {});
+          consumePendingCreateConfirmation(projectId);
+          toast.success("已进入历史文稿");
+        } catch (error) {
+          console.error("回到历史文稿失败:", error);
+          void reportFrontendError(error, {
+            component: "useCreationDialogs",
+            workflow_step: "workspace_creation_confirm_continue_history",
+          });
+          toast.error("回到历史文稿失败");
+        } finally {
+          delete createConfirmationSubmittingProjectsRef.current[projectId];
+        }
+        return;
+      }
+
+      setCreatingContent(true);
+      try {
+        const created = await createContent({
+          project_id: projectId,
+          title: decision.title,
+          content_type: defaultType,
+          metadata: decision.metadata,
+        });
+
+        setContentCreationModes((previous) => ({
+          ...previous,
+          [created.id]: decision.creationMode,
+        }));
+
+        if (decision.initialUserPrompt) {
+          setPendingInitialPromptsByContentId((previous) => ({
+            ...previous,
+            [created.id]: decision.initialUserPrompt,
+          }));
+        }
+
+        consumePendingCreateConfirmation(projectId);
+        await loadContents(projectId);
+        onEnterWorkspace(created.id, {});
+        toast.success("已创建新文稿");
+      } catch (error) {
+        console.error("确认后创建文稿失败:", error);
+        void reportFrontendError(error, {
+          component: "useCreationDialogs",
+          workflow_step: "workspace_creation_submit_confirmation",
+        });
+        toast.error("创建文稿失败");
+      } finally {
+        setCreatingContent(false);
+        delete createConfirmationSubmittingProjectsRef.current[projectId];
+      }
+    },
+    [
+      consumePendingCreateConfirmation,
+      creatingContent,
+      loadContents,
+      onEnterWorkspace,
+      pendingCreateConfirmationByProjectId,
+      theme,
+    ],
+  );
 
   const handleCreationIntentValueChange = useCallback(
     (key: CreationIntentFieldKey, value: string) => {
@@ -713,7 +936,7 @@ export function useCreationDialogs({
       setCreateContentDialogOpen(false);
       resetCreateContentDialogState();
       await loadContents(selectedProjectId);
-      onEnterWorkspace(created.id, { showChatPanel: true });
+      onEnterWorkspace(created.id, {});
       toast.success("已创建新文稿");
     } catch (error) {
       console.error("创建文稿失败:", error);
@@ -768,6 +991,39 @@ export function useCreationDialogs({
     setContentCreationModes,
   });
 
+  useEffect(() => {
+    if (initialCreateConfirmationAppliedRef.current) {
+      return;
+    }
+    if (!selectedProjectId) {
+      return;
+    }
+    const normalizedPrompt = initialCreateConfirmation?.prompt?.trim() || "";
+    if (!normalizedPrompt) {
+      initialCreateConfirmationAppliedRef.current = true;
+      return;
+    }
+
+    upsertPendingCreateConfirmation(
+      selectedProjectId,
+      initialCreateConfirmation?.source || "workspace_prompt",
+      {
+        initialUserPrompt: normalizedPrompt,
+        creationMode:
+          initialCreateConfirmation?.creationMode ?? defaultCreationMode,
+        fallbackContentTitle: initialCreateConfirmation?.fallbackContentTitle,
+      },
+    );
+    onEnterWorkspace("", { createEntryHome: true });
+    initialCreateConfirmationAppliedRef.current = true;
+  }, [
+    defaultCreationMode,
+    initialCreateConfirmation,
+    onEnterWorkspace,
+    selectedProjectId,
+    upsertPendingCreateConfirmation,
+  ]);
+
   return {
     createProjectDialogOpen,
     setCreateProjectDialogOpen,
@@ -788,6 +1044,7 @@ export function useCreationDialogs({
     currentCreationIntentFields,
     currentIntentLength,
     pendingInitialPromptsByContentId,
+    pendingCreateConfirmationByProjectId,
     contentCreationModes,
     resolvedProjectPath,
     pathChecking,
@@ -796,12 +1053,16 @@ export function useCreationDialogs({
     handleOpenCreateProjectDialog,
     handleCreateProject,
     handleOpenCreateContentDialog,
+    handleCreateContentFromWorkspaceEntry,
+    handleCreateContentFromWorkspacePrompt,
     handleCreationIntentValueChange,
     handleGoToIntentStep,
     handleCreateContent,
     handleQuickCreateProjectAndContent,
     handleOpenProjectForWriting,
+    submitCreateConfirmation,
     consumePendingInitialPrompt,
+    consumePendingCreateConfirmation,
   };
 }
 

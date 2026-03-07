@@ -20,6 +20,7 @@ const ChatPanel = styled.div<{
   $width: string;
   $duration: number;
   $minWidth: string;
+  $hidden: boolean;
 }>`
   height: 100%;
   overflow: hidden;
@@ -27,7 +28,7 @@ const ChatPanel = styled.div<{
   width: ${({ $width }) => $width};
   min-width: ${({ $minWidth }) => $minWidth};
   will-change: width;
-  display: flex;
+  display: ${({ $hidden }) => ($hidden ? "none" : "flex")};
   flex-direction: column;
   padding: 16px 16px 16px 0;
 `;
@@ -107,6 +108,7 @@ export const LayoutTransition: React.FC<LayoutTransitionProps> = memo(
             chatStyles.transition?.match(/\d+/)?.[0] || "300",
           )}
           $minWidth={mode === "canvas" ? "0px" : "460px"}
+          $hidden={mode === "canvas"}
         >
           <ChatPanelInner>{chatContent}</ChatPanelInner>
         </ChatPanel>

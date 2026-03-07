@@ -1053,6 +1053,14 @@ const defaultMocks: Record<string, any> = {
   generate_content_creator_tasks: () => 0,
   execution_run_list: () => [],
   execution_run_get: () => null,
+  execution_run_get_theme_workbench_state: () => ({
+    run_state: "idle",
+    current_gate_key: "idle",
+    queue_items: [],
+    latest_terminal: null,
+    updated_at: new Date().toISOString(),
+  }),
+  content_get_theme_workbench_document_state: () => null,
 
   // Workspace 相关
   workspace_list: () => [],

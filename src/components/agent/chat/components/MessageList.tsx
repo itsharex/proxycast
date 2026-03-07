@@ -44,7 +44,7 @@ interface MessageListProps {
   onCodeBlockClick?: (language: string, code: string) => void;
 }
 
-export const MessageList: React.FC<MessageListProps> = ({
+const MessageListInner: React.FC<MessageListProps> = ({
   messages,
   onDeleteMessage,
   onEditMessage,
@@ -338,3 +338,6 @@ export const MessageList: React.FC<MessageListProps> = ({
     </MessageListContainer>
   );
 };
+
+export const MessageList = React.memo(MessageListInner);
+MessageList.displayName = "MessageList";

@@ -87,7 +87,7 @@ fn should_create_backup() -> bool {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[allow(dead_code)]
 enum ShellConfigSyntax {
     Posix,
     PowerShell,

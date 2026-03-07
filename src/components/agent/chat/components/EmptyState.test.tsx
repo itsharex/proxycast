@@ -5,6 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EmptyState } from "./EmptyState";
 import type { Character } from "@/lib/api/memory";
 import type { Skill } from "@/lib/api/skills";
+import { composeEntryPrompt } from "../utils/entryPromptComposer";
+
+const { mockGetConfig } = vi.hoisted(() => ({
+  mockGetConfig: vi.fn(async () => ({})),
+}));
 
 const mockCharacterMention = vi.fn<
   (props: {
@@ -17,7 +22,7 @@ const mockCharacterMention = vi.fn<
 >();
 
 vi.mock("@/hooks/useTauri", () => ({
-  getConfig: vi.fn(async () => ({})),
+  getConfig: mockGetConfig,
 }));
 
 vi.mock("./ChatModelSelector", () => ({
@@ -139,6 +144,7 @@ beforeEach(() => {
       IS_REACT_ACT_ENVIRONMENT?: boolean;
     }
   ).IS_REACT_ACT_ENVIRONMENT = true;
+  mockGetConfig.mockImplementation(async () => ({}));
 });
 
 afterEach(() => {
@@ -299,6 +305,125 @@ describe("EmptyState", () => {
     });
 
     expect(onWebSearchEnabledChange).toHaveBeenCalledWith(true);
+  });
+
+  it("社媒主题发送时应默认走 social_post_with_cover skill", async () => {
+    const onSend = vi.fn<
+      (
+        value: string,
+        executionStrategy?: "react" | "code_orchestrated" | "auto",
+        images?: unknown[],
+      ) => void
+    >();
+    vi.mocked(composeEntryPrompt).mockReturnValue("请输出一篇新品社媒文案");
+
+    const container = renderEmptyState({
+      activeTheme: "social-media",
+      onSend,
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const sendButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("开始生成"),
+    );
+    expect(sendButton).toBeTruthy();
+
+    act(() => {
+      sendButton?.click();
+    });
+
+    expect(onSend).toHaveBeenCalledWith(
+      "/social_post_with_cover 请输出一篇新品社媒文案",
+      "react",
+      undefined,
+    );
+  });
+
+  it("即使存在历史配置字段，社媒主题仍应自动注入默认 skill", async () => {
+    mockGetConfig.mockImplementation(async () => ({
+      chat_appearance: {},
+    }));
+    vi.mocked(composeEntryPrompt).mockReturnValue("请输出一篇用户访谈纪要");
+
+    const onSend = vi.fn<
+      (
+        value: string,
+        executionStrategy?: "react" | "code_orchestrated" | "auto",
+        images?: unknown[],
+      ) => void
+    >();
+    const container = renderEmptyState({
+      activeTheme: "social-media",
+      onSend,
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const sendButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("开始生成"),
+    );
+    expect(sendButton).toBeTruthy();
+
+    act(() => {
+      sendButton?.click();
+    });
+
+    expect(onSend).toHaveBeenCalledWith(
+      "/social_post_with_cover 请输出一篇用户访谈纪要",
+      "react",
+      undefined,
+    );
+  });
+
+  it("社媒主题手动选择 skill 时应优先使用手动 skill", async () => {
+    const onSend = vi.fn<
+      (
+        value: string,
+        executionStrategy?: "react" | "code_orchestrated" | "auto",
+        images?: unknown[],
+      ) => void
+    >();
+    vi.mocked(composeEntryPrompt).mockReturnValue("请输出一篇品牌故事");
+    const skill: Skill = {
+      key: "custom-social-skill",
+      name: "custom-social-skill",
+      description: "desc",
+      directory: "custom-social-skill",
+      installed: true,
+    };
+
+    const container = renderEmptyState({
+      activeTheme: "social-media",
+      onSend,
+      skills: [skill],
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const latestCall =
+      mockCharacterMention.mock.calls[mockCharacterMention.mock.calls.length - 1][0];
+    act(() => {
+      latestCall.onSelectSkill?.(skill);
+    });
+
+    const sendButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("开始生成"),
+    );
+    expect(sendButton).toBeTruthy();
+
+    act(() => {
+      sendButton?.click();
+    });
+
+    expect(onSend).toHaveBeenCalledWith(
+      "/custom-social-skill 请输出一篇品牌故事",
+      "react",
+      undefined,
+    );
   });
 
   it("通用主题工具栏应包含附件和深度思考开关", async () => {

@@ -124,7 +124,7 @@ function WorkbenchControllerHarness(props: ControllerHarnessProps) {
       <button
         data-testid="enter-workspace"
         onClick={() =>
-          controller.handleEnterWorkspace("content-new", { showChatPanel: false })
+          controller.handleEnterWorkspace("content-new")
         }
       />
     </div>
@@ -180,10 +180,6 @@ beforeEach(() => {
   mockUseWorkbenchProjectData.mockReturnValue(createProjectDataHookValue());
 
   mockUseWorkbenchNavigation.mockReturnValue({
-    activeRightDrawer: null,
-    setActiveRightDrawer: vi.fn(),
-    showChatPanel: true,
-    setShowChatPanel: vi.fn(),
     workflowProgress: null,
     setWorkflowProgress: vi.fn(),
     showWorkflowRail: false,
@@ -194,6 +190,7 @@ beforeEach(() => {
     setActiveWorkspaceView: vi.fn(),
     shouldRenderLeftSidebar: false,
     isCreateWorkspaceView: true,
+    showCreateContentEntryHome: false,
     shouldRenderWorkspaceRightRail: true,
     activeWorkspaceViewLabel: "创作",
     hasWorkflowWorkspaceView: true,
@@ -226,6 +223,7 @@ beforeEach(() => {
     currentCreationIntentFields: [],
     currentIntentLength: 0,
     pendingInitialPromptsByContentId: {},
+    pendingCreateConfirmationByProjectId: {},
     contentCreationModes: {},
     resolvedProjectPath: "",
     pathChecking: false,
@@ -237,7 +235,11 @@ beforeEach(() => {
     handleCreationIntentValueChange: vi.fn(),
     handleGoToIntentStep: vi.fn(),
     handleCreateContent: vi.fn(),
+    handleQuickCreateProjectAndContent: vi.fn(),
+    handleOpenProjectForWriting: vi.fn(),
+    submitCreateConfirmation: vi.fn(),
     consumePendingInitialPrompt: vi.fn(),
+    consumePendingCreateConfirmation: vi.fn(),
   });
 
   mockUseWorkbenchPanelRenderer.mockReturnValue({
@@ -309,17 +311,12 @@ describe("useWorkbenchController", () => {
     const setWorkspaceMode = navigation.setWorkspaceMode as ReturnType<typeof vi.fn>;
     const setActiveWorkspaceView =
       navigation.setActiveWorkspaceView as ReturnType<typeof vi.fn>;
-    const setShowChatPanel = navigation.setShowChatPanel as ReturnType<typeof vi.fn>;
-    const setActiveRightDrawer =
-      navigation.setActiveRightDrawer as ReturnType<typeof vi.fn>;
     const setLeftSidebarCollapsed =
       store.setLeftSidebarCollapsed as ReturnType<typeof vi.fn>;
 
     expect(setSelectedContentId).toHaveBeenCalledWith("content-new");
     expect(setWorkspaceMode).toHaveBeenCalledWith("workspace");
     expect(setActiveWorkspaceView).toHaveBeenCalledWith("create");
-    expect(setShowChatPanel).toHaveBeenCalledWith(false);
-    expect(setActiveRightDrawer).toHaveBeenCalledWith(null);
     expect(setLeftSidebarCollapsed).toHaveBeenCalledWith(true);
   });
 

@@ -28,7 +28,6 @@ import { WorkbenchPage } from "./components/workspace";
 import {
   ProjectType,
   createProject,
-  createContent,
   isUserProjectType,
   resolveProjectRootPath,
 } from "./lib/api/project";
@@ -283,15 +282,12 @@ function AppContent() {
     });
 
     if (pendingRecommendation) {
-      const content = await createContent({
-        project_id: project.id,
-        title: name,
-        body: pendingRecommendation.fullPrompt,
-      });
-
-      handleNavigate("agent", {
+      handleNavigate(getThemeWorkspacePage(type as WorkspaceTheme), {
         projectId: project.id,
-        contentId: content.id,
+        workspaceViewMode: "workspace",
+        workspaceCreatePrompt: pendingRecommendation.fullPrompt,
+        workspaceCreateSource: "workspace_prompt",
+        workspaceCreateFallbackTitle: name,
       });
 
       setPendingRecommendation(null);
@@ -368,30 +364,38 @@ function AppContent() {
   }, []);
 
   const renderThemeWorkspaces = () => {
-    return THEME_WORKSPACE_PAGES.map((page) => {
-      const theme = getThemeByWorkspacePage(page);
+    if (!THEME_WORKSPACE_PAGES.includes(currentPage as ThemeWorkspacePage)) {
+      return null;
+    }
 
-      return (
-        <div
-          key={page}
-          style={{
-            flex: 1,
-            minHeight: 0,
-            display: currentPage === page ? "flex" : "none",
-            flexDirection: "column",
-          }}
-        >
-          <WorkbenchPage
-            onNavigate={handleNavigate}
-            projectId={(pageParams as AgentPageParams).projectId}
-            contentId={(pageParams as AgentPageParams).contentId}
-            theme={theme}
-            viewMode={(pageParams as AgentPageParams).workspaceViewMode}
-            resetAt={(pageParams as AgentPageParams).workspaceResetAt}
-          />
-        </div>
-      );
-    });
+    const page = currentPage as ThemeWorkspacePage;
+    const theme = getThemeByWorkspacePage(page);
+
+    return (
+      <div
+        key={page}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <WorkbenchPage
+          onNavigate={handleNavigate}
+          projectId={(pageParams as AgentPageParams).projectId}
+          contentId={(pageParams as AgentPageParams).contentId}
+          theme={theme}
+          viewMode={(pageParams as AgentPageParams).workspaceViewMode}
+          resetAt={(pageParams as AgentPageParams).workspaceResetAt}
+          initialCreatePrompt={(pageParams as AgentPageParams).workspaceCreatePrompt}
+          initialCreateSource={(pageParams as AgentPageParams).workspaceCreateSource}
+          initialCreateFallbackTitle={
+            (pageParams as AgentPageParams).workspaceCreateFallbackTitle
+          }
+        />
+      </div>
+    );
   };
 
   const renderAllPages = () => {
@@ -427,17 +431,19 @@ function AppContent() {
             flexDirection: "column",
           }}
         >
-          <AgentChatPage
-            key={`${(pageParams as AgentPageParams).projectId || ""}:${(pageParams as AgentPageParams).contentId || ""}:${(pageParams as AgentPageParams).theme || ""}:${(pageParams as AgentPageParams).lockTheme ? "1" : "0"}`}
-            onNavigate={handleNavigate}
-            projectId={(pageParams as AgentPageParams).projectId}
-            contentId={(pageParams as AgentPageParams).contentId}
-            theme={(pageParams as AgentPageParams).theme}
-            lockTheme={(pageParams as AgentPageParams).lockTheme}
-            fromResources={(pageParams as AgentPageParams).fromResources}
-            newChatAt={(pageParams as AgentPageParams).newChatAt}
-            onHasMessagesChange={setAgentHasMessages}
-          />
+          {currentPage === "agent" ? (
+            <AgentChatPage
+              key={`${(pageParams as AgentPageParams).projectId || ""}:${(pageParams as AgentPageParams).contentId || ""}:${(pageParams as AgentPageParams).theme || ""}:${(pageParams as AgentPageParams).lockTheme ? "1" : "0"}:${(pageParams as AgentPageParams).newChatAt ?? 0}`}
+              onNavigate={handleNavigate}
+              projectId={(pageParams as AgentPageParams).projectId}
+              contentId={(pageParams as AgentPageParams).contentId}
+              theme={(pageParams as AgentPageParams).theme}
+              lockTheme={(pageParams as AgentPageParams).lockTheme}
+              fromResources={(pageParams as AgentPageParams).fromResources}
+              newChatAt={(pageParams as AgentPageParams).newChatAt}
+              onHasMessagesChange={setAgentHasMessages}
+            />
+          ) : null}
         </div>
 
         {renderThemeWorkspaces()}

@@ -626,7 +626,7 @@ impl WSLShellProc {
         input_rx: mpsc::Receiver<BlockInputUnion>,
         block_file: Option<Arc<BlockFile>>,
     ) -> Result<Self, TerminalError> {
-        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+        use portable_pty::{native_pty_system, PtySize};
 
         tracing::info!(
             "[WSLShellProc] 创建 WSL 进程: block_id={}, distro={}, size={}x{}",

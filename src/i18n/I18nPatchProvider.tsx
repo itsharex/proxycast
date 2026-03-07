@@ -17,7 +17,7 @@ import {
   useContext,
   ReactNode,
 } from "react";
-import { replaceTextInDOM } from "./dom-replacer";
+import { replaceTextInDOM, replaceTextInNode } from "./dom-replacer";
 import { Language, isValidLanguage } from "./text-map";
 
 export interface I18nPatchContextValue {
@@ -29,6 +29,33 @@ const I18nPatchContext = createContext<I18nPatchContextValue>({
   language: "zh",
   setLanguage: () => {},
 });
+
+const EDITABLE_CONTAINER_SELECTOR =
+  "input, textarea, [contenteditable=''], [contenteditable='true'], [contenteditable='plaintext-only'], .ProseMirror";
+
+function resolveMutationElement(node: Node): Element | null {
+  if (node instanceof Element) {
+    return node;
+  }
+  return node.parentElement;
+}
+
+function isIgnoredMutationNode(node: Node): boolean {
+  const element = resolveMutationElement(node);
+  if (!element) {
+    return true;
+  }
+
+  if (element.matches(EDITABLE_CONTAINER_SELECTOR)) {
+    return true;
+  }
+
+  if (element.closest(EDITABLE_CONTAINER_SELECTOR)) {
+    return true;
+  }
+
+  return false;
+}
 
 /**
  * Hook to access i18n patch context
@@ -84,37 +111,104 @@ export function I18nPatchProvider({
     }
 
     // Set up MutationObserver for dynamic content with debouncing
+    const pendingRoots = new Set<Node>();
     let timeoutId: number | null = null;
+
+    const enqueueRoot = (candidate: Node | null) => {
+      if (!candidate) {
+        return;
+      }
+      const rootNode = candidate.nodeType === Node.TEXT_NODE
+        ? candidate.parentElement
+        : candidate;
+      if (!rootNode || !rootNode.isConnected || isIgnoredMutationNode(rootNode)) {
+        return;
+      }
+
+      for (const existing of pendingRoots) {
+        if (!(existing instanceof Node) || !(rootNode instanceof Node)) {
+          continue;
+        }
+
+        if (
+          existing.nodeType === Node.ELEMENT_NODE &&
+          rootNode.nodeType === Node.ELEMENT_NODE &&
+          (existing as Element).contains(rootNode)
+        ) {
+          return;
+        }
+
+        if (
+          existing.nodeType === Node.ELEMENT_NODE &&
+          rootNode.nodeType === Node.ELEMENT_NODE &&
+          (rootNode as Element).contains(existing)
+        ) {
+          pendingRoots.delete(existing);
+        }
+      }
+
+      pendingRoots.add(rootNode);
+    };
+
+    const flushPendingRoots = () => {
+      const roots = Array.from(pendingRoots);
+      pendingRoots.clear();
+      roots.forEach((root) => {
+        if (!root.isConnected || isIgnoredMutationNode(root)) {
+          return;
+        }
+        replaceTextInNode(root, language);
+      });
+    };
+
     const observer = new MutationObserver((mutations) => {
       // 忽略输入框的变化（避免输入卡顿）
       const shouldIgnore = mutations.every((mutation) => {
-        const target = mutation.target as HTMLElement;
-        // 忽略 input、textarea 内部的变化
-        if (
-          target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.closest("input, textarea")
-        ) {
+        const targetIgnored = isIgnoredMutationNode(mutation.target);
+        if (targetIgnored) {
           return true;
         }
-        // 忽略已经打过补丁的节点
-        if (
-          target instanceof Element &&
-          target.hasAttribute("data-i18n-patched")
-        ) {
-          return true;
+
+        if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
+          return Array.from(mutation.addedNodes).every((node) =>
+            isIgnoredMutationNode(node),
+          );
         }
+
         return false;
       });
 
       if (shouldIgnore) return;
+
+      mutations.forEach((mutation) => {
+        if (isIgnoredMutationNode(mutation.target)) {
+          return;
+        }
+
+        if (mutation.type === "characterData") {
+          enqueueRoot(mutation.target);
+          return;
+        }
+
+        if (mutation.type === "childList") {
+          if (mutation.addedNodes.length === 0) {
+            enqueueRoot(mutation.target);
+            return;
+          }
+          mutation.addedNodes.forEach((node) => enqueueRoot(node));
+        }
+      });
+
+      if (pendingRoots.size === 0) {
+        return;
+      }
 
       // 防抖：延迟 300ms 执行，避免频繁触发
       if (timeoutId !== null) {
         clearTimeout(timeoutId);
       }
       timeoutId = window.setTimeout(() => {
-        replaceTextInDOM(language);
+        flushPendingRoots();
         timeoutId = null;
       }, 300);
     });
@@ -122,6 +216,7 @@ export function I18nPatchProvider({
     observer.observe(document.body, {
       childList: true,
       subtree: true,
+      characterData: true,
     });
 
     return () => {
@@ -129,6 +224,7 @@ export function I18nPatchProvider({
       if (timeoutId !== null) {
         clearTimeout(timeoutId);
       }
+      pendingRoots.clear();
     };
   }, [language]);
 

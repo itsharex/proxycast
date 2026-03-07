@@ -3,10 +3,12 @@
 //! 纯逻辑已迁移到 `proxycast-skills` crate，
 //! 本模块保留 Tauri 相关实现和兼容导出层。
 
+mod default_skills;
 mod execution_callback;
 mod llm_provider;
 
 // Tauri 实现（留在主 crate）
+pub use default_skills::ensure_default_local_skills;
 pub use execution_callback::TauriExecutionCallback;
 
 // 兼容导出（实际实现位于 proxycast-skills crate）

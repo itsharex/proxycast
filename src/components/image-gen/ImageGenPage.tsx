@@ -6,15 +6,16 @@
 
 import { useState, useEffect, useMemo } from "react";
 import styled, { keyframes } from "styled-components";
-import { CanvasBreadcrumbHeader } from "@/components/content-creator/canvas/shared/CanvasBreadcrumbHeader";
 import { useProjects } from "@/hooks/useProjects";
 import {
   getStoredResourceProjectId,
   onResourceProjectChange,
   setStoredResourceProjectId,
 } from "@/lib/resourceProjectSelection";
+import { buildHomeAgentParams } from "@/lib/workspace/navigation";
 import type { Page, PageParams } from "@/types/page";
 import { ChevronDown } from "lucide-react";
+import { CanvasBreadcrumbHeader } from "@/components/content-creator/canvas/shared/CanvasBreadcrumbHeader";
 
 type PageNavigate = (page: Page, params?: PageParams) => void;
 import { AiImageGenTab } from "./tabs/AiImageGenTab";
@@ -161,6 +162,10 @@ export function ImageGenPage({ onNavigate }: ImageGenPageProps) {
 
   const { projects, defaultProject, loading: projectsLoading } = useProjects();
 
+  const handleBackHome = () => {
+    onNavigate?.("agent", buildHomeAgentParams());
+  };
+
   // 可用项目列表（排除已归档）
   const availableProjects = useMemo(
     () => projects.filter((project) => !project.isArchived),
@@ -228,14 +233,10 @@ export function ImageGenPage({ onNavigate }: ImageGenPageProps) {
     });
   }, [availableProjects, selectedProjectId]);
 
-  const goHome = () => {
-    onNavigate?.("agent");
-  };
-
   return (
     <PageLayout>
       <HeaderBar>
-        <CanvasBreadcrumbHeader label="插图" onBackHome={goHome} />
+        <CanvasBreadcrumbHeader label="插图" onBackHome={handleBackHome} />
         <ProjectSelectorWrapper>
           <ProjectSelector
             value={selectedProjectId || ""}

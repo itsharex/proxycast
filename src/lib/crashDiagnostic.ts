@@ -16,6 +16,11 @@ import {
   getWorkspaceRepairHistory,
   type WorkspaceRepairRecord,
 } from "@/lib/workspaceHealthTelemetry";
+import { getActiveContentTarget } from "@/lib/activeContentTarget";
+import {
+  getThemeWorkbenchDocumentState,
+  type ThemeWorkbenchDocumentState,
+} from "@/lib/api/project";
 
 export interface CrashDiagnosticPayload {
   generated_at: string;
@@ -32,6 +37,7 @@ export interface CrashDiagnosticPayload {
   invoke_error_buffer?: InvokeErrorBufferEntry[];
   persisted_log_tail?: LogEntry[];
   workspace_repair_history?: WorkspaceRepairRecord[];
+  theme_workbench_document_state?: ThemeWorkbenchDocumentState | null;
   diagnostic_collection_notes?: string[];
 }
 
@@ -113,6 +119,7 @@ interface BuildCrashDiagnosticPayloadParams {
   maxInvokeErrors?: number;
   maxPersistedLogs?: number;
   maxWorkspaceRepairs?: number;
+  themeWorkbenchDocumentState?: ThemeWorkbenchDocumentState | null;
 }
 
 export function buildCrashDiagnosticPayload(
@@ -130,6 +137,7 @@ export function buildCrashDiagnosticPayload(
     maxInvokeErrors = 40,
     maxPersistedLogs = 200,
     maxWorkspaceRepairs = 50,
+    themeWorkbenchDocumentState = null,
   } = params;
 
   return {
@@ -152,10 +160,25 @@ export function buildCrashDiagnosticPayload(
     invoke_error_buffer: getInvokeErrorBuffer(maxInvokeErrors),
     persisted_log_tail: persistedLogTail.slice(-maxPersistedLogs),
     workspace_repair_history: getWorkspaceRepairHistory(maxWorkspaceRepairs),
+    theme_workbench_document_state: themeWorkbenchDocumentState,
     diagnostic_collection_notes: collectionNotes.filter((item) =>
       typeof item === "string" && item.trim().length > 0
     ),
   };
+}
+
+export async function collectThemeWorkbenchDocumentStateForDiagnostic(): Promise<ThemeWorkbenchDocumentState | null> {
+  const activeTarget = getActiveContentTarget();
+  if (!activeTarget?.contentId || activeTarget.canvasType !== "document") {
+    return null;
+  }
+
+  try {
+    return await getThemeWorkbenchDocumentState(activeTarget.contentId);
+  } catch (error) {
+    console.warn("[crashDiagnostic] 获取主题工作台文稿状态失败:", error);
+    return null;
+  }
 }
 
 export async function copyCrashDiagnosticToClipboard(
@@ -248,6 +271,7 @@ function buildDiagnosticSummary(payload: CrashDiagnosticPayload): string {
   const invokeErrorCount = payload.invoke_error_buffer?.length ?? 0;
   const persistedLogCount = payload.persisted_log_tail?.length ?? 0;
   const workspaceRepairCount = payload.workspace_repair_history?.length ?? 0;
+  const versionCount = payload.theme_workbench_document_state?.version_count ?? 0;
   const dsnConfigured = payload.crash_reporting.dsn ? "是" : "否";
   return [
     `- 版本：${payload.app_version}`,
@@ -259,6 +283,7 @@ function buildDiagnosticSummary(payload: CrashDiagnosticPayload): string {
     `- 命令调用失败缓存条数：${invokeErrorCount}`,
     `- 持久化日志尾部行数：${persistedLogCount}`,
     `- Workspace 自动修复记录条数：${workspaceRepairCount}`,
+    `- 主题工作台文稿版本数：${versionCount}`,
     `- 崩溃上报已启用：${payload.crash_reporting.enabled ? "是" : "否"}（DSN 已配置：${dsnConfigured}）`,
   ].join("\n");
 }

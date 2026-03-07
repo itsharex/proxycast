@@ -1,5 +1,6 @@
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Page, PageParams } from "@/types/page";
 import type { GeneratedImage } from "./types";
 import {
   cleanupMountedRoots,
@@ -63,6 +64,31 @@ vi.mock("@/hooks/useProjects", () => ({
       getOrCreateDefault: vi.fn(),
     };
   },
+}));
+
+vi.mock("@/hooks/useProject", () => ({
+  useProject: () => ({
+    project: {
+      id: "project-default",
+      name: "默认项目",
+      workspaceType: "persistent",
+      rootPath: "/tmp/default",
+      isDefault: true,
+      settings: {},
+      isFavorite: false,
+      isArchived: false,
+      tags: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    },
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+    update: vi.fn(),
+    archive: vi.fn(),
+    unarchive: vi.fn(),
+    toggleFavorite: vi.fn(),
+  }),
 }));
 
 vi.mock("./useImageGen", async () => {
@@ -158,8 +184,8 @@ import ImageGenPage from "./ImageGenPage";
 
 const mountedRoots: MountedRoot[] = [];
 
-function renderPage(): HTMLDivElement {
-  return renderIntoDom(<ImageGenPage />, mountedRoots).container;
+function renderPage(onNavigate?: (page: Page, params?: PageParams) => void): HTMLDivElement {
+  return renderIntoDom(<ImageGenPage onNavigate={onNavigate} />, mountedRoots).container;
 }
 
 function findButtonByText(container: HTMLElement, text: string): HTMLButtonElement {
@@ -209,6 +235,30 @@ afterEach(() => {
 });
 
 describe("ImageGenPage", () => {
+  it("点击左上角返回按钮应回到首页新会话", () => {
+    const onNavigate = vi.fn();
+    const container = renderPage(onNavigate);
+
+    const backButton = container.querySelector<HTMLButtonElement>(
+      'button[title="返回首页"]',
+    );
+    expect(backButton).not.toBeNull();
+
+    act(() => {
+      backButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+    expect(onNavigate).toHaveBeenCalledWith(
+      "agent",
+      expect.objectContaining({
+        theme: "general",
+        lockTheme: false,
+        newChatAt: expect.any(Number),
+      }),
+    );
+  });
+
   it("应仅显示当前选中图片的提示词历史", async () => {
     const container = renderPage();
 

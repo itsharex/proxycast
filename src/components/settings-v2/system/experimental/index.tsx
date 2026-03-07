@@ -34,6 +34,7 @@ import {
 import { applyCrashReportingSettings } from "@/lib/crashReporting";
 import {
   buildCrashDiagnosticPayload,
+  collectThemeWorkbenchDocumentStateForDiagnostic,
   copyCrashDiagnosticJsonToClipboard,
   copyCrashDiagnosticToClipboard,
   DEFAULT_CRASH_REPORTING_CONFIG,
@@ -332,14 +333,16 @@ export function ExperimentalSettings() {
   }, [crashConfig, persistCrashConfig]);
 
   const buildDiagnosticPayload = useCallback(async () => {
-    const [logs, persistedLogs] = await Promise.all([
+    const [logs, persistedLogs, themeWorkbenchDocumentState] = await Promise.all([
       getLogs(),
       getPersistedLogsTail(200),
+      collectThemeWorkbenchDocumentStateForDiagnostic(),
     ]);
     return buildCrashDiagnosticPayload({
       crashConfig,
       logs,
       persistedLogTail: persistedLogs,
+      themeWorkbenchDocumentState,
       appVersion: import.meta.env.VITE_APP_VERSION,
       platform: navigator.platform,
       userAgent: navigator.userAgent,

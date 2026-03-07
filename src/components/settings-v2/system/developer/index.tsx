@@ -13,6 +13,7 @@ import {
 } from "@/hooks/useTauri";
 import {
   buildCrashDiagnosticPayload,
+  collectThemeWorkbenchDocumentStateForDiagnostic,
   copyCrashDiagnosticToClipboard,
   copyCrashDiagnosticJsonToClipboard,
   exportCrashDiagnosticToJson,
@@ -34,15 +35,17 @@ export function DeveloperSettings() {
   const [showClipboardGuide, setShowClipboardGuide] = useState(false);
 
   const buildDiagnosticPayload = useCallback(async () => {
-    const [config, logs, persistedLogs] = await Promise.all([
+    const [config, logs, persistedLogs, themeWorkbenchDocumentState] = await Promise.all([
       getConfig(),
       getLogs(),
       getPersistedLogsTail(200),
+      collectThemeWorkbenchDocumentStateForDiagnostic(),
     ]);
     return buildCrashDiagnosticPayload({
       crashConfig: normalizeCrashReportingConfig(config.crash_reporting),
       logs,
       persistedLogTail: persistedLogs,
+      themeWorkbenchDocumentState,
       appVersion: import.meta.env.VITE_APP_VERSION,
       platform: navigator.platform,
       userAgent: navigator.userAgent,

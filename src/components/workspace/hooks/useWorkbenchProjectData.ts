@@ -124,7 +124,7 @@ export function useWorkbenchProjectData({
             return initialContentId;
           }
 
-          return safeContentList[0]?.id ?? null;
+          return null;
         });
       } catch (error) {
         console.error("加载文稿失败:", error);

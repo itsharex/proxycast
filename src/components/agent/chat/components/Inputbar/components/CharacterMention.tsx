@@ -227,6 +227,14 @@ export function CharacterMention({
     if (!textarea || !showMentions) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      const composing =
+        (e as KeyboardEvent & { isComposing?: boolean }).isComposing ||
+        e.key === "Process" ||
+        e.keyCode === 229;
+      if (composing) {
+        return;
+      }
+
       if (e.key === "Escape") {
         setShowMentions(false);
         e.preventDefault();

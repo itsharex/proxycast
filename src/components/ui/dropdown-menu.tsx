@@ -40,7 +40,7 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
 
   return (
     <DropdownMenuContext.Provider value={{ open, setOpen }}>
-      <div className="relative">{children}</div>
+      <div style={{ position: "relative", display: "contents" }}>{children}</div>
     </DropdownMenuContext.Provider>
   );
 };
@@ -60,26 +60,25 @@ const DropdownMenuTrigger: React.FC<DropdownMenuTriggerProps> = ({
 
   const { open, setOpen } = context;
 
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOpen(!open);
+  };
+
   if (asChild && React.isValidElement(children)) {
     const childProps = children.props as {
       onClick?: (e: React.MouseEvent) => void;
     };
     return React.cloneElement(children as React.ReactElement, {
       onClick: (e: React.MouseEvent) => {
-        e.stopPropagation();
         childProps.onClick?.(e);
-        setOpen(!open);
+        handleClick(e);
       },
     });
   }
 
   return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        setOpen(!open);
-      }}
-    >
+    <button onClick={handleClick}>
       {children}
     </button>
   );
@@ -89,12 +88,14 @@ interface DropdownMenuContentProps {
   className?: string;
   align?: "start" | "center" | "end";
   children: React.ReactNode;
+  style?: React.CSSProperties;
 }
 
 const DropdownMenuContent: React.FC<DropdownMenuContentProps> = ({
   className,
   align = "center",
   children,
+  style,
 }) => {
   const context = useContext(DropdownMenuContext);
   if (!context)
@@ -104,32 +105,48 @@ const DropdownMenuContent: React.FC<DropdownMenuContentProps> = ({
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!open) return;
+
     const handleClickOutside = (event: MouseEvent) => {
       if (ref.current && !ref.current.contains(event.target as Node)) {
         setOpen(false);
       }
     };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
 
-    if (open) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () =>
-        document.removeEventListener("mousedown", handleClickOutside);
-    }
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
   }, [open, setOpen]);
 
   if (!open) return null;
 
   const alignmentClasses = {
     start: "left-0",
-    center: "left-1/2 transform -translate-x-1/2",
+    center: "left-1/2 -translate-x-1/2",
     end: "right-0",
   };
 
   return (
     <div
       ref={ref}
+      style={{
+        position: "absolute",
+        top: "100%",
+        marginTop: "4px",
+        zIndex: 50,
+        ...style,
+      }}
       className={cn(
-        "absolute top-full z-50 mt-1 min-w-32 rounded-md border bg-popover text-popover-foreground shadow-md",
+        "min-w-32 rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95",
         alignmentClasses[align],
         className,
       )}
@@ -166,7 +183,7 @@ const DropdownMenuItem: React.FC<DropdownMenuItemProps> = ({
   return (
     <div
       className={cn(
-        "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground",
+        "relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-3 py-2 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground",
         className,
       )}
       onClick={handleClick}

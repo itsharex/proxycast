@@ -6,16 +6,41 @@
  * 当主题为 general 时，使用 GeneralChat 组件实现
  */
 
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import {
+  startTransition,
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+  useRef,
+  memo,
+  type ReactNode,
+} from "react";
 import { toast } from "sonner";
 import styled from "styled-components";
+import { PanelLeftOpen } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
-import { useAgentChatUnified } from "./hooks";
+import { safeListen } from "@/lib/dev-bridge";
+import {
+  uploadImageToSession,
+  importDocument,
+} from "@/lib/api/session-files";
+import {
+  useAgentChatUnified,
+  useThemeContextWorkspace,
+  useTopicBranchBoard,
+} from "./hooks";
+import type { SidebarActivityLog } from "./hooks/useThemeContextWorkspace";
+import type { TopicBranchStatus } from "./hooks/useTopicBranchBoard";
 import { useSessionFiles } from "./hooks/useSessionFiles";
 import { useContentSync } from "./hooks/useContentSync";
 import { ChatNavbar } from "./components/ChatNavbar";
 import { ChatSidebar } from "./components/ChatSidebar";
+import {
+  ThemeWorkbenchSidebar,
+  type ThemeWorkbenchCreationTaskEvent,
+} from "./components/ThemeWorkbenchSidebar";
 import { MessageList } from "./components/MessageList";
 import { Inputbar } from "./components/Inputbar";
 import { EmptyState } from "./components/EmptyState";
@@ -30,6 +55,12 @@ import {
   type CanvasStateUnion,
 } from "@/components/content-creator/canvas/canvasUtils";
 import { createInitialDocumentState } from "@/components/content-creator/canvas/document";
+import type {
+  AutoContinueRunPayload,
+  ContentReviewRunPayload,
+  DocumentVersion,
+  TextStylizeRunPayload,
+} from "@/components/content-creator/canvas/document/types";
 import { CanvasPanel as GeneralCanvasPanel } from "@/components/general-chat/canvas";
 import {
   type CanvasState as GeneralCanvasState,
@@ -58,9 +89,11 @@ import {
   getDefaultProject,
   getOrCreateDefaultProject,
   getContent,
+  getThemeWorkbenchDocumentState,
   updateContent,
   type Project,
   type ProjectType,
+  type ThemeWorkbenchDocumentState,
 } from "@/lib/api/project";
 import {
   getProjectMemory,
@@ -72,6 +105,13 @@ import { SettingsTabs } from "@/types/settings";
 import { skillsApi, type Skill } from "@/lib/api/skills";
 import { buildHomeAgentParams } from "@/lib/workspace/navigation";
 import { LatestRunStatusBadge } from "@/components/execution/LatestRunStatusBadge";
+import {
+  executionRunGet,
+  executionRunGetThemeWorkbenchState,
+  type AgentRun,
+  type ThemeWorkbenchRunTodoItem,
+  type ThemeWorkbenchRunState as BackendThemeWorkbenchRunState,
+} from "@/lib/api/executionRun";
 import { setActiveContentTarget } from "@/lib/activeContentTarget";
 import { recordWorkspaceRepair } from "@/lib/workspaceHealthTelemetry";
 import { useConfiguredProviders } from "@/hooks/useConfiguredProviders";
@@ -85,8 +125,16 @@ import {
   loadRememberedBaseModel,
   saveRememberedBaseModel,
 } from "@/lib/model/thinkingBaseModelMemory";
+import type {
+  AutoContinueRequestPayload,
+  ToolCallState,
+} from "@/lib/api/agent";
+import {
+  skillExecutionApi,
+  type SkillDetailInfo,
+} from "@/lib/api/skill-execution";
 
-import type { MessageImage } from "./types";
+import type { Message, MessageImage } from "./types";
 import type {
   ThemeType,
   LayoutMode,
@@ -102,6 +150,13 @@ import {
   saveChatToolPreferences,
   type ChatToolPreferences,
 } from "./utils/chatToolPreferences";
+import {
+  resolveCanvasTaskFileTarget,
+  shouldDeferCanvasSyncWhileEditing,
+} from "./utils/taskFileCanvasSync";
+import { parseSkillSlashCommand } from "./hooks/skillCommand";
+import { subscribeDocumentEditorFocus } from "@/lib/documentEditorFocusEvents";
+import { useWorkbenchStore } from "@/stores/useWorkbenchStore";
 
 const SUPPORTED_ENTRY_THEMES: ThemeType[] = [
   "general",
@@ -127,6 +182,7 @@ const PageContainer = styled.div`
   display: flex;
   height: 100%;
   width: 100%;
+  position: relative;
 `;
 
 const MainArea = styled.div`
@@ -136,6 +192,7 @@ const MainArea = styled.div`
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  position: relative;
 `;
 
 const ChatContainer = styled.div`
@@ -163,6 +220,122 @@ const ChatContent = styled.div`
   padding: 0 6px;
   overflow: hidden;
   height: 100%;
+  position: relative;
+`;
+
+const MessageViewport = styled.div`
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 128px;
+`;
+
+const FloatingInputbarContainer = styled.div`
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 20;
+  pointer-events: none;
+
+  > * {
+    pointer-events: auto;
+  }
+`;
+
+const ThemeWorkbenchInputOverlay = styled.div`
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 20px;
+  z-index: 25;
+  pointer-events: none;
+  display: flex;
+  justify-content: center;
+  box-sizing: border-box;
+
+  > * {
+    pointer-events: auto;
+    width: min(calc(100% - 16px), 480px);
+    max-width: 100%;
+  }
+`;
+
+const ThemeWorkbenchLayoutShell = styled.div<{ $bottomInset: string }>`
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  padding-bottom: ${({ $bottomInset }) => $bottomInset};
+  transition: padding-bottom 0.2s ease;
+`;
+
+const ThemeWorkbenchCanvasHost = styled.div`
+  flex: 1;
+  min-height: 0;
+
+  > * {
+    height: 100%;
+  }
+`;
+
+interface LayoutTransitionRenderGateProps {
+  mode: LayoutMode;
+  chatContent: ReactNode;
+  canvasContent: ReactNode;
+}
+
+const LayoutTransitionRenderGate = memo(
+  ({ mode, chatContent, canvasContent }: LayoutTransitionRenderGateProps) => (
+    <ThemeWorkbenchCanvasHost>
+      <LayoutTransition
+        mode={mode}
+        chatContent={chatContent}
+        canvasContent={canvasContent}
+      />
+    </ThemeWorkbenchCanvasHost>
+  ),
+  (previous, next) =>
+    previous.mode === next.mode &&
+    previous.chatContent === next.chatContent &&
+    previous.canvasContent === next.canvasContent,
+);
+LayoutTransitionRenderGate.displayName = "LayoutTransitionRenderGate";
+
+interface HandleSendObserver {
+  onComplete?: (content: string) => void;
+  onError?: (message: string) => void;
+}
+
+interface HandleSendOptions {
+  skipThemeSkillPrefix?: boolean;
+  purpose?: "content_review";
+  observer?: HandleSendObserver;
+}
+
+const ThemeWorkbenchLeftExpandButton = styled.button`
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 72px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  background: hsl(var(--background) / 0.95);
+  color: hsl(var(--muted-foreground));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 30;
+
+  &:hover {
+    color: hsl(var(--foreground));
+    border-color: hsl(var(--primary) / 0.4);
+    background: hsl(var(--accent) / 0.55);
+  }
 `;
 
 /**
@@ -180,6 +353,990 @@ function projectTypeToTheme(projectType: ProjectType): ThemeType {
 
 const LAST_PROJECT_ID_KEY = "agent_last_project_id";
 const TOPIC_PROJECT_KEY_PREFIX = "agent_session_workspace_";
+const THEME_WORKBENCH_DOCUMENT_META_KEY = "theme_workbench_document_v1";
+const MAX_PERSISTED_DOCUMENT_VERSIONS = 40;
+const SOCIAL_ARTICLE_SKILL_KEY = "social_post_with_cover";
+const THEME_WORKBENCH_CREATION_TASK_EVENT_NAME =
+  "proxycast://creation_task_submitted";
+const MAX_THEME_WORKBENCH_CREATION_TASK_EVENTS = 120;
+
+interface CreationTaskSubmittedPayload {
+  task_id?: string;
+  task_type?: string;
+  path?: string;
+  absolute_path?: string;
+}
+
+function normalizeThemeWorkbenchCreationTaskEvent(
+  payload: CreationTaskSubmittedPayload,
+): ThemeWorkbenchCreationTaskEvent | null {
+  const taskId = payload.task_id?.trim();
+  const taskType = payload.task_type?.trim();
+  const path = payload.path?.trim();
+  if (!taskId || !taskType || !path) {
+    return null;
+  }
+  const createdAt = Date.now();
+  return {
+    taskId,
+    taskType,
+    path,
+    absolutePath: payload.absolute_path?.trim() || undefined,
+    createdAt,
+    timeLabel: new Date(createdAt).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  };
+}
+
+function resolveThemeWorkbenchRunStepStatus(
+  status: "queued" | "running" | "success" | "error" | "canceled" | "timeout",
+): StepStatus {
+  if (status === "running") {
+    return "active";
+  }
+  if (status === "queued") {
+    return "pending";
+  }
+  if (status === "success") {
+    return "completed";
+  }
+  return "error";
+}
+
+function parseThemeWorkbenchToolArguments(
+  argumentsJson?: string,
+): Record<string, unknown> {
+  if (!argumentsJson) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(argumentsJson);
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function truncateThemeWorkbenchLabel(value: string, limit = 28): string {
+  return value.length > limit ? `${value.slice(0, limit)}…` : value;
+}
+
+function resolveThemeWorkbenchTextArg(
+  args: Record<string, unknown>,
+  keys: string[],
+): string {
+  for (const key of keys) {
+    const value = args[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    if (Array.isArray(value)) {
+      const firstString = value.find(
+        (item): item is string =>
+          typeof item === "string" && item.trim().length > 0,
+      );
+      if (firstString) {
+        return firstString.trim();
+      }
+    }
+  }
+  return "";
+}
+
+function getThemeWorkbenchFileLabel(pathValue: string): string {
+  const normalized = pathValue.trim();
+  if (!normalized) {
+    return "主稿文件";
+  }
+  const segments = normalized.split(/[/\\]/).filter(Boolean);
+  if (segments.length >= 2) {
+    return `${segments[segments.length - 2]}/${segments[segments.length - 1]}`;
+  }
+  return segments[0] || normalized;
+}
+
+function resolveThemeWorkbenchToolTaskTitle(toolCall: ToolCallState): string {
+  const normalized = toolCall.name.trim().toLowerCase();
+  const args = parseThemeWorkbenchToolArguments(toolCall.arguments);
+  const queryValue = resolveThemeWorkbenchTextArg(args, [
+    "query",
+    "q",
+    "keyword",
+    "pattern",
+    "text",
+  ]);
+  const urlValue = resolveThemeWorkbenchTextArg(args, ["url", "href"]);
+  const elementValue = resolveThemeWorkbenchTextArg(args, [
+    "element",
+    "name",
+    "label",
+    "ref",
+  ]);
+
+  if (normalized.includes("social_generate_cover_image")) {
+    const size = resolveThemeWorkbenchTextArg(args, ["size"]);
+    return size ? `生成封面图（${size}）` : "生成封面图";
+  }
+  if (normalized.includes("write_file") || normalized.includes("create_file")) {
+    const pathValue = resolveThemeWorkbenchTextArg(args, [
+      "path",
+      "file_path",
+      "filePath",
+    ]);
+    return pathValue
+      ? `写入 ${getThemeWorkbenchFileLabel(pathValue)}`
+      : "写入主稿文件";
+  }
+  if (
+    normalized.includes("websearch") ||
+    normalized.includes("search_query") ||
+    normalized.includes("web_search") ||
+    normalized.includes("search")
+  ) {
+    return queryValue
+      ? `检索 ${truncateThemeWorkbenchLabel(queryValue)}`
+      : "检索参考资料";
+  }
+  if (
+    normalized.includes("browser_navigate") ||
+    (normalized.includes("navigate") && urlValue)
+  ) {
+    return urlValue
+      ? `打开 ${truncateThemeWorkbenchLabel(urlValue, 36)}`
+      : "打开网页";
+  }
+  if (normalized.includes("browser_click") || normalized === "click") {
+    return elementValue
+      ? `点击「${truncateThemeWorkbenchLabel(elementValue, 20)}」`
+      : "点击页面元素";
+  }
+  if (normalized.includes("browser_hover") || normalized === "hover") {
+    return elementValue
+      ? `定位「${truncateThemeWorkbenchLabel(elementValue, 20)}」`
+      : "定位页面元素";
+  }
+  if (normalized.includes("browser_type") || normalized === "type") {
+    return elementValue
+      ? `填写「${truncateThemeWorkbenchLabel(elementValue, 20)}」`
+      : queryValue
+        ? `填写 ${truncateThemeWorkbenchLabel(queryValue, 18)}`
+        : "填写页面内容";
+  }
+  if (
+    normalized.includes("browser_select_option") ||
+    normalized.includes("select_option")
+  ) {
+    const value = resolveThemeWorkbenchTextArg(args, [
+      "value",
+      "values",
+      "option",
+    ]);
+    return value
+      ? `选择 ${truncateThemeWorkbenchLabel(value, 20)}`
+      : elementValue
+        ? `选择「${truncateThemeWorkbenchLabel(elementValue, 20)}」`
+        : "选择页面选项";
+  }
+  if (
+    normalized.includes("browser_press_key") ||
+    normalized.includes("press_key")
+  ) {
+    const keyValue = resolveThemeWorkbenchTextArg(args, ["key"]);
+    return keyValue ? `触发按键 ${keyValue}` : "触发页面快捷键";
+  }
+  if (normalized.includes("browser_drag") || normalized.includes("drag")) {
+    const endValue = resolveThemeWorkbenchTextArg(args, [
+      "endElement",
+      "endRef",
+    ]);
+    return endValue
+      ? `拖拽到「${truncateThemeWorkbenchLabel(endValue, 18)}」`
+      : "拖拽页面元素";
+  }
+  if (
+    normalized.includes("browser_snapshot") ||
+    normalized.includes("screenshot")
+  ) {
+    return elementValue
+      ? `分析页面区域：${truncateThemeWorkbenchLabel(elementValue, 20)}`
+      : urlValue
+        ? `分析页面 ${truncateThemeWorkbenchLabel(urlValue, 30)}`
+        : "分析页面内容";
+  }
+  if (normalized.includes("bash") || normalized.includes("shell")) {
+    const commandValue = resolveThemeWorkbenchTextArg(args, ["command", "cmd"]);
+    const commandProbe = commandValue.toLowerCase();
+    if (commandProbe.includes("ffmpeg")) {
+      return "处理音视频素材";
+    }
+    if (commandProbe.includes("curl") || commandProbe.includes("wget")) {
+      return "下载远程资源";
+    }
+    if (
+      commandProbe.includes("python") ||
+      commandProbe.includes("node") ||
+      commandProbe.includes("tsx") ||
+      commandProbe.includes("npm")
+    ) {
+      return "执行自动化脚本";
+    }
+    return commandValue
+      ? `执行命令：${truncateThemeWorkbenchLabel(commandValue, 22)}`
+      : "执行终端命令";
+  }
+  if (normalized.includes("browser")) {
+    return urlValue
+      ? `采集 ${truncateThemeWorkbenchLabel(urlValue, 36)}`
+      : elementValue
+        ? `处理页面元素：${truncateThemeWorkbenchLabel(elementValue, 20)}`
+        : "采集网页信息";
+  }
+  return toolCall.name.replace(/[_-]+/g, " ").trim() || "执行工具";
+}
+
+function resolveThemeWorkbenchPrimaryTaskTitle(
+  skillName: string,
+  detail?: SkillDetailInfo | null,
+): string {
+  if (skillName === SOCIAL_ARTICLE_SKILL_KEY) {
+    return "生成社媒主稿";
+  }
+
+  const displayName = detail?.display_name?.trim();
+  if (displayName) {
+    return displayName;
+  }
+
+  return skillName.replace(/[_-]+/g, " ").trim() || "执行任务";
+}
+
+function extractThemeWorkbenchWorkflowMarkerIndex(
+  content: string,
+): number | null {
+  const matches = [...content.matchAll(/\*\*步骤\s+(\d+)\/(\d+):/g)];
+  if (matches.length === 0) {
+    return null;
+  }
+  const last = matches[matches.length - 1];
+  const value = Number(last[1]);
+  if (!Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  return value - 1;
+}
+
+function findLatestThemeWorkbenchExecution(messages: Message[]): {
+  assistantMessage: Message;
+  skillName: string | null;
+} | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== "assistant") {
+      continue;
+    }
+
+    const hasToolCalls = (message.toolCalls?.length || 0) > 0;
+    const hasPendingAction =
+      message.actionRequests?.some(
+        (request) => request.status !== "submitted",
+      ) || false;
+    if (!message.isThinking && !hasToolCalls && !hasPendingAction) {
+      continue;
+    }
+
+    let skillName: string | null = null;
+    for (let userIndex = index - 1; userIndex >= 0; userIndex -= 1) {
+      const candidate = messages[userIndex];
+      if (candidate.role !== "user") {
+        continue;
+      }
+      skillName = parseSkillSlashCommand(candidate.content)?.skillName || null;
+      break;
+    }
+
+    return {
+      assistantMessage: message,
+      skillName,
+    };
+  }
+
+  return null;
+}
+
+function buildThemeWorkbenchLiveWorkflowSteps(
+  messages: Message[],
+  skillDetailMap: Record<string, SkillDetailInfo | null>,
+  isSending: boolean,
+): Array<{ id: string; title: string; status: StepStatus }> {
+  const activeExecution = findLatestThemeWorkbenchExecution(messages);
+  if (!activeExecution) {
+    return [];
+  }
+
+  const { assistantMessage, skillName } = activeExecution;
+  if (!skillName) {
+    return [];
+  }
+
+  const skillDetail = skillDetailMap[skillName] || null;
+  const workflowSteps = skillDetail?.workflow_steps || [];
+  if (workflowSteps.length > 0) {
+    const activeIndex =
+      extractThemeWorkbenchWorkflowMarkerIndex(
+        assistantMessage.content || "",
+      ) ?? 0;
+    return workflowSteps.map((step, index) => ({
+      id: step.id,
+      title: step.name,
+      status:
+        index < activeIndex
+          ? ("completed" as StepStatus)
+          : index == activeIndex
+            ? ("active" as StepStatus)
+            : ("pending" as StepStatus),
+    }));
+  }
+
+  const toolCalls = assistantMessage.toolCalls || [];
+  const steps: Array<{ id: string; title: string; status: StepStatus }> = [];
+  const primaryTaskTitle = resolveThemeWorkbenchPrimaryTaskTitle(
+    skillName,
+    skillDetail,
+  );
+  const hasRunningTool = toolCalls.some(
+    (toolCall) => toolCall.status === "running",
+  );
+  const hasFailedTool = toolCalls.some(
+    (toolCall) => toolCall.status === "failed",
+  );
+  const hasCompletedPrimaryWrite = toolCalls.some((toolCall) => {
+    if (toolCall.status !== "completed") {
+      return false;
+    }
+    const normalizedName = toolCall.name.trim().toLowerCase();
+    return (
+      normalizedName.includes("write_file") ||
+      normalizedName.includes("create_file")
+    );
+  });
+
+  steps.push({
+    id: `${skillName}:primary`,
+    title: primaryTaskTitle,
+    status: hasCompletedPrimaryWrite
+      ? ("completed" as StepStatus)
+      : hasFailedTool
+        ? ("error" as StepStatus)
+        : toolCalls.length > 0
+          ? ("completed" as StepStatus)
+          : assistantMessage.isThinking || isSending
+            ? ("active" as StepStatus)
+            : ("pending" as StepStatus),
+  });
+
+  toolCalls.forEach((toolCall, index) => {
+    steps.push({
+      id: toolCall.id || `${skillName}:tool:${index}`,
+      title: resolveThemeWorkbenchToolTaskTitle(toolCall),
+      status:
+        toolCall.status === "running"
+          ? ("active" as StepStatus)
+          : toolCall.status === "completed"
+            ? ("completed" as StepStatus)
+            : ("error" as StepStatus),
+    });
+  });
+
+  if (isSending && toolCalls.length > 0 && !hasRunningTool) {
+    steps.push({
+      id: `${skillName}:finalize`,
+      title: "整理最终结果",
+      status: "active",
+    });
+  }
+
+  return steps;
+}
+
+function resolveThemeWorkbenchQueueItemTitle(
+  item: ThemeWorkbenchRunTodoItem,
+  skillDetailMap: Record<string, SkillDetailInfo | null>,
+): string {
+  const sourceRef = item.source_ref?.trim();
+  if (sourceRef) {
+    return resolveThemeWorkbenchPrimaryTaskTitle(
+      sourceRef,
+      skillDetailMap[sourceRef],
+    );
+  }
+  return item.title?.trim() || "执行任务";
+}
+const THEME_WORKBENCH_ACTIVE_RUN_MAX_AGE_MS = 45 * 1000;
+
+interface PersistedThemeWorkbenchDocument {
+  versions: DocumentVersion[];
+  currentVersionId: string;
+  versionStatusMap: Record<string, TopicBranchStatus>;
+}
+
+function isTopicBranchStatus(value: unknown): value is TopicBranchStatus {
+  return (
+    value === "in_progress" ||
+    value === "pending" ||
+    value === "merged" ||
+    value === "candidate"
+  );
+}
+
+function normalizeDocumentVersion(value: unknown): DocumentVersion | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+  const content =
+    typeof candidate.content === "string" ? candidate.content : "";
+  const createdAt =
+    typeof candidate.createdAt === "number"
+      ? candidate.createdAt
+      : typeof candidate.created_at === "number"
+        ? candidate.created_at
+        : NaN;
+  const description =
+    typeof candidate.description === "string"
+      ? candidate.description
+      : undefined;
+
+  if (!id || Number.isNaN(createdAt)) {
+    return null;
+  }
+
+  return {
+    id,
+    content,
+    createdAt,
+    description,
+  };
+}
+
+function buildPersistedThemeWorkbenchDocument(
+  state: CanvasStateUnion,
+  statusMap: Record<string, TopicBranchStatus>,
+): PersistedThemeWorkbenchDocument | null {
+  if (state.type !== "document" || state.versions.length === 0) {
+    return null;
+  }
+
+  const normalizedVersions = state.versions
+    .map((version) => normalizeDocumentVersion(version))
+    .filter((version): version is DocumentVersion => !!version);
+
+  if (normalizedVersions.length === 0) {
+    return null;
+  }
+
+  const latestVersions = normalizedVersions.slice(
+    -MAX_PERSISTED_DOCUMENT_VERSIONS,
+  );
+  const versionIdSet = new Set(latestVersions.map((version) => version.id));
+  let currentVersionId = state.currentVersionId;
+
+  if (!versionIdSet.has(currentVersionId)) {
+    currentVersionId =
+      latestVersions[latestVersions.length - 1]?.id || latestVersions[0].id;
+  }
+
+  const persistedVersions = latestVersions.map((version) =>
+    version.id === currentVersionId ? { ...version, content: "" } : version,
+  );
+
+  const versionStatusMap = Object.fromEntries(
+    Object.entries(statusMap).filter(
+      ([versionId, status]) =>
+        versionIdSet.has(versionId) && isTopicBranchStatus(status),
+    ),
+  ) as Record<string, TopicBranchStatus>;
+
+  return {
+    versions: persistedVersions,
+    currentVersionId,
+    versionStatusMap,
+  };
+}
+
+function readPersistedThemeWorkbenchDocument(
+  metadata?: Record<string, unknown>,
+): PersistedThemeWorkbenchDocument | null {
+  const raw = metadata?.[THEME_WORKBENCH_DOCUMENT_META_KEY];
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const candidate = raw as Record<string, unknown>;
+  const versionsRaw = Array.isArray(candidate.versions)
+    ? candidate.versions
+    : [];
+  const versions = versionsRaw
+    .map((version) => normalizeDocumentVersion(version))
+    .filter((version): version is DocumentVersion => !!version)
+    .slice(-MAX_PERSISTED_DOCUMENT_VERSIONS);
+  if (versions.length === 0) {
+    return null;
+  }
+
+  const versionIdSet = new Set(versions.map((version) => version.id));
+  const currentVersionIdRaw = candidate.currentVersionId;
+  const currentVersionId =
+    typeof currentVersionIdRaw === "string" &&
+    versionIdSet.has(currentVersionIdRaw)
+      ? currentVersionIdRaw
+      : versions[versions.length - 1]?.id || versions[0].id;
+
+  const statusRaw = candidate.versionStatusMap;
+  const statusEntries =
+    statusRaw && typeof statusRaw === "object" ? statusRaw : {};
+  const versionStatusMap = Object.fromEntries(
+    Object.entries(statusEntries).filter(
+      ([versionId, status]) =>
+        versionIdSet.has(versionId) && isTopicBranchStatus(status),
+    ),
+  ) as Record<string, TopicBranchStatus>;
+
+  return {
+    versions,
+    currentVersionId,
+    versionStatusMap,
+  };
+}
+
+function applyBackendThemeWorkbenchDocumentState(
+  state: CanvasStateUnion,
+  backendState: ThemeWorkbenchDocumentState,
+  currentBody: string,
+): {
+  state: CanvasStateUnion;
+  statusMap: Record<string, TopicBranchStatus>;
+} | null {
+  if (state.type !== "document" || backendState.versions.length === 0) {
+    return null;
+  }
+
+  const versions = backendState.versions
+    .map((version, index) => ({
+      id: version.id,
+      content: version.is_current ? currentBody : "",
+      createdAt: version.created_at,
+      description: version.description?.trim() || `版本 ${index + 1}`,
+    }))
+    .slice(-MAX_PERSISTED_DOCUMENT_VERSIONS);
+
+  if (versions.length === 0) {
+    return null;
+  }
+
+  const currentVersion =
+    versions.find(
+      (version) => version.id === backendState.current_version_id,
+    ) || versions[versions.length - 1];
+
+  const statusMap = Object.fromEntries(
+    backendState.versions
+      .filter(
+        (
+          version,
+        ): version is ThemeWorkbenchDocumentState["versions"][number] & {
+          status: TopicBranchStatus;
+        } => isTopicBranchStatus(version.status),
+      )
+      .map((version) => [version.id, version.status]),
+  ) as Record<string, TopicBranchStatus>;
+
+  return {
+    state: {
+      ...state,
+      versions,
+      currentVersionId: currentVersion.id,
+      content: currentVersion.content,
+    },
+    statusMap,
+  };
+}
+
+function inferThemeWorkbenchGateFromQueueItem(
+  queueItem: ThemeWorkbenchRunTodoItem | null,
+): {
+  key: "topic_select" | "write_mode" | "publish_confirm";
+  title: string;
+  description: string;
+} {
+  const gateKey = queueItem?.gate_key;
+  if (gateKey === "publish_confirm") {
+    return {
+      key: "publish_confirm",
+      title: "发布闸门",
+      description: queueItem?.title || "正在准备发布前检查与平台适配结果。",
+    };
+  }
+  if (gateKey === "topic_select") {
+    return {
+      key: "topic_select",
+      title: "选题闸门",
+      description: queueItem?.title || "正在整理选题方向并生成可确认方案。",
+    };
+  }
+  if (gateKey === "write_mode") {
+    return {
+      key: "write_mode",
+      title: "写作闸门",
+      description: queueItem?.title || "正在执行主稿写作与插图生成流程。",
+    };
+  }
+
+  if (!queueItem) {
+    return {
+      key: "topic_select",
+      title: "选题闸门",
+      description: "正在整理选题方向并生成可确认方案。",
+    };
+  }
+
+  const probe =
+    `${queueItem.title} ${queueItem.source_ref || ""} ${queueItem.source}`.toLowerCase();
+  const looksLikePublish =
+    /publish|adapt|distribution|release|发布|分发|平台适配/.test(probe);
+  if (looksLikePublish) {
+    return {
+      key: "publish_confirm",
+      title: "发布闸门",
+      description: queueItem.title || "正在准备发布前检查与平台适配结果。",
+    };
+  }
+
+  const looksLikeTopic = /topic|research|trend|idea|选题|方向|调研|洞察/.test(
+    probe,
+  );
+  if (looksLikeTopic) {
+    return {
+      key: "topic_select",
+      title: "选题闸门",
+      description: queueItem.title || "正在整理选题方向并生成可确认方案。",
+    };
+  }
+
+  return {
+    key: "write_mode",
+    title: "写作闸门",
+    description: queueItem.title || "正在执行主稿写作与插图生成流程。",
+  };
+}
+
+function resolveThemeWorkbenchGateByKey(
+  gateKey: "topic_select" | "write_mode" | "publish_confirm",
+  fallbackTitle?: string,
+): {
+  key: "topic_select" | "write_mode" | "publish_confirm";
+  title: string;
+  description: string;
+} {
+  if (gateKey === "publish_confirm") {
+    return {
+      key: "publish_confirm",
+      title: "发布闸门",
+      description: fallbackTitle || "正在准备发布前检查与平台适配结果。",
+    };
+  }
+  if (gateKey === "topic_select") {
+    return {
+      key: "topic_select",
+      title: "选题闸门",
+      description: fallbackTitle || "正在整理选题方向并生成可确认方案。",
+    };
+  }
+  return {
+    key: "write_mode",
+    title: "写作闸门",
+    description: fallbackTitle || "正在执行主稿写作与插图生成流程。",
+  };
+}
+
+function formatThemeWorkbenchRunTimeLabel(
+  raw: string | null | undefined,
+): string {
+  if (!raw) {
+    return "--:--";
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return "--:--";
+  }
+  return parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatThemeWorkbenchRunDurationLabel(
+  startedAt: string | null | undefined,
+  finishedAt: string | null | undefined,
+): string | undefined {
+  if (!startedAt || !finishedAt) {
+    return undefined;
+  }
+
+  const started = new Date(startedAt);
+  const finished = new Date(finishedAt);
+  if (Number.isNaN(started.getTime()) || Number.isNaN(finished.getTime())) {
+    return undefined;
+  }
+
+  const durationMs = finished.getTime() - started.getTime();
+  if (durationMs < 0) {
+    return undefined;
+  }
+  if (durationMs < 1000) {
+    return `${durationMs}ms`;
+  }
+  if (durationMs < 60000) {
+    return `${(durationMs / 1000).toFixed(1)}s`;
+  }
+  return `${Math.floor(durationMs / 60000)}m${Math.round(
+    (durationMs % 60000) / 1000,
+  )}s`;
+}
+
+function resolveThemeWorkbenchApplyTargetByGateKey(
+  gateKey: "topic_select" | "write_mode" | "publish_confirm" | "idle",
+): string {
+  if (gateKey === "topic_select") {
+    return "选题池";
+  }
+  if (gateKey === "publish_confirm") {
+    return "发布产物";
+  }
+  if (gateKey === "write_mode") {
+    return "版本主稿";
+  }
+  return "主稿内容";
+}
+
+function extractExecutionIdFromSocialToolId(toolCallId: string): string | null {
+  const normalized = toolCallId.trim();
+  if (!normalized.startsWith("social-write-")) {
+    return null;
+  }
+  const match = normalized.match(/^social-write-(.+)-[0-9a-f]{8}$/i);
+  const executionId = match?.[1]?.trim();
+  if (!executionId) {
+    return null;
+  }
+  return executionId;
+}
+
+function resolveExecutionIdCandidatesForActivityLog(
+  log: SidebarActivityLog,
+): string[] {
+  const candidates: string[] = [];
+  const pushCandidate = (value?: string | null) => {
+    const normalized = value?.trim();
+    if (!normalized) {
+      return;
+    }
+    if (!candidates.includes(normalized)) {
+      candidates.push(normalized);
+    }
+  };
+
+  pushCandidate(log.executionId);
+  pushCandidate(log.messageId);
+
+  const normalizedLogId = log.id.trim();
+  if (normalizedLogId) {
+    let toolCallIdProbe = normalizedLogId;
+    if (log.messageId) {
+      const messagePrefix = `${log.messageId}-`;
+      if (normalizedLogId.startsWith(messagePrefix)) {
+        toolCallIdProbe = normalizedLogId.slice(messagePrefix.length);
+      }
+    }
+    pushCandidate(extractExecutionIdFromSocialToolId(toolCallIdProbe));
+  }
+
+  return candidates;
+}
+
+function isThemeWorkbenchPrimaryDocumentArtifact(fileName: string): boolean {
+  const normalized = fileName.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return normalized.endsWith(".md") || normalized.endsWith(".markdown");
+}
+
+function inferTaskFileType(fileName: string): TaskFile["type"] {
+  const normalized = fileName.trim().toLowerCase();
+  const extension = normalized.split(".").pop() || "";
+
+  if (extension === "md" || extension === "markdown" || extension === "txt") {
+    return "document";
+  }
+  if (
+    ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico"].includes(
+      extension,
+    )
+  ) {
+    return "image";
+  }
+  if (
+    ["mp3", "wav", "aac", "flac", "m4a", "ogg", "mid", "midi"].includes(
+      extension,
+    )
+  ) {
+    return "audio";
+  }
+  if (["mp4", "mov", "avi", "mkv", "webm"].includes(extension)) {
+    return "video";
+  }
+  return "other";
+}
+
+function looksLikeSocialPublishPayload(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    return (
+      typeof parsed.article_path === "string" ||
+      typeof parsed.cover_meta_path === "string" ||
+      Array.isArray(parsed.pipeline) ||
+      Array.isArray(parsed.recommended_channels)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function looksLikeThemeWorkbenchErrorPayload(content: string): boolean {
+  const normalized = content.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    normalized.startsWith("ran into this error:") ||
+    normalized.startsWith("request failed:") ||
+    normalized.includes(
+      "please retry if you think this is a transient or recoverable error.",
+    ) ||
+    normalized.includes("api key not valid")
+  );
+}
+
+function isCorruptedThemeWorkbenchDocumentContent(
+  content?: string | null,
+): boolean {
+  if (typeof content !== "string") {
+    return false;
+  }
+
+  return (
+    looksLikeSocialPublishPayload(content) ||
+    looksLikeThemeWorkbenchErrorPayload(content)
+  );
+}
+
+function resolveTaskFileType(
+  fileName: string,
+  content?: string | null,
+): TaskFile["type"] {
+  const inferredType = inferTaskFileType(fileName);
+  if (
+    inferredType === "document" &&
+    isCorruptedThemeWorkbenchDocumentContent(content)
+  ) {
+    return "other";
+  }
+  return inferredType;
+}
+
+function normalizeSessionTaskFileType(
+  fileType: string,
+  fileName: string,
+  content?: string | null,
+): TaskFile["type"] {
+  const normalized = fileType.trim().toLowerCase();
+  if (
+    normalized === "document" ||
+    normalized === "image" ||
+    normalized === "audio" ||
+    normalized === "video" ||
+    normalized === "other"
+  ) {
+    const resolvedByContent = resolveTaskFileType(fileName, content);
+    if (normalized === "document" && resolvedByContent !== "document") {
+      return resolvedByContent;
+    }
+    return normalized;
+  }
+  return resolveTaskFileType(fileName, content);
+}
+
+function isRenderableTaskFile(
+  file: Pick<TaskFile, "name" | "type">,
+  isThemeWorkbench: boolean,
+): boolean {
+  if (file.type !== "document") {
+    return false;
+  }
+  if (!isThemeWorkbench) {
+    return true;
+  }
+  return isThemeWorkbenchPrimaryDocumentArtifact(file.name);
+}
+
+function buildThemeWorkbenchWorkflowSteps(
+  messages: Message[],
+  backendRunState: BackendThemeWorkbenchRunState | null,
+  isSending: boolean,
+  skillDetailMap: Record<string, SkillDetailInfo | null>,
+): Array<{ id: string; title: string; status: StepStatus }> {
+  const liveSteps = buildThemeWorkbenchLiveWorkflowSteps(
+    messages,
+    skillDetailMap,
+    isSending,
+  );
+  if (liveSteps.length > 0) {
+    return liveSteps;
+  }
+
+  const queueItems = backendRunState?.queue_items || [];
+  if (queueItems.length > 0) {
+    return queueItems.map((item) => ({
+      id: item.run_id,
+      title: resolveThemeWorkbenchQueueItemTitle(item, skillDetailMap),
+      status: resolveThemeWorkbenchRunStepStatus(item.status),
+    }));
+  }
+
+  const latestTerminal = backendRunState?.latest_terminal;
+  if (latestTerminal && backendRunState?.run_state !== "auto_running") {
+    return [
+      {
+        id: latestTerminal.run_id,
+        title: resolveThemeWorkbenchQueueItemTitle(
+          latestTerminal,
+          skillDetailMap,
+        ),
+        status: resolveThemeWorkbenchRunStepStatus(latestTerminal.status),
+      },
+    ];
+  }
+
+  return [];
+}
 
 function loadPersistedProjectId(key: string): string | null {
   try {
@@ -261,6 +1418,66 @@ function isCanvasStateEmpty(state: CanvasStateUnion | null): boolean {
   }
 }
 
+function serializeCanvasStateForSync(state: CanvasStateUnion): string {
+  switch (state.type) {
+    case "document":
+      return state.content || "";
+    case "novel":
+      return JSON.stringify(state.chapters);
+    case "script":
+      return JSON.stringify(state.scenes);
+    case "music":
+      return JSON.stringify(state.sections);
+    case "poster":
+      return JSON.stringify(state.pages);
+    default:
+      return JSON.stringify(state);
+  }
+}
+
+function isSyncContentEmpty(content: string): boolean {
+  return !content || content === "[]" || content === "{}";
+}
+
+function buildThemeWorkbenchRunStateSignature(
+  state: BackendThemeWorkbenchRunState | null,
+): string {
+  if (!state) {
+    return "null";
+  }
+
+  const queueSignature = (state.queue_items || [])
+    .map((item) =>
+      [
+        item.run_id,
+        item.execution_id || "",
+        item.status,
+        item.gate_key || "",
+        item.source || "",
+        item.source_ref || "",
+      ].join(":"),
+    )
+    .join("|");
+
+  const terminalSignature = state.latest_terminal
+    ? [
+        state.latest_terminal.run_id,
+        state.latest_terminal.execution_id || "",
+        state.latest_terminal.status,
+        state.latest_terminal.gate_key || "",
+        state.latest_terminal.source || "",
+        state.latest_terminal.source_ref || "",
+      ].join(":")
+    : "";
+
+  return [
+    state.run_state,
+    state.current_gate_key || "",
+    queueSignature,
+    terminalSignature,
+  ].join("||");
+}
+
 export function AgentChatPage({
   onNavigate: _onNavigate,
   projectId: externalProjectId,
@@ -281,6 +1498,7 @@ export function AgentChatPage({
   onRecommendationClick: _onRecommendationClick,
   onHasMessagesChange,
   onSessionChange,
+  preferContentReviewInRightRail = false,
 }: {
   onNavigate?: (page: Page, params?: PageParams) => void;
   projectId?: string;
@@ -303,21 +1521,34 @@ export function AgentChatPage({
   onRecommendationClick?: (shortLabel: string, fullPrompt: string) => void;
   onHasMessagesChange?: (hasMessages: boolean) => void;
   onSessionChange?: (sessionId: string | null) => void;
+  preferContentReviewInRightRail?: boolean;
 }) {
   const [showSidebar, setShowSidebar] = useState(true);
+  const [themeWorkbenchSidebarCollapsed, setThemeWorkbenchSidebarCollapsed] =
+    useState(false);
   const [input, setInput] = useState("");
   const [selectedText, setSelectedText] = useState("");
   const [chatToolPreferences, setChatToolPreferences] =
     useState<ChatToolPreferences>(() => loadChatToolPreferences());
 
+  const normalizedEntryTheme = normalizeInitialTheme(initialTheme);
+  const shouldBootstrapCanvasOnEntry =
+    Boolean(contentId) && isContentCreationTheme(normalizedEntryTheme);
+
   // 内容创作相关状态
-  const [activeTheme, setActiveTheme] = useState<string>(
-    normalizeInitialTheme(initialTheme),
-  );
+  const [activeTheme, setActiveTheme] = useState<string>(normalizedEntryTheme);
   const [creationMode, setCreationMode] = useState<CreationMode>(
     initialCreationMode ?? "guided",
   );
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>("chat");
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(
+    shouldBootstrapCanvasOnEntry ? "canvas" : "chat",
+  );
+  const [isInitialContentLoading, setIsInitialContentLoading] = useState(
+    shouldBootstrapCanvasOnEntry,
+  );
+  const [initialContentLoadError, setInitialContentLoadError] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     if (!initialTheme) return;
@@ -337,18 +1568,74 @@ export function AgentChatPage({
   const [internalProjectId, setInternalProjectId] = useState<string | null>(
     null,
   );
+  const handledNewChatRequestRef = useRef<string | null>(null);
+
+  const incomingNewChatRequestKey =
+    typeof newChatAt === "number" ? String(newChatAt) : null;
+  const shouldResetToFreshHomeContext =
+    !externalProjectId &&
+    incomingNewChatRequestKey !== null &&
+    handledNewChatRequestRef.current !== incomingNewChatRequestKey;
 
   // 使用外部或内部的 projectId
-  const projectId = externalProjectId ?? internalProjectId ?? undefined;
+  const projectId =
+    externalProjectId ??
+    (shouldResetToFreshHomeContext ? undefined : internalProjectId) ??
+    undefined;
 
   // 画布状态（支持多种画布类型）
-  const [canvasState, setCanvasState] = useState<CanvasStateUnion | null>(null);
+  const [canvasState, setCanvasState] = useState<CanvasStateUnion | null>(
+    () => {
+      if (!shouldBootstrapCanvasOnEntry) {
+        return null;
+      }
+
+      return (
+        createInitialCanvasState(normalizedEntryTheme, "") ||
+        createInitialDocumentState("")
+      );
+    },
+  );
+  const [documentVersionStatusMap, setDocumentVersionStatusMap] = useState<
+    Record<string, TopicBranchStatus>
+  >({});
+  const contentMetadataRef = useRef<Record<string, unknown>>({});
+  const persistedWorkbenchSnapshotRef = useRef("");
+  const lastCanvasSyncRequestRef = useRef<{
+    contentId: string;
+    body: string;
+  } | null>(null);
+  const themeWorkbenchRunStateSignatureRef = useRef("");
   const [novelChapterListCollapsed, setNovelChapterListCollapsed] =
     useState(false);
+  const [themeWorkbenchBackendRunState, setThemeWorkbenchBackendRunState] =
+    useState<BackendThemeWorkbenchRunState | null>(null);
+  const [themeWorkbenchSkillDetailMap, setThemeWorkbenchSkillDetailMap] =
+    useState<Record<string, SkillDetailInfo | null>>({});
+  const [selectedThemeWorkbenchRunId, setSelectedThemeWorkbenchRunId] =
+    useState<string | null>(null);
+  const [selectedThemeWorkbenchRunDetail, setSelectedThemeWorkbenchRunDetail] =
+    useState<AgentRun | null>(null);
+  const [themeWorkbenchRunDetailLoading, setThemeWorkbenchRunDetailLoading] =
+    useState(false);
+  const [
+    themeWorkbenchCreationTaskEvents,
+    setThemeWorkbenchCreationTaskEvents,
+  ] = useState<ThemeWorkbenchCreationTaskEvent[]>([]);
+  const documentEditorFocusedRef = useRef(false);
 
   useEffect(() => {
     setActiveContentTarget(projectId, contentId, canvasState?.type ?? null);
   }, [canvasState?.type, contentId, projectId]);
+
+  useEffect(() => {
+    persistedWorkbenchSnapshotRef.current = "";
+    contentMetadataRef.current = {};
+    lastCanvasSyncRequestRef.current = null;
+    if (!contentId) {
+      setDocumentVersionStatusMap({});
+    }
+  }, [contentId]);
 
   // General 主题专用画布状态
   const [generalCanvasState, setGeneralCanvasState] =
@@ -375,6 +1662,20 @@ export function AgentChatPage({
 
   // 技能列表（用于 @ 引用）
   const [skills, setSkills] = useState<Skill[]>([]);
+
+  // Workbench Store（用于主题工作台右侧面板状态同步）
+  const pendingSkillKey = useWorkbenchStore(
+    (state) => state.pendingSkillKey,
+  );
+  const setThemeSkillsRailState = useWorkbenchStore(
+    (state) => state.setThemeSkillsRailState,
+  );
+  const clearThemeSkillsRailState = useWorkbenchStore(
+    (state) => state.clearThemeSkillsRailState,
+  );
+  const consumePendingSkill = useWorkbenchStore(
+    (state) => state.consumePendingSkill,
+  );
 
   // 用于追踪已处理的消息 ID，避免重复处理
   const processedMessageIds = useRef<Set<string>>(new Set());
@@ -442,49 +1743,182 @@ export function AgentChatPage({
 
   // 加载项目、Memory 和内容
   useEffect(() => {
+    let cancelled = false;
+
     const loadData = async () => {
+      if (contentId) {
+        setIsInitialContentLoading(true);
+        setInitialContentLoadError(null);
+      } else {
+        setIsInitialContentLoading(false);
+        setInitialContentLoadError(null);
+      }
+
       if (!projectId) {
+        if (cancelled) {
+          return;
+        }
         setProject(null);
         setProjectMemory(null);
+        setIsInitialContentLoading(false);
         return;
       }
 
-      // 1. 加载项目
-      const p = await getProject(projectId);
-      if (!p) return;
+      try {
+        const p = await getProject(projectId);
+        if (!p) {
+          if (cancelled) {
+            return;
+          }
+          setProject(null);
+          setProjectMemory(null);
+          if (contentId) {
+            setInitialContentLoadError("当前项目不存在或已被删除");
+          }
+          return;
+        }
 
-      setProject(p);
-      // 直接使用 projectType 作为 theme（类型已统一）
-      const theme = projectTypeToTheme(p.workspaceType);
-      if (!lockTheme || !initialTheme) {
-        setActiveTheme(theme);
-      }
+        if (cancelled) {
+          return;
+        }
 
-      // 2. 加载 Memory
-      const memory = await getProjectMemory(projectId);
-      setProjectMemory(memory);
+        setProject(p);
+        const theme = projectTypeToTheme(p.workspaceType);
+        if (!lockTheme || !initialTheme) {
+          setActiveTheme(theme);
+        }
 
-      // 3. 如果有 contentId，加载内容并打开画布
-      if (contentId) {
+        const memory = await getProjectMemory(projectId);
+        if (cancelled) {
+          return;
+        }
+        setProjectMemory(memory);
+
+        if (!contentId) {
+          return;
+        }
+
         const content = await getContent(contentId);
-        if (content) {
-          const canvasTheme = (
-            lockTheme && initialTheme
-              ? normalizeInitialTheme(initialTheme)
-              : theme
-          ) as ThemeType;
+        if (cancelled) {
+          return;
+        }
 
-          const initialState =
-            createInitialCanvasState(canvasTheme, content.body || "") ||
-            createInitialDocumentState(content.body || "");
-          setCanvasState(initialState);
-          setLayoutMode("chat-canvas");
+        if (!content) {
+          setInitialContentLoadError("文稿不存在或读取失败");
+          return;
+        }
+
+        contentMetadataRef.current = content.metadata || {};
+        const canvasTheme = (
+          lockTheme && initialTheme
+            ? normalizeInitialTheme(initialTheme)
+            : theme
+        ) as ThemeType;
+        const rawBody = content.body || "";
+        const sanitizedBody = isCorruptedThemeWorkbenchDocumentContent(rawBody)
+          ? ""
+          : rawBody;
+
+        if (rawBody && sanitizedBody !== rawBody) {
+          setInitialContentLoadError("当前文稿未生成有效主稿，请重新生成或稍后重试");
+        } else {
+          setInitialContentLoadError(null);
+        }
+
+        let initialState =
+          createInitialCanvasState(canvasTheme, sanitizedBody) ||
+          createInitialDocumentState(sanitizedBody);
+
+        if (initialState.type === "document") {
+          const backendDocumentState = await getThemeWorkbenchDocumentState(
+            content.id,
+          ).catch((error) => {
+            console.warn(
+              "[AgentChatPage] 读取主题工作台版本状态失败，降级为 metadata 解析:",
+              error,
+            );
+            return null;
+          });
+          const backendApplied = backendDocumentState
+            ? applyBackendThemeWorkbenchDocumentState(
+                initialState,
+                backendDocumentState,
+                sanitizedBody,
+              )
+            : null;
+
+          if (backendApplied) {
+            initialState = backendApplied.state;
+            setDocumentVersionStatusMap(backendApplied.statusMap);
+          } else {
+            const persisted = readPersistedThemeWorkbenchDocument(content.metadata);
+            if (persisted) {
+              const restoredVersions = persisted.versions.map((version) =>
+                version.id === persisted.currentVersionId
+                  ? { ...version, content: sanitizedBody || version.content }
+                  : version,
+              );
+              const currentVersion =
+                restoredVersions.find(
+                  (version) => version.id === persisted.currentVersionId,
+                ) || restoredVersions[restoredVersions.length - 1];
+              initialState = {
+                ...initialState,
+                versions: restoredVersions,
+                currentVersionId: currentVersion.id,
+                content: currentVersion.content,
+              };
+              setDocumentVersionStatusMap(persisted.versionStatusMap);
+            } else {
+              setDocumentVersionStatusMap({});
+            }
+          }
+        } else {
+          setDocumentVersionStatusMap({});
+        }
+
+        lastCanvasSyncRequestRef.current = {
+          contentId: content.id,
+          body: serializeCanvasStateForSync(initialState),
+        };
+        setCanvasState(initialState);
+        setLayoutMode("canvas");
+      } catch (error) {
+        console.error("[AgentChatPage] 加载项目或文稿失败:", error);
+        if (!cancelled && contentId) {
+          setInitialContentLoadError("文稿加载失败，请稍后重试");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsInitialContentLoading(false);
         }
       }
     };
 
-    loadData();
+    void loadData();
+
+    return () => {
+      cancelled = true;
+    };
   }, [projectId, contentId, lockTheme, initialTheme]);
+
+  useEffect(() => {
+    if (!shouldBootstrapCanvasOnEntry) {
+      return;
+    }
+
+    setLayoutMode("canvas");
+    setCanvasState((previous) => {
+      if (previous) {
+        return previous;
+      }
+
+      return (
+        createInitialCanvasState(normalizedEntryTheme, "") ||
+        createInitialDocumentState("")
+      );
+    });
+  }, [normalizedEntryTheme, shouldBootstrapCanvasOnEntry]);
 
   // 当 projectId 变化时主动检查 workspace 目录健康状态
   // 静默修复（auto-created）或显示 banner 提示用户重新选择
@@ -493,9 +1927,12 @@ export function AgentChatPage({
     const normalizedId = normalizeProjectId(projectId);
     if (!normalizedId) return;
 
-    invoke<{ created: boolean; repaired: boolean; rootPath: string }>("workspace_ensure_ready", {
-      id: normalizedId,
-    })
+    invoke<{ created: boolean; repaired: boolean; rootPath: string }>(
+      "workspace_ensure_ready",
+      {
+        id: normalizedId,
+      },
+    )
       .then(({ repaired, rootPath }) => {
         if (repaired) {
           recordWorkspaceRepair({
@@ -503,10 +1940,7 @@ export function AgentChatPage({
             rootPath,
             source: "agent_chat_page",
           });
-          console.info(
-            "[AgentChatPage] workspace 目录已自动修复:",
-            rootPath,
-          );
+          console.info("[AgentChatPage] workspace 目录已自动修复:", rootPath);
         }
       })
       .catch((err: unknown) => {
@@ -605,6 +2039,835 @@ export function AgentChatPage({
     onSessionChange?.(sessionId ?? null);
   }, [onSessionChange, sessionId]);
 
+  const contextWorkspace = useThemeContextWorkspace({
+    projectId,
+    activeTheme,
+    messages,
+    providerType,
+    model,
+  });
+  const isThemeWorkbench = contextWorkspace.enabled;
+  const enableThemeWorkbenchPanelCollapse =
+    isThemeWorkbench && mappedTheme === "social-media";
+
+  // 加载 skills 列表
+  useEffect(() => {
+    let cancelled = false;
+    skillsApi
+      .getAll("proxycast")
+      .then((loadedSkills) => {
+        if (!cancelled) {
+          setSkills(loadedSkills);
+        }
+      })
+      .catch((error) => {
+        console.warn("[AgentChatPage] 加载 skills 失败:", error);
+        if (!cancelled) {
+          setSkills([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // 主题工作台模式：同步 skills 状态到 store
+  useEffect(() => {
+    if (!isThemeWorkbench) {
+      clearThemeSkillsRailState();
+      return;
+    }
+
+    if (skills.length === 0) {
+      return;
+    }
+
+    setThemeSkillsRailState({
+      skills,
+      isAutoRunning: isSending,
+    });
+  }, [
+    isThemeWorkbench,
+    skills,
+    isSending,
+    setThemeSkillsRailState,
+    clearThemeSkillsRailState,
+  ]);
+
+  // 组件卸载时清理 store 状态
+  useEffect(() => {
+    return () => {
+      clearThemeSkillsRailState();
+    };
+  }, [clearThemeSkillsRailState]);
+
+  useEffect(() => {
+    if (!isThemeWorkbench) {
+      setThemeWorkbenchCreationTaskEvents([]);
+    }
+  }, [isThemeWorkbench]);
+
+  useEffect(() => {
+    if (!isThemeWorkbench || !sessionId) {
+      return;
+    }
+
+    setThemeWorkbenchCreationTaskEvents([]);
+
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+
+    safeListen<CreationTaskSubmittedPayload>(
+      THEME_WORKBENCH_CREATION_TASK_EVENT_NAME,
+      (event) => {
+        if (cancelled) {
+          return;
+        }
+        const normalized = normalizeThemeWorkbenchCreationTaskEvent(
+          event.payload || {},
+        );
+        if (!normalized) {
+          return;
+        }
+        setThemeWorkbenchCreationTaskEvents((previous) => {
+          const deduplicated = previous.filter(
+            (item) =>
+              item.taskId !== normalized.taskId &&
+              item.path !== normalized.path,
+          );
+          return [normalized, ...deduplicated].slice(
+            0,
+            MAX_THEME_WORKBENCH_CREATION_TASK_EVENTS,
+          );
+        });
+      },
+    )
+      .then((dispose) => {
+        if (cancelled) {
+          void dispose();
+          return;
+        }
+        unlisten = dispose;
+      })
+      .catch((error) => {
+        console.warn("[AgentChatPage] 监听任务提交事件失败:", error);
+      });
+
+    return () => {
+      cancelled = true;
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, [isThemeWorkbench, sessionId]);
+
+  useEffect(() => {
+    if (!isThemeWorkbench || canvasState) {
+      return;
+    }
+
+    const initialThemeWorkbenchCanvas =
+      createInitialCanvasState(mappedTheme, "") ||
+      createInitialDocumentState("");
+    if (!initialThemeWorkbenchCanvas) {
+      return;
+    }
+
+    setCanvasState(initialThemeWorkbenchCanvas);
+    setLayoutMode((previous) => (previous === "chat" ? "canvas" : previous));
+  }, [canvasState, isThemeWorkbench, mappedTheme]);
+
+  useEffect(() => {
+    if (enableThemeWorkbenchPanelCollapse) {
+      return;
+    }
+    setThemeWorkbenchSidebarCollapsed(false);
+  }, [enableThemeWorkbenchPanelCollapse]);
+  const versionTopics = useMemo(() => {
+    if (!isThemeWorkbench || !canvasState || canvasState.type !== "document") {
+      return [];
+    }
+    return canvasState.versions.map((version, index) => ({
+      id: version.id,
+      title: version.description?.trim() || `版本 ${index + 1}`,
+      messagesCount: version.content.trim() ? 2 : 0,
+    }));
+  }, [canvasState, isThemeWorkbench]);
+  const currentVersionId =
+    isThemeWorkbench && canvasState?.type === "document"
+      ? canvasState.currentVersionId
+      : null;
+  const { branchItems, setTopicStatus } = useTopicBranchBoard({
+    enabled: isThemeWorkbench && canvasState?.type === "document",
+    projectId,
+    currentTopicId: currentVersionId,
+    topics: versionTopics,
+    externalStatusMap: documentVersionStatusMap,
+    onStatusMapChange: setDocumentVersionStatusMap,
+  });
+
+  useEffect(() => {
+    if (
+      !isThemeWorkbench ||
+      !contentId ||
+      !canvasState ||
+      canvasState.type !== "document"
+    ) {
+      return;
+    }
+
+    const persisted = buildPersistedThemeWorkbenchDocument(
+      canvasState,
+      documentVersionStatusMap,
+    );
+    if (!persisted) {
+      return;
+    }
+
+    const snapshot = JSON.stringify(persisted);
+    if (snapshot === persistedWorkbenchSnapshotRef.current) {
+      return;
+    }
+
+    const nextMetadata = {
+      ...(contentMetadataRef.current || {}),
+      [THEME_WORKBENCH_DOCUMENT_META_KEY]: persisted,
+    };
+
+    const timer = setTimeout(() => {
+      updateContent(contentId, {
+        metadata: nextMetadata,
+      })
+        .then((updated) => {
+          contentMetadataRef.current = updated.metadata || nextMetadata;
+          persistedWorkbenchSnapshotRef.current = snapshot;
+        })
+        .catch((error) => {
+          console.warn("[AgentChatPage] 保存文稿版本状态失败:", error);
+        });
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [canvasState, contentId, documentVersionStatusMap, isThemeWorkbench]);
+
+  const pendingActionRequest = useMemo(() => {
+    if (!isThemeWorkbench) {
+      return null;
+    }
+    return (
+      [...messages]
+        .reverse()
+        .find((message) =>
+          message.actionRequests?.some(
+            (request) => request.status !== "submitted",
+          ),
+        )
+        ?.actionRequests?.find((request) => request.status !== "submitted") ||
+      null
+    );
+  }, [isThemeWorkbench, messages]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeDocumentEditorFocus((focused) => {
+      documentEditorFocusedRef.current = focused;
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!isThemeWorkbench || !sessionId) {
+      themeWorkbenchRunStateSignatureRef.current = "";
+      setThemeWorkbenchBackendRunState(null);
+      return;
+    }
+
+    let disposed = false;
+    let inFlight = false;
+    let timer: number | null = null;
+    const activePollIntervalMs = isSending ? 1000 : 3000;
+    const idlePollIntervalMs = isSending ? 1000 : 10000;
+    const focusedPollIntervalMs = isSending ? 1000 : 15000;
+
+    const scheduleNext = (delayMs: number) => {
+      if (disposed) {
+        return;
+      }
+      timer = window.setTimeout(() => {
+        void fetchRunState();
+      }, delayMs);
+    };
+
+    const fetchRunState = async () => {
+      if (disposed || inFlight) {
+        return;
+      }
+
+      inFlight = true;
+      try {
+        const state = await executionRunGetThemeWorkbenchState(sessionId, 3);
+        if (!disposed) {
+          const nextSignature = buildThemeWorkbenchRunStateSignature(state);
+          if (themeWorkbenchRunStateSignatureRef.current !== nextSignature) {
+            themeWorkbenchRunStateSignatureRef.current = nextSignature;
+            setThemeWorkbenchBackendRunState(state);
+          }
+
+          const hasFreshRunningQueueItem = (state.queue_items || []).some(
+            (item) => {
+              if (item.status !== "running") {
+                return false;
+              }
+              const startedAt = new Date(item.started_at);
+              if (Number.isNaN(startedAt.getTime())) {
+                return false;
+              }
+              return (
+                Date.now() - startedAt.getTime() <=
+                THEME_WORKBENCH_ACTIVE_RUN_MAX_AGE_MS
+              );
+            },
+          );
+
+          const latestTerminalRunning =
+            state.latest_terminal?.status === "running";
+          const hasActiveBackendRun =
+            state.run_state === "auto_running" ||
+            hasFreshRunningQueueItem ||
+            latestTerminalRunning;
+          const isEditorFocused = documentEditorFocusedRef.current;
+          scheduleNext(
+            hasActiveBackendRun
+              ? activePollIntervalMs
+              : isEditorFocused
+                ? focusedPollIntervalMs
+                : idlePollIntervalMs,
+          );
+        }
+      } catch (error) {
+        if (!disposed) {
+          console.warn("[AgentChatPage] 拉取主题工作台运行状态失败:", error);
+          if (themeWorkbenchRunStateSignatureRef.current !== "null") {
+            themeWorkbenchRunStateSignatureRef.current = "null";
+            setThemeWorkbenchBackendRunState(null);
+          }
+          scheduleNext(
+            documentEditorFocusedRef.current
+              ? focusedPollIntervalMs
+              : activePollIntervalMs,
+          );
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    void fetchRunState();
+
+    return () => {
+      disposed = true;
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [isSending, isThemeWorkbench, sessionId]);
+
+  const themeWorkbenchRequiredSkillNames = useMemo(() => {
+    if (!isThemeWorkbench) {
+      return [] as string[];
+    }
+
+    const requiredSkillNames = new Set<string>();
+    messages.forEach((message) => {
+      if (message.role !== "user") {
+        return;
+      }
+      const skillName = parseSkillSlashCommand(message.content)?.skillName;
+      if (skillName) {
+        requiredSkillNames.add(skillName);
+      }
+    });
+    (themeWorkbenchBackendRunState?.queue_items || []).forEach((item) => {
+      const sourceRef = item.source_ref?.trim();
+      if (sourceRef) {
+        requiredSkillNames.add(sourceRef);
+      }
+    });
+    const terminalSourceRef =
+      themeWorkbenchBackendRunState?.latest_terminal?.source_ref?.trim();
+    if (terminalSourceRef) {
+      requiredSkillNames.add(terminalSourceRef);
+    }
+
+    return [...requiredSkillNames].sort();
+  }, [
+    isThemeWorkbench,
+    messages,
+    themeWorkbenchBackendRunState?.latest_terminal?.source_ref,
+    themeWorkbenchBackendRunState?.queue_items,
+  ]);
+
+  useEffect(() => {
+    if (!isThemeWorkbench) {
+      setThemeWorkbenchSkillDetailMap((prev) =>
+        Object.keys(prev).length === 0 ? prev : {},
+      );
+      return;
+    }
+
+    const missingSkillNames = themeWorkbenchRequiredSkillNames.filter(
+      (skillName) => !(skillName in themeWorkbenchSkillDetailMap),
+    );
+    if (missingSkillNames.length === 0) {
+      return;
+    }
+
+    let disposed = false;
+    Promise.all(
+      missingSkillNames.map(async (skillName) => {
+        try {
+          const detail = await skillExecutionApi.getSkillDetail(skillName);
+          return [skillName, detail] as const;
+        } catch (error) {
+          console.warn(
+            "[AgentChatPage] 加载 Skill 详情失败:",
+            skillName,
+            error,
+          );
+          return [skillName, null] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (disposed) {
+        return;
+      }
+      setThemeWorkbenchSkillDetailMap((prev) => {
+        const next = { ...prev };
+        entries.forEach(([skillName, detail]) => {
+          next[skillName] = detail;
+        });
+        return next;
+      });
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [
+    isThemeWorkbench,
+    themeWorkbenchRequiredSkillNames,
+    themeWorkbenchSkillDetailMap,
+  ]);
+
+  const themeWorkbenchWorkflowSteps = useMemo(
+    () =>
+      buildThemeWorkbenchWorkflowSteps(
+        messages,
+        themeWorkbenchBackendRunState,
+        isSending,
+        themeWorkbenchSkillDetailMap,
+      ),
+    [
+      isSending,
+      messages,
+      themeWorkbenchBackendRunState,
+      themeWorkbenchSkillDetailMap,
+    ],
+  );
+
+  const themeWorkbenchActiveQueueItem = useMemo(() => {
+    const queueItems = themeWorkbenchBackendRunState?.queue_items || [];
+    return (
+      queueItems.find((item) => item.status === "running") ||
+      queueItems[0] ||
+      null
+    );
+  }, [themeWorkbenchBackendRunState?.queue_items]);
+
+  const themeWorkbenchExecutionRunMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!isThemeWorkbench || !themeWorkbenchBackendRunState) {
+      return map;
+    }
+
+    const register = (executionId?: string | null, runId?: string | null) => {
+      const normalizedExecutionId = executionId?.trim();
+      const normalizedRunId = runId?.trim();
+      if (!normalizedExecutionId || !normalizedRunId) {
+        return;
+      }
+      map.set(normalizedExecutionId, normalizedRunId);
+    };
+
+    (themeWorkbenchBackendRunState.queue_items || []).forEach((item) => {
+      register(item.execution_id, item.run_id);
+    });
+    register(
+      themeWorkbenchBackendRunState.latest_terminal?.execution_id,
+      themeWorkbenchBackendRunState.latest_terminal?.run_id,
+    );
+
+    return map;
+  }, [isThemeWorkbench, themeWorkbenchBackendRunState]);
+
+  const themeWorkbenchBackendActivityLogs = useMemo<
+    SidebarActivityLog[]
+  >(() => {
+    if (!isThemeWorkbench || !themeWorkbenchBackendRunState) {
+      return [];
+    }
+
+    const runningLogs = (themeWorkbenchBackendRunState.queue_items || []).map(
+      (item) => {
+        const gateKey =
+          item.gate_key || inferThemeWorkbenchGateFromQueueItem(item).key;
+        return {
+          id: `run-queue-${item.run_id}`,
+          name: item.title || "执行主题工作台编排",
+          status: "running" as const,
+          timeLabel: formatThemeWorkbenchRunTimeLabel(item.started_at),
+          applyTarget: resolveThemeWorkbenchApplyTargetByGateKey(gateKey),
+          runId: item.run_id,
+          executionId: item.execution_id || undefined,
+          sessionId: item.session_id || undefined,
+          artifactPaths:
+            Array.isArray(item.artifact_paths) && item.artifact_paths.length > 0
+              ? item.artifact_paths
+              : undefined,
+          gateKey,
+          source: item.source,
+        };
+      },
+    );
+
+    const terminal = themeWorkbenchBackendRunState.latest_terminal;
+    const terminalLog: SidebarActivityLog[] = terminal
+      ? [
+          {
+            id: `run-terminal-${terminal.run_id}`,
+            name: terminal.title || "执行主题工作台编排",
+            status: terminal.status === "success" ? "completed" : "failed",
+            timeLabel: formatThemeWorkbenchRunTimeLabel(
+              terminal.finished_at || terminal.started_at,
+            ),
+            durationLabel: formatThemeWorkbenchRunDurationLabel(
+              terminal.started_at,
+              terminal.finished_at,
+            ),
+            applyTarget: resolveThemeWorkbenchApplyTargetByGateKey(
+              terminal.gate_key || "idle",
+            ),
+            runId: terminal.run_id,
+            executionId: terminal.execution_id || undefined,
+            sessionId: terminal.session_id || undefined,
+            artifactPaths:
+              Array.isArray(terminal.artifact_paths) &&
+              terminal.artifact_paths.length > 0
+                ? terminal.artifact_paths
+                : undefined,
+            gateKey: terminal.gate_key || "idle",
+            source: terminal.source,
+          },
+        ]
+      : [];
+
+    return [...runningLogs, ...terminalLog];
+  }, [isThemeWorkbench, themeWorkbenchBackendRunState]);
+
+  const themeWorkbenchActivityLogs = useMemo<SidebarActivityLog[]>(() => {
+    if (!isThemeWorkbench) {
+      return contextWorkspace.activityLogs;
+    }
+    const enrichedContextLogs = contextWorkspace.activityLogs.map((log) => {
+      const normalizedRunId = log.runId?.trim();
+      if (normalizedRunId) {
+        return {
+          ...log,
+          runId: normalizedRunId,
+        };
+      }
+
+      const candidateExecutionIds =
+        resolveExecutionIdCandidatesForActivityLog(log);
+      for (const executionId of candidateExecutionIds) {
+        const mappedRunId = themeWorkbenchExecutionRunMap.get(executionId);
+        if (!mappedRunId) {
+          continue;
+        }
+        return {
+          ...log,
+          executionId,
+          runId: mappedRunId,
+        };
+      }
+
+      return log;
+    });
+
+    return [...themeWorkbenchBackendActivityLogs, ...enrichedContextLogs];
+  }, [
+    contextWorkspace.activityLogs,
+    isThemeWorkbench,
+    themeWorkbenchBackendActivityLogs,
+    themeWorkbenchExecutionRunMap,
+  ]);
+
+  const handleViewThemeWorkbenchRunDetail = useCallback((runId: string) => {
+    const normalizedRunId = runId.trim();
+    if (!normalizedRunId) {
+      return;
+    }
+    setSelectedThemeWorkbenchRunId(normalizedRunId);
+  }, []);
+
+  const handleViewContextDetail = useCallback(
+    (contextId: string) => {
+      const detail = contextWorkspace.getContextDetail(contextId);
+      if (!detail) {
+        toast.error("无法找到上下文详情");
+        return;
+      }
+
+      // 显示上下文详情
+      const sourceLabel =
+        detail.source === "material"
+          ? "素材库"
+          : detail.source === "content"
+            ? "历史内容"
+            : "搜索结果";
+
+      toast.info(
+        <div style={{ maxWidth: "500px" }}>
+          <div style={{ fontWeight: 600, marginBottom: "8px" }}>
+            {detail.name}
+          </div>
+          <div
+            style={{
+              fontSize: "12px",
+              color: "hsl(var(--muted-foreground))",
+              marginBottom: "8px",
+            }}
+          >
+            来源: {sourceLabel} · 约 {detail.estimatedTokens} tokens
+          </div>
+          <div
+            style={{
+              fontSize: "13px",
+              lineHeight: "1.5",
+              maxHeight: "300px",
+              overflow: "auto",
+            }}
+          >
+            {detail.bodyText || detail.previewText}
+          </div>
+        </div>,
+        { duration: 10000 },
+      );
+    },
+    [contextWorkspace],
+  );
+
+
+  useEffect(() => {
+    if (!isThemeWorkbench || !selectedThemeWorkbenchRunId) {
+      setThemeWorkbenchRunDetailLoading(false);
+      setSelectedThemeWorkbenchRunDetail(null);
+      return;
+    }
+
+    let cancelled = false;
+    setThemeWorkbenchRunDetailLoading(true);
+    executionRunGet(selectedThemeWorkbenchRunId)
+      .then((detail) => {
+        if (!cancelled) {
+          setSelectedThemeWorkbenchRunDetail(detail);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        setSelectedThemeWorkbenchRunDetail(null);
+        console.warn("[AgentChatPage] 加载运行详情失败:", error);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setThemeWorkbenchRunDetailLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isThemeWorkbench, selectedThemeWorkbenchRunId]);
+
+  const currentGateBase = useMemo(() => {
+    if (!isThemeWorkbench) {
+      return {
+        key: "idle",
+        title: "编排待启动",
+        requiresUserDecision: false,
+        description: "输入目标后将自动进入编排执行。",
+      };
+    }
+
+    if (pendingActionRequest) {
+      const prompt =
+        pendingActionRequest.prompt ||
+        pendingActionRequest.questions?.[0]?.question ||
+        "等待你的决策以继续执行后续节点。";
+      return {
+        key: pendingActionRequest.actionType,
+        title: "人工闸门",
+        requiresUserDecision: true,
+        description: prompt,
+      };
+    }
+
+    if (themeWorkbenchBackendRunState?.run_state === "auto_running") {
+      const backendGateKey = themeWorkbenchBackendRunState.current_gate_key;
+      if (
+        backendGateKey === "topic_select" ||
+        backendGateKey === "write_mode" ||
+        backendGateKey === "publish_confirm"
+      ) {
+        const backendGate = resolveThemeWorkbenchGateByKey(
+          backendGateKey,
+          themeWorkbenchActiveQueueItem?.title,
+        );
+        return {
+          key: backendGate.key,
+          title: backendGate.title,
+          requiresUserDecision: false,
+          description: backendGate.description,
+        };
+      }
+      const backendGate = inferThemeWorkbenchGateFromQueueItem(
+        themeWorkbenchActiveQueueItem,
+      );
+      return {
+        key: backendGate.key,
+        title: backendGate.title,
+        requiresUserDecision: false,
+        description: backendGate.description,
+      };
+    }
+
+    return {
+      key: "idle",
+      title: "编排待启动",
+      requiresUserDecision: false,
+      description: "输入目标后将自动进入编排执行。",
+    };
+  }, [
+    isThemeWorkbench,
+    pendingActionRequest,
+    themeWorkbenchActiveQueueItem,
+    themeWorkbenchBackendRunState?.current_gate_key,
+    themeWorkbenchBackendRunState?.run_state,
+  ]);
+
+  const themeWorkbenchRunState = useMemo<
+    "idle" | "auto_running" | "await_user_decision"
+  >(() => {
+    if (!isThemeWorkbench) {
+      return "idle";
+    }
+    if (currentGateBase.requiresUserDecision) {
+      return "await_user_decision";
+    }
+    if (themeWorkbenchBackendRunState) {
+      if (themeWorkbenchBackendRunState.run_state !== "auto_running") {
+        return "idle";
+      }
+
+      const hasFreshRunningQueueItem = (
+        themeWorkbenchBackendRunState.queue_items || []
+      ).some((item) => {
+        if (item.status !== "running") {
+          return false;
+        }
+        const startedAt = new Date(item.started_at);
+        if (Number.isNaN(startedAt.getTime())) {
+          return false;
+        }
+        return (
+          Date.now() - startedAt.getTime() <=
+          THEME_WORKBENCH_ACTIVE_RUN_MAX_AGE_MS
+        );
+      });
+
+      if (hasFreshRunningQueueItem || isSending) {
+        return "auto_running";
+      }
+      return "idle";
+    }
+    return isSending ? "auto_running" : "idle";
+  }, [
+    currentGateBase.requiresUserDecision,
+    isThemeWorkbench,
+    themeWorkbenchBackendRunState,
+    isSending,
+  ]);
+
+  const currentGate = useMemo(() => {
+    const status = currentGateBase.requiresUserDecision
+      ? ("waiting" as const)
+      : themeWorkbenchRunState === "auto_running"
+        ? ("running" as const)
+        : ("idle" as const);
+
+    return {
+      key: currentGateBase.key,
+      title: currentGateBase.title,
+      description: currentGateBase.description,
+      status,
+    };
+  }, [currentGateBase, themeWorkbenchRunState]);
+
+  useEffect(() => {
+    if (!isThemeWorkbench || themeWorkbenchRunState !== "idle") {
+      return;
+    }
+    if (!canvasState || canvasState.type !== "document") {
+      return;
+    }
+
+    setDocumentVersionStatusMap((previous) => {
+      const latestTerminal = themeWorkbenchBackendRunState?.latest_terminal;
+      if (latestTerminal) {
+        const terminalVersionId = latestTerminal.run_id;
+        const terminalVersionExists = canvasState.versions.some(
+          (version) => version.id === terminalVersionId,
+        );
+        if (terminalVersionExists) {
+          const terminalStatus: TopicBranchStatus =
+            latestTerminal.status === "success" ? "merged" : "candidate";
+          if (previous[terminalVersionId] !== terminalStatus) {
+            return {
+              ...previous,
+              [terminalVersionId]: terminalStatus,
+            };
+          }
+        }
+      }
+
+      const currentVersionId = canvasState.currentVersionId;
+      if (!currentVersionId || previous[currentVersionId] !== "in_progress") {
+        return previous;
+      }
+      return {
+        ...previous,
+        [currentVersionId]: "pending",
+      };
+    });
+  }, [
+    canvasState,
+    isThemeWorkbench,
+    themeWorkbenchBackendRunState?.latest_terminal,
+    themeWorkbenchRunState,
+  ]);
+
   // 会话文件持久化 hook
   const {
     saveFile: saveSessionFile,
@@ -620,72 +2883,34 @@ export function AgentChatPage({
 
   // 监听画布状态变化，自动同步到 Content
   useEffect(() => {
-    if (!canvasState) return;
+    if (!canvasState || !contentId) {
+      return;
+    }
 
-    // 提取画布内容
-    let content = "";
     try {
-      switch (canvasState.type) {
-        case "document":
-          content = canvasState.content || "";
-          break;
-        case "novel":
-          content = JSON.stringify(canvasState.chapters);
-          break;
-        case "script":
-          content = JSON.stringify(canvasState.scenes);
-          break;
-        case "music":
-          content = JSON.stringify(canvasState.sections);
-          break;
-        case "poster":
-          content = JSON.stringify(canvasState.pages);
-          break;
-        default:
-          content = JSON.stringify(canvasState);
+      const content = serializeCanvasStateForSync(canvasState);
+      if (isSyncContentEmpty(content)) {
+        return;
       }
 
-      // 如果有 contentId，先验证内容存在再同步
-      if (contentId && content) {
-        // 先检查内容是否存在，避免同步到不存在的记录
-        getContent(contentId)
-          .then((existingContent) => {
-            if (existingContent) {
-              const existingBody = existingContent.body || "";
-              if (existingBody !== content) {
-                syncContent(contentId, content);
-              }
-            } else {
-              console.warn(
-                "[AgentChatPage] contentId 对应的内容不存在，跳过同步:",
-                contentId,
-              );
-            }
-          })
-          .catch((err) => {
-            console.error("[AgentChatPage] 检查内容存在性失败:", err);
-          });
+      const previousRequest = lastCanvasSyncRequestRef.current;
+      if (
+        previousRequest?.contentId === contentId &&
+        previousRequest.body === content
+      ) {
+        return;
       }
-      // 如果没有 contentId 但有 projectId，自动创建 Content
-      else if (!contentId && projectId && content && project) {
-        // 只在内容不为空时创建
-        const isEmpty =
-          !content || content === "" || content === "[]" || content === "{}";
-        if (!isEmpty) {
-          console.log("[AgentChatPage] 自动创建 Content 记录");
-          // TODO: 实现自动创建 Content 的逻辑
-          // 这里需要调用 createContent API，但为了避免重复创建，需要添加防抖和状态管理
-        }
-      }
+
+      lastCanvasSyncRequestRef.current = { contentId, body: content };
+      syncContent(contentId, content);
     } catch (error) {
       console.error("提取画布内容失败:", error);
     }
-  }, [canvasState, contentId, projectId, project, syncContent]);
+  }, [canvasState, contentId, syncContent]);
 
   // 追踪已恢复元数据和文件的会话 ID
   const restoredMetaSessionId = useRef<string | null>(null);
   const restoredFilesSessionId = useRef<string | null>(null);
-  const handledNewChatRequestRef = useRef<string | null>(null);
   // 用于追踪是否已触发过 AI 引导
   const hasTriggeredGuide = useRef(false);
 
@@ -757,7 +2982,11 @@ export function AgentChatPage({
             restoredFiles.push({
               id: crypto.randomUUID(),
               name: file.name,
-              type: file.fileType === "document" ? "document" : "document",
+              type: normalizeSessionTaskFileType(
+                file.fileType,
+                file.name,
+                content,
+              ),
               content,
               version: 1,
               createdAt: file.createdAt,
@@ -895,9 +3124,9 @@ export function AgentChatPage({
   /**
    * 从 AI 响应中提取文档内容
    * 支持多种格式：
-   * 1. <document>...</document> 标签
+   * 1. <document>...</document> 标签（推荐）
    * 2. ```markdown ... ``` 代码块
-   * 3. 以 # 开头的 Markdown 内容（整个响应）
+   * 3. 以 # 开头的 Markdown 内容（仅非主题工作台）
    */
   const extractDocumentContent = useCallback(
     (content: string): string | null => {
@@ -913,14 +3142,19 @@ export function AgentChatPage({
         return markdownMatch[1].trim();
       }
 
-      // 3. 如果整个内容以 # 开头且长度超过 200 字符，认为是文档
+      // 3. 主题工作台：不使用启发式规则，避免误判普通回复
+      if (isThemeWorkbench) {
+        return null;
+      }
+
+      // 4. 非主题工作台：如果整个内容以 # 开头且长度超过 200 字符，认为是文档
       if (content.trim().startsWith("#") && content.length > 200) {
         return content.trim();
       }
 
       return null;
     },
-    [],
+    [isThemeWorkbench],
   );
 
   const looksLikeSerializedNovelState = useCallback((content: string) => {
@@ -988,10 +3222,24 @@ export function AgentChatPage({
     const lastAssistantMsg = [...messages]
       .reverse()
       .find(
-        (msg) => msg.role === "assistant" && !msg.isThinking && msg.content,
+        (msg) =>
+          msg.role === "assistant" &&
+          !msg.isThinking &&
+          msg.content &&
+          msg.purpose !== "content_review",
       );
 
     if (!lastAssistantMsg) return;
+
+    // 主题工作台 fallback：仅在 AI 未使用 write_file 且画布为空时提取
+    if (isThemeWorkbench) {
+      const hasWriteFileToolCall = lastAssistantMsg.toolCalls?.some((tc) => {
+        const name = (tc.name || "").toLowerCase();
+        return name.includes("write") || name.includes("create_file");
+      });
+      if (hasWriteFileToolCall) return;
+      if (canvasState && !isCanvasStateEmpty(canvasState)) return;
+    }
 
     // 检查是否已处理过
     if (processedMessageIds.current.has(lastAssistantMsg.id)) return;
@@ -1037,9 +3285,11 @@ export function AgentChatPage({
   }, [
     messages,
     isContentCreationMode,
+    isThemeWorkbench,
     extractDocumentContent,
     mappedTheme,
     upsertNovelCanvasState,
+    canvasState,
   ]);
 
   const handleSend = useCallback(
@@ -1049,18 +3299,50 @@ export function AgentChatPage({
       thinking?: boolean,
       textOverride?: string,
       sendExecutionStrategy?: "react" | "code_orchestrated" | "auto",
+      autoContinuePayload?: AutoContinueRequestPayload,
+      sendOptions?: HandleSendOptions,
     ) => {
-      const sourceText = textOverride ?? input;
+      let sourceText = textOverride ?? input;
       if (!sourceText.trim() && (!images || images.length === 0)) return;
       const effectiveWebSearch = webSearch ?? chatToolPreferences.webSearch;
       const effectiveThinking = thinking ?? chatToolPreferences.thinking;
 
       if (!projectId) {
+        sendOptions?.observer?.onError?.("请先选择项目后再开始对话");
         toast.error("请先选择项目后再开始对话");
         return;
       }
 
+      if (
+        isThemeWorkbench &&
+        mappedTheme === "social-media" &&
+        sourceText.trim() &&
+        !sourceText.trimStart().startsWith("/") &&
+        !sendOptions?.skipThemeSkillPrefix
+      ) {
+        sourceText = `/${SOCIAL_ARTICLE_SKILL_KEY} ${sourceText}`.trim();
+      }
+
       let text = sourceText;
+
+      const preparedActiveContextPrompt = contextWorkspace.enabled
+        ? await contextWorkspace.prepareActiveContextPrompt()
+        : "";
+
+      if (contextWorkspace.enabled && preparedActiveContextPrompt) {
+        const slashCommandMatch = text.match(
+          /^\/([a-zA-Z0-9_-]+)\s*([\s\S]*)$/,
+        );
+        if (slashCommandMatch) {
+          const [, skillName, skillArgs] = slashCommandMatch;
+          const mergedArgs = [preparedActiveContextPrompt, skillArgs.trim()]
+            .filter((part) => part.length > 0)
+            .join("\n\n");
+          text = `/${skillName} ${mergedArgs}`.trim();
+        } else {
+          text = `${preparedActiveContextPrompt}\n\n${text}`;
+        }
+      }
 
       // 如果有引用的角色，注入角色信息
       if (mentionedCharacters.length > 0) {
@@ -1113,7 +3395,9 @@ export function AgentChatPage({
             const warnKey = `${providerType}:${model}`;
             if (!thinkingVariantWarnedRef.current.has(warnKey)) {
               thinkingVariantWarnedRef.current.add(warnKey);
-              toast.warning("当前 Provider 没有可用的 Thinking 模型，已保持原模型");
+              toast.warning(
+                "当前 Provider 没有可用的 Thinking 模型，已保持原模型",
+              );
             }
           }
         } else {
@@ -1129,26 +3413,48 @@ export function AgentChatPage({
           }
         }
 
-        await sendMessage(
-          text,
-          images || [],
-          effectiveWebSearch,
-          effectiveThinking,
-          false,
-          sendExecutionStrategy,
-          effectiveModel,
-        );
+        if (autoContinuePayload) {
+          await sendMessage(
+            text,
+            images || [],
+            effectiveWebSearch,
+            effectiveThinking,
+            false,
+            sendExecutionStrategy,
+            effectiveModel,
+            autoContinuePayload,
+            sendOptions,
+          );
+        } else {
+          await sendMessage(
+            text,
+            images || [],
+            effectiveWebSearch,
+            effectiveThinking,
+            false,
+            sendExecutionStrategy,
+            effectiveModel,
+            undefined,
+            sendOptions,
+          );
+        }
       } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        sendOptions?.observer?.onError?.(errorMessage);
         console.error("[AgentChat] 发送消息失败:", error);
-        toast.error(`发送失败: ${error instanceof Error ? error.message : String(error)}`);
+        toast.error(`发送失败: ${errorMessage}`);
         // 恢复输入内容，让用户可以重试
         setInput(sourceText);
       }
     },
     [
       chatToolPreferences,
+      contextWorkspace,
       input,
+      isThemeWorkbench,
       mentionedCharacters,
+      mappedTheme,
       model,
       projectId,
       providerModels,
@@ -1158,6 +3464,127 @@ export function AgentChatPage({
       setModel,
     ],
   );
+
+  const handleSendRef = useRef(handleSend);
+  const webSearchPreferenceRef = useRef(chatToolPreferences.webSearch);
+
+  useEffect(() => {
+    handleSendRef.current = handleSend;
+  }, [handleSend]);
+
+  useEffect(() => {
+    webSearchPreferenceRef.current = chatToolPreferences.webSearch;
+  }, [chatToolPreferences.webSearch]);
+
+  const handleDocumentThinkingEnabledChange = useCallback(
+    (enabled: boolean) => {
+      setChatToolPreferences((previous) =>
+        previous.thinking === enabled
+          ? previous
+          : {
+              ...previous,
+              thinking: enabled,
+            },
+      );
+    },
+    [],
+  );
+
+  const handleDocumentAutoContinueRun = useCallback(
+    async (payload: AutoContinueRunPayload) => {
+      await handleSendRef.current(
+        [],
+        webSearchPreferenceRef.current,
+        payload.thinkingEnabled,
+        payload.prompt,
+        undefined,
+        {
+          enabled: payload.settings.enabled,
+          fast_mode_enabled: payload.settings.fastModeEnabled,
+          continuation_length: payload.settings.continuationLength,
+          sensitivity: payload.settings.sensitivity,
+          source: "theme_workbench_document_auto_continue",
+        },
+      );
+    },
+    [],
+  );
+
+  const handleDocumentContentReviewRun = useCallback(
+    async (payload: ContentReviewRunPayload) => {
+      return await new Promise<string>((resolve, reject) => {
+        void handleSendRef
+          .current(
+            [],
+            webSearchPreferenceRef.current,
+            payload.thinkingEnabled,
+            payload.prompt,
+            undefined,
+            undefined,
+            {
+              skipThemeSkillPrefix: true,
+              purpose: "content_review",
+              observer: {
+                onComplete: resolve,
+                onError: (message) => reject(new Error(message)),
+              },
+            },
+          )
+          .catch((error) => {
+            reject(error instanceof Error ? error : new Error(String(error)));
+          });
+      });
+    },
+    [],
+  );
+
+  const handleDocumentTextStylizeRun = useCallback(
+    async (payload: TextStylizeRunPayload) => {
+      return await new Promise<string>((resolve, reject) => {
+        void handleSendRef
+          .current(
+            [],
+            webSearchPreferenceRef.current,
+            payload.thinkingEnabled,
+            payload.prompt,
+            undefined,
+            undefined,
+            {
+              skipThemeSkillPrefix: true,
+              purpose: "text_stylize",
+              observer: {
+                onComplete: resolve,
+                onError: (message) => reject(new Error(message)),
+              },
+            },
+          )
+          .catch((error) => {
+            reject(error instanceof Error ? error : new Error(String(error)));
+          });
+      });
+    },
+    [],
+  );
+
+  // 监听主题工作台技能触发
+  useEffect(() => {
+    if (!pendingSkillKey || !isThemeWorkbench) {
+      return;
+    }
+
+    // 立即消费，避免重复触发
+    consumePendingSkill();
+
+    // 触发技能命令
+    const command = `/${pendingSkillKey}`;
+    console.log("[AgentChatPage] 执行技能命令:", command);
+    handleSend([], false, false, command);
+  }, [
+    pendingSkillKey,
+    isThemeWorkbench,
+    consumePendingSkill,
+    handleSend,
+  ]);
 
   const handleClearMessages = useCallback(() => {
     clearMessages();
@@ -1176,6 +3603,175 @@ export function AgentChatPage({
     pendingTopicSwitchRef.current = null;
     isResolvingTopicProjectRef.current = false;
   }, [clearMessages]);
+
+  const handleSwitchBranchVersion = useCallback(
+    (versionId: string) => {
+      setCanvasState((previous) => {
+        if (!previous || previous.type !== "document") {
+          return previous;
+        }
+
+        const targetVersion = previous.versions.find(
+          (version) => version.id === versionId,
+        );
+        if (!targetVersion) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          currentVersionId: targetVersion.id,
+          content: targetVersion.content,
+        };
+      });
+    },
+    [setCanvasState],
+  );
+
+  const handleCreateVersionSnapshot = useCallback(() => {
+    setCanvasState((previous) => {
+      if (!previous || previous.type !== "document") {
+        toast.info("当前没有可管理的文稿版本");
+        return previous;
+      }
+
+      const content = previous.content.trim();
+      if (!content) {
+        toast.info("主稿为空，无法创建版本快照");
+        return previous;
+      }
+
+      const nextIndex = previous.versions.length + 1;
+      const newVersion = {
+        id: crypto.randomUUID(),
+        content: previous.content,
+        createdAt: Date.now(),
+        description: `手动快照 - 版本 ${nextIndex}`,
+      };
+
+      toast.success("已创建版本快照");
+      return {
+        ...previous,
+        versions: [...previous.versions, newVersion],
+        currentVersionId: newVersion.id,
+      };
+    });
+  }, [setCanvasState]);
+
+  const handleSetBranchStatus = useCallback(
+    (
+      topicId: string,
+      status: "in_progress" | "pending" | "merged" | "candidate",
+    ) => {
+      setTopicStatus(topicId, status);
+      if (status === "merged") {
+        toast.success("已将该版本标记为主稿");
+      } else if (status === "pending") {
+        toast.info("已将该版本标记为待评审");
+      }
+    },
+    [setTopicStatus],
+  );
+
+  const handleAddImage = useCallback(
+    async () => {
+      try {
+        const selected = await openDialog({
+          multiple: false,
+          filters: [
+            {
+              name: "图片",
+              extensions: ["jpg", "jpeg", "png", "gif", "webp"],
+            },
+          ],
+        });
+
+        if (!selected) {
+          return;
+        }
+
+        const filePath = typeof selected === "string" ? selected : selected.path;
+        if (!filePath) {
+          toast.error("未选择文件");
+          return;
+        }
+
+        toast.info("正在上传图片...");
+
+        // 上传图片到会话
+        const imageUrl = await uploadImageToSession(sessionId, filePath);
+
+        // 插入图片到文档
+        setCanvasState((previous) => {
+          if (!previous || previous.type !== "document") {
+            toast.error("当前不在文档编辑模式");
+            return previous;
+          }
+
+          const fileName = filePath.split(/[\\/]/).pop() || "image";
+          const imageMarkdown = `\n\n![${fileName}](${imageUrl})\n\n`;
+
+          return {
+            ...previous,
+            content: previous.content + imageMarkdown,
+          };
+        });
+
+        toast.success("图片已添加");
+      } catch (error) {
+        console.error("添加图片失败:", error);
+        toast.error(error instanceof Error ? error.message : "添加图片失败");
+      }
+    },
+    [sessionId, setCanvasState],
+  );
+
+  const handleImportDocument = useCallback(async () => {
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        filters: [
+          {
+            name: "文档",
+            extensions: ["md", "txt"],
+          },
+        ],
+      });
+
+      if (!selected) {
+        return;
+      }
+
+      const filePath = typeof selected === "string" ? selected : selected.path;
+      if (!filePath) {
+        toast.error("未选择文件");
+        return;
+      }
+
+      toast.info("正在导入文稿...");
+
+      // 调用后端解析接口
+      const content = await importDocument(filePath);
+
+      // 加载到文档
+      setCanvasState((previous) => {
+        if (!previous || previous.type !== "document") {
+          toast.error("当前不在文档编辑模式");
+          return previous;
+        }
+
+        return {
+          ...previous,
+          content: content,
+        };
+      });
+
+      toast.success("文稿已导入");
+    } catch (error) {
+      console.error("导入文稿失败:", error);
+      toast.error(error instanceof Error ? error.message : "导入文稿失败");
+    }
+  }, [setCanvasState]);
 
   // 响应首页导航触发的新会话请求
   useEffect(() => {
@@ -1251,8 +3847,13 @@ export function AgentChatPage({
 
   const handleCanvasSelectionTextChange = useCallback((text: string) => {
     const normalized = text.trim().replace(/\s+/g, " ");
-    const nextValue = normalized.length > 500 ? normalized.slice(0, 500) : normalized;
-    setSelectedText((previous) => (previous === nextValue ? previous : nextValue));
+    const nextValue =
+      normalized.length > 500 ? normalized.slice(0, 500) : normalized;
+    startTransition(() => {
+      setSelectedText((previous) =>
+        previous === nextValue ? previous : nextValue,
+      );
+    });
   }, []);
 
   useEffect(() => {
@@ -1308,68 +3909,82 @@ export function AgentChatPage({
     onHasMessagesChange?.(hasMessages);
   }, [hasMessages, onHasMessagesChange]);
 
-  // 当有文件时默认在画布中显示最新文件（按更新时间）
+  // 当有可渲染主稿文件时，仅在需要时同步到画布，避免打断当前编辑
   useEffect(() => {
-    if (taskFiles.length > 0) {
-      const latestFile = taskFiles.reduce<TaskFile | null>(
-        (candidate, file) => {
-          if (!candidate) {
-            return file;
-          }
-          const candidateTimestamp = Math.max(
-            candidate.updatedAt,
-            candidate.createdAt,
-          );
-          const fileTimestamp = Math.max(file.updatedAt, file.createdAt);
-          return fileTimestamp >= candidateTimestamp ? file : candidate;
-        },
-        null,
-      );
-
-      if (!latestFile) {
-        return;
-      }
-
-      // 设置选中的文件
-      setSelectedFileId(latestFile.id);
-      // 如果文件有内容，在画布中显示
-      const latestContent = latestFile.content;
-      if (latestContent) {
-        setCanvasState((prev) => {
-          if (mappedTheme === "music") {
-            const sections = parseLyrics(latestContent);
-            if (!prev || prev.type !== "music") {
-              const musicState = createInitialMusicState();
-              musicState.sections = sections;
-              const titleMatch = latestContent.match(/^#\s*(.+)$/m);
-              if (titleMatch) {
-                musicState.spec.title = titleMatch[1].trim();
-              }
-              return musicState;
-            }
-            return { ...prev, sections };
-          }
-
-          if (mappedTheme === "novel") {
-            return upsertNovelCanvasState(prev, latestContent);
-          }
-
-          if (!prev || prev.type !== "document") {
-            return createInitialDocumentState(latestContent);
-          }
-          return { ...prev, content: latestContent };
-        });
-        setLayoutMode("chat-canvas");
-      }
+    const renderableFiles = taskFiles.filter((file) =>
+      isRenderableTaskFile(file, isThemeWorkbench),
+    );
+    if (renderableFiles.length === 0) {
+      return;
     }
-  }, [taskFiles, mappedTheme, upsertNovelCanvasState]);
 
-  const handleToggleSidebar = () => {
+    const { targetFile, nextSelectedFileId } = resolveCanvasTaskFileTarget(
+      renderableFiles,
+      selectedFileId,
+    );
+    if (!targetFile?.content) {
+      return;
+    }
+
+    if (nextSelectedFileId) {
+      setSelectedFileId((previous) =>
+        previous === nextSelectedFileId ? previous : nextSelectedFileId,
+      );
+    }
+
+    if (
+      shouldDeferCanvasSyncWhileEditing({
+        canvasType: canvasState?.type ?? null,
+        editorFocused: documentEditorFocusedRef.current,
+      })
+    ) {
+      return;
+    }
+
+    const targetContent = targetFile.content;
+    setCanvasState((prev) => {
+      if (mappedTheme === "music") {
+        const sections = parseLyrics(targetContent);
+        if (!prev || prev.type !== "music") {
+          const musicState = createInitialMusicState();
+          musicState.sections = sections;
+          const titleMatch = targetContent.match(/^#\s*(.+)$/m);
+          if (titleMatch) {
+            musicState.spec.title = titleMatch[1].trim();
+          }
+          return musicState;
+        }
+        return { ...prev, sections };
+      }
+
+      if (mappedTheme === "novel") {
+        return upsertNovelCanvasState(prev, targetContent);
+      }
+
+      if (!prev || prev.type !== "document") {
+        return createInitialDocumentState(targetContent);
+      }
+      if (prev.content === targetContent) {
+        return prev;
+      }
+      return { ...prev, content: targetContent };
+    });
+    setLayoutMode("chat-canvas");
+  }, [
+    taskFiles,
+    isThemeWorkbench,
+    mappedTheme,
+    upsertNovelCanvasState,
+    selectedFileId,
+    canvasState?.type,
+  ]);
+
+  const handleToggleSidebar = useCallback(() => {
     if (!showChatPanel) {
       return;
     }
     setShowSidebar((prev) => !prev);
-  };
+  }, [showChatPanel]);
 
   const handleToggleNovelChapterList = useCallback(() => {
     setNovelChapterListCollapsed((prev) => !prev);
@@ -1447,8 +4062,37 @@ export function AgentChatPage({
     }
   }, [activeTheme]);
 
+  const resolvedCanvasState = useMemo<CanvasStateUnion | null>(() => {
+    if (canvasState) {
+      return canvasState;
+    }
+
+    if (shouldBootstrapCanvasOnEntry) {
+      return (
+        createInitialCanvasState(normalizedEntryTheme, "") ||
+        createInitialDocumentState("")
+      );
+    }
+
+    if (isThemeWorkbench && isContentCreationTheme(activeTheme)) {
+      return (
+        createInitialCanvasState(mappedTheme, "") ||
+        createInitialDocumentState("")
+      );
+    }
+
+    return null;
+  }, [
+    activeTheme,
+    canvasState,
+    isThemeWorkbench,
+    mappedTheme,
+    normalizedEntryTheme,
+    shouldBootstrapCanvasOnEntry,
+  ]);
+
   const showNovelNavbarControls =
-    layoutMode !== "chat" && canvasState?.type === "novel";
+    layoutMode !== "chat" && resolvedCanvasState?.type === "novel";
 
   // 处理文件写入 - 同名文件更新内容，不同名文件独立保存
   const handleWriteFile = useCallback(
@@ -1509,6 +4153,36 @@ export function AgentChatPage({
       }
 
       const now = Date.now();
+      const nextFileType = resolveTaskFileType(fileName, content);
+      const activeQueueItem = themeWorkbenchActiveQueueItem;
+      const activeRunVersionId = activeQueueItem?.run_id?.trim() || null;
+      const activeRunDescription =
+        activeQueueItem?.title?.trim() || `产物更新 - ${fileName}`;
+      const isThemeWorkbenchPrimaryArtifact =
+        !isThemeWorkbench || isThemeWorkbenchPrimaryDocumentArtifact(fileName);
+      const shouldApplyToMainDocument =
+        nextFileType === "document" &&
+        isThemeWorkbenchPrimaryArtifact &&
+        (!isThemeWorkbench || currentGate.key !== "topic_select");
+      const effectiveThemeWorkbenchVersionId =
+        activeRunVersionId ||
+        (isThemeWorkbench && shouldApplyToMainDocument
+          ? `artifact:${fileName}`
+          : null);
+
+      if (isThemeWorkbench && effectiveThemeWorkbenchVersionId) {
+        const nextStatus: TopicBranchStatus =
+          activeQueueItem?.status === "running" ? "in_progress" : "pending";
+        setDocumentVersionStatusMap((previous) => {
+          if (previous[effectiveThemeWorkbenchVersionId] === nextStatus) {
+            return previous;
+          }
+          return {
+            ...previous,
+            [effectiveThemeWorkbenchVersionId]: nextStatus,
+          };
+        });
+      }
 
       // 持久化文件到会话目录
       saveSessionFile(fileName, content).catch((err) => {
@@ -1516,7 +4190,7 @@ export function AgentChatPage({
       });
 
       // 同步内容到项目（如果有 contentId，先验证存在性）
-      if (contentId) {
+      if (contentId && shouldApplyToMainDocument) {
         getContent(contentId)
           .then((existingContent) => {
             if (existingContent) {
@@ -1535,6 +4209,12 @@ export function AgentChatPage({
           .catch((err) => {
             console.error("[AgentChatPage] 检查内容存在性失败:", err);
           });
+      } else if (isThemeWorkbench && !shouldApplyToMainDocument) {
+        console.log("[AgentChatPage] 主题工作台非成文阶段，跳过主稿写入:", {
+          gate: currentGate.key,
+          fileName,
+          isPrimaryArtifact: isThemeWorkbenchPrimaryArtifact,
+        });
       }
 
       // 根据文件名推进工作流步骤（使用动态映射）
@@ -1577,6 +4257,7 @@ export function AgentChatPage({
           const updated = [...prev];
           updated[existingIndex] = {
             ...existing,
+            type: nextFileType,
             content,
             updatedAt: now,
           };
@@ -1589,7 +4270,7 @@ export function AgentChatPage({
         const newFile: TaskFile = {
           id: crypto.randomUUID(),
           name: fileName,
-          type: "document",
+          type: nextFileType,
           content,
           version: 1,
           createdAt: now,
@@ -1598,6 +4279,10 @@ export function AgentChatPage({
         setSelectedFileId(newFile.id);
         return [...prev, newFile];
       });
+
+      if (!shouldApplyToMainDocument) {
+        return;
+      }
 
       // 更新画布内容
       setCanvasState((prev) => {
@@ -1640,7 +4325,62 @@ export function AgentChatPage({
         // 文档类型画布
         if (!prev || prev.type !== "document") {
           console.log("[AgentChatPage] 创建新文档状态");
-          return createInitialDocumentState(content);
+          const initialDocumentState = createInitialDocumentState(content);
+          if (!isThemeWorkbench || !effectiveThemeWorkbenchVersionId) {
+            return initialDocumentState;
+          }
+          return {
+            ...initialDocumentState,
+            versions: [
+              {
+                id: effectiveThemeWorkbenchVersionId,
+                content,
+                createdAt: now,
+                description: activeRunDescription,
+              },
+            ],
+            currentVersionId: effectiveThemeWorkbenchVersionId,
+            content,
+          };
+        }
+
+        if (isThemeWorkbench && effectiveThemeWorkbenchVersionId) {
+          const existingIndex = prev.versions.findIndex(
+            (version) => version.id === effectiveThemeWorkbenchVersionId,
+          );
+
+          if (existingIndex >= 0) {
+            const nextVersions = [...prev.versions];
+            const currentVersion = nextVersions[existingIndex];
+            nextVersions[existingIndex] = {
+              ...currentVersion,
+              content,
+              description: currentVersion.description || activeRunDescription,
+            };
+            return {
+              ...prev,
+              content,
+              versions: nextVersions,
+              currentVersionId: effectiveThemeWorkbenchVersionId,
+            };
+          }
+
+          const nextVersions = [
+            ...prev.versions,
+            {
+              id: effectiveThemeWorkbenchVersionId,
+              content,
+              createdAt: now,
+              description: activeRunDescription,
+            },
+          ].slice(-MAX_PERSISTED_DOCUMENT_VERSIONS);
+
+          return {
+            ...prev,
+            content,
+            versions: nextVersions,
+            currentVersionId: effectiveThemeWorkbenchVersionId,
+          };
         }
         console.log("[AgentChatPage] 更新现有文档状态");
         return {
@@ -1654,12 +4394,15 @@ export function AgentChatPage({
     },
     [
       activeTheme, // 添加 activeTheme 依赖
+      currentGate.key,
       contentId,
       currentStepIndex,
       isContentCreationMode,
+      isThemeWorkbench,
       completeStep,
       mappedTheme,
       saveSessionFile,
+      themeWorkbenchActiveQueueItem,
       upsertNovelCanvasState,
     ],
   );
@@ -1716,6 +4459,7 @@ export function AgentChatPage({
       }
 
       // 查找或创建任务文件
+      const nextFileType = resolveTaskFileType(fileName, content);
       setTaskFiles((prev) => {
         const existingFile = prev.find((f) => f.name === fileName);
         if (existingFile) {
@@ -1726,7 +4470,7 @@ export function AgentChatPage({
         const newFile: TaskFile = {
           id: crypto.randomUUID(),
           name: fileName,
-          type: "document",
+          type: nextFileType,
           content,
           version: 1,
           createdAt: Date.now(),
@@ -1735,6 +4479,16 @@ export function AgentChatPage({
         setSelectedFileId(newFile.id);
         return [...prev, newFile];
       });
+
+      if (
+        !isRenderableTaskFile(
+          { name: fileName, type: nextFileType },
+          isThemeWorkbench,
+        )
+      ) {
+        toast.info("该文件为辅助产物，暂不在主稿画布渲染");
+        return;
+      }
 
       // 更新画布内容
       setCanvasState((prev) => {
@@ -1770,7 +4524,7 @@ export function AgentChatPage({
       // 打开画布
       setLayoutMode("chat-canvas");
     },
-    [activeTheme, mappedTheme, upsertNovelCanvasState],
+    [activeTheme, isThemeWorkbench, mappedTheme, upsertNovelCanvasState],
   );
 
   // 处理代码块点击 - 在画布中显示代码（General 主题专用）
@@ -1816,42 +4570,50 @@ export function AgentChatPage({
   // 处理任务文件点击 - 在画布中显示文件内容
   const handleTaskFileClick = useCallback(
     (file: TaskFile) => {
-      if (file.type === "document" && file.content) {
-        setSelectedFileId(file.id);
-        setCanvasState((prev) => {
-          // 音乐主题：解析歌词并更新 sections
-          if (mappedTheme === "music") {
-            const sections = parseLyrics(file.content!);
-            if (!prev || prev.type !== "music") {
-              const musicState = createInitialMusicState();
-              musicState.sections = sections;
-              const titleMatch = file.content!.match(/^#\s*(.+)$/m);
-              if (titleMatch) {
-                musicState.spec.title = titleMatch[1].trim();
-              }
-              return musicState;
-            }
-            return { ...prev, sections };
-          }
+      setSelectedFileId(file.id);
 
-          if (mappedTheme === "novel") {
-            return upsertNovelCanvasState(prev, file.content!);
-          }
-
-          // 文档类型画布
-          if (!prev || prev.type !== "document") {
-            return createInitialDocumentState(file.content!);
-          }
-          return {
-            ...prev,
-            content: file.content!,
-          };
-        });
-        // 只打开画布，不关闭文件列表（让用户自己关闭）
-        setLayoutMode("chat-canvas");
+      if (
+        !isRenderableTaskFile(file, isThemeWorkbench) ||
+        looksLikeSocialPublishPayload(file.content || "") ||
+        !file.content?.trim()
+      ) {
+        toast.info("该文件为辅助产物，暂不在主稿画布渲染");
+        return;
       }
+
+      setCanvasState((prev) => {
+        // 音乐主题：解析歌词并更新 sections
+        if (mappedTheme === "music") {
+          const sections = parseLyrics(file.content);
+          if (!prev || prev.type !== "music") {
+            const musicState = createInitialMusicState();
+            musicState.sections = sections;
+            const titleMatch = file.content.match(/^#\s*(.+)$/m);
+            if (titleMatch) {
+              musicState.spec.title = titleMatch[1].trim();
+            }
+            return musicState;
+          }
+          return { ...prev, sections };
+        }
+
+        if (mappedTheme === "novel") {
+          return upsertNovelCanvasState(prev, file.content);
+        }
+
+        // 文档类型画布
+        if (!prev || prev.type !== "document") {
+          return createInitialDocumentState(file.content);
+        }
+        return {
+          ...prev,
+          content: file.content,
+        };
+      });
+      // 只打开画布，不关闭文件列表（让用户自己关闭）
+      setLayoutMode("chat-canvas");
     },
-    [mappedTheme, upsertNovelCanvasState],
+    [isThemeWorkbench, mappedTheme, upsertNovelCanvasState],
   );
 
   // A2UI 表单提交处理
@@ -1903,9 +4665,8 @@ export function AgentChatPage({
       canvasEmpty &&
       !hasTriggeredGuide.current
     ) {
-      hasTriggeredGuide.current = true;
-
       if (pendingInitialPrompt) {
+        hasTriggeredGuide.current = true;
         console.log("[AgentChatPage] 自动发送首条创作意图消息");
         void (async () => {
           await handleSend(
@@ -1919,6 +4680,18 @@ export function AgentChatPage({
         return;
       }
 
+      if (isThemeWorkbench) {
+        hasTriggeredGuide.current = true;
+        const themeGuide = getDefaultGuidePromptByTheme(activeTheme);
+        if (themeGuide) {
+          console.log("[AgentChatPage] 主题工作台：预填引导词");
+          setInput((prev) => (prev.trim() ? prev : themeGuide));
+        }
+        // 不自动发送，让用户确认后手动发送
+        return;
+      }
+
+      hasTriggeredGuide.current = true;
       const defaultGuidePrompt = getDefaultGuidePromptByTheme(activeTheme);
       if (defaultGuidePrompt) {
         console.log("[AgentChatPage] 自动预填主题引导词");
@@ -1943,6 +4716,7 @@ export function AgentChatPage({
     isSending,
     canvasState,
     initialUserPrompt,
+    isThemeWorkbench,
     handleSend,
     chatToolPreferences,
     onInitialUserPromptConsumed,
@@ -1953,8 +4727,99 @@ export function AgentChatPage({
     hasTriggeredGuide.current = false;
   }, [contentId]);
 
-  // 判断是否应该显示聊天布局（有消息）
-  const showChatLayout = hasMessages;
+  // 主题工作台始终使用聊天布局与浮层输入，不走旧 EmptyState 输入流程
+  const showChatLayout = hasMessages || isThemeWorkbench;
+  const showThemeWorkbenchSidebar =
+    showChatPanel &&
+    showSidebar &&
+    isThemeWorkbench &&
+    (!enableThemeWorkbenchPanelCollapse || !themeWorkbenchSidebarCollapsed);
+  const showThemeWorkbenchLeftExpandButton =
+    showChatPanel &&
+    showSidebar &&
+    enableThemeWorkbenchPanelCollapse &&
+    themeWorkbenchSidebarCollapsed;
+  const handleThemeWorkbenchDeleteTopic = useCallback(() => {}, []);
+  const handleThemeWorkbenchSidebarCollapse = useCallback(() => {
+    setThemeWorkbenchSidebarCollapsed(true);
+  }, []);
+  const themeWorkbenchSidebarCollapseHandler = useMemo(
+    () =>
+      enableThemeWorkbenchPanelCollapse
+        ? handleThemeWorkbenchSidebarCollapse
+        : undefined,
+    [enableThemeWorkbenchPanelCollapse, handleThemeWorkbenchSidebarCollapse],
+  );
+  const themeWorkbenchSidebarNode = useMemo(() => {
+    if (!showThemeWorkbenchSidebar) {
+      return null;
+    }
+    return (
+      <ThemeWorkbenchSidebar
+        branchMode="version"
+        onNewTopic={handleCreateVersionSnapshot}
+        onSwitchTopic={handleSwitchBranchVersion}
+        onDeleteTopic={handleThemeWorkbenchDeleteTopic}
+        branchItems={branchItems}
+        onSetBranchStatus={handleSetBranchStatus}
+        workflowSteps={themeWorkbenchWorkflowSteps}
+        contextSearchQuery={contextWorkspace.contextSearchQuery}
+        onContextSearchQueryChange={contextWorkspace.setContextSearchQuery}
+        contextSearchMode={contextWorkspace.contextSearchMode}
+        onContextSearchModeChange={contextWorkspace.setContextSearchMode}
+        contextSearchLoading={contextWorkspace.contextSearchLoading}
+        contextSearchError={contextWorkspace.contextSearchError}
+        contextSearchBlockedReason={contextWorkspace.contextSearchBlockedReason}
+        onSubmitContextSearch={contextWorkspace.submitContextSearch}
+        onAddTextContext={contextWorkspace.addTextContext}
+        onAddLinkContext={contextWorkspace.addLinkContext}
+        onAddFileContext={contextWorkspace.addFileContext}
+        onAddImage={handleAddImage}
+        onImportDocument={handleImportDocument}
+        contextItems={contextWorkspace.sidebarContextItems}
+        onToggleContextActive={contextWorkspace.toggleContextActive}
+        onViewContextDetail={handleViewContextDetail}
+        contextBudget={contextWorkspace.contextBudget}
+        activityLogs={themeWorkbenchActivityLogs}
+        creationTaskEvents={themeWorkbenchCreationTaskEvents}
+        onViewRunDetail={handleViewThemeWorkbenchRunDetail}
+        activeRunDetail={selectedThemeWorkbenchRunDetail}
+        activeRunDetailLoading={themeWorkbenchRunDetailLoading}
+        onRequestCollapse={themeWorkbenchSidebarCollapseHandler}
+      />
+    );
+  }, [
+    branchItems,
+    contextWorkspace.addFileContext,
+    contextWorkspace.addLinkContext,
+    contextWorkspace.addTextContext,
+    contextWorkspace.contextBudget,
+    contextWorkspace.contextSearchBlockedReason,
+    contextWorkspace.contextSearchError,
+    contextWorkspace.contextSearchLoading,
+    contextWorkspace.contextSearchMode,
+    contextWorkspace.contextSearchQuery,
+    contextWorkspace.setContextSearchMode,
+    contextWorkspace.setContextSearchQuery,
+    contextWorkspace.sidebarContextItems,
+    contextWorkspace.submitContextSearch,
+    contextWorkspace.toggleContextActive,
+    handleAddImage,
+    handleImportDocument,
+    handleCreateVersionSnapshot,
+    handleSetBranchStatus,
+    handleSwitchBranchVersion,
+    handleThemeWorkbenchDeleteTopic,
+    handleViewContextDetail,
+    handleViewThemeWorkbenchRunDetail,
+    selectedThemeWorkbenchRunDetail,
+    showThemeWorkbenchSidebar,
+    themeWorkbenchCreationTaskEvents,
+    themeWorkbenchActivityLogs,
+    themeWorkbenchRunDetailLoading,
+    themeWorkbenchSidebarCollapseHandler,
+    themeWorkbenchWorkflowSteps,
+  ]);
 
   const workflowProgressSignature = useMemo(() => {
     const shouldShow = isContentCreationMode && hasMessages && steps.length > 0;
@@ -2017,6 +4882,19 @@ export function AgentChatPage({
     _onNavigate?.("resources");
   }, [_onNavigate]);
 
+  const handleProjectChange = useCallback(
+    (newProjectId: string) => {
+      if (externalProjectId) {
+        return;
+      }
+      pendingTopicSwitchRef.current = null;
+      isResolvingTopicProjectRef.current = false;
+      savePersistedProjectId(LAST_PROJECT_ID_KEY, newProjectId);
+      setInternalProjectId(newProjectId);
+    },
+    [externalProjectId],
+  );
+
   const handleSelectWorkspaceDirectory = useCallback(async () => {
     const newPath = await openDialog({ directory: true, multiple: false });
     if (!newPath) return;
@@ -2040,170 +4918,312 @@ export function AgentChatPage({
     }
   }, [fixWorkspacePathAndRetry, projectId, workspacePathMissing]);
 
+  const handleSelectCharacter = useCallback((character: Character) => {
+    setMentionedCharacters((prev) => {
+      if (prev.find((c) => c.id === character.id)) {
+        return prev;
+      }
+      return [...prev, character];
+    });
+  }, []);
+
+  const handleToggleTaskFiles = useCallback(() => {
+    setTaskFilesExpanded((previous) => !previous);
+  }, []);
+
+  const visibleTaskFiles = useMemo(
+    () =>
+      taskFiles.filter((file) => isRenderableTaskFile(file, isThemeWorkbench)),
+    [taskFiles, isThemeWorkbench],
+  );
+
+  const visibleSelectedFileId = useMemo(() => {
+    if (!selectedFileId) {
+      return undefined;
+    }
+    return visibleTaskFiles.some((file) => file.id === selectedFileId)
+      ? selectedFileId
+      : undefined;
+  }, [selectedFileId, visibleTaskFiles]);
+
+  const inputbarNode = useMemo(
+    () => (
+      <Inputbar
+        input={input}
+        setInput={setInput}
+        variant={isThemeWorkbench ? "theme_workbench" : "default"}
+        themeWorkbenchGate={isThemeWorkbench ? currentGate : null}
+        workflowSteps={isThemeWorkbench ? themeWorkbenchWorkflowSteps : steps}
+        themeWorkbenchRunState={themeWorkbenchRunState}
+        onSend={handleSend}
+        onStop={stopSending}
+        isLoading={isSending}
+        providerType={providerType}
+        setProviderType={setProviderType}
+        model={model}
+        setModel={setModel}
+        executionStrategy={executionStrategy}
+        setExecutionStrategy={setExecutionStrategy}
+        activeTheme={activeTheme}
+        onManageProviders={handleManageProviders}
+        disabled={!projectId}
+        onClearMessages={handleClearMessages}
+        onToggleCanvas={handleToggleCanvas}
+        isCanvasOpen={layoutMode !== "chat"}
+        taskFiles={visibleTaskFiles}
+        selectedFileId={visibleSelectedFileId}
+        taskFilesExpanded={taskFilesExpanded}
+        onToggleTaskFiles={handleToggleTaskFiles}
+        onTaskFileClick={handleTaskFileClick}
+        characters={projectMemory?.characters || []}
+        skills={skills}
+        toolStates={chatToolPreferences}
+        onToolStatesChange={setChatToolPreferences}
+        onSelectCharacter={handleSelectCharacter}
+        onNavigateToSettings={handleNavigateToSkillSettings}
+      />
+    ),
+    [
+      activeTheme,
+      chatToolPreferences,
+      currentGate,
+      executionStrategy,
+      handleClearMessages,
+      handleManageProviders,
+      handleNavigateToSkillSettings,
+      handleSelectCharacter,
+      handleSend,
+      handleTaskFileClick,
+      handleToggleCanvas,
+      handleToggleTaskFiles,
+      input,
+      isSending,
+      isThemeWorkbench,
+      layoutMode,
+      model,
+      projectId,
+      projectMemory?.characters,
+      providerType,
+      setExecutionStrategy,
+      setInput,
+      setModel,
+      setProviderType,
+      skills,
+      steps,
+      stopSending,
+      visibleSelectedFileId,
+      visibleTaskFiles,
+      taskFilesExpanded,
+      themeWorkbenchRunState,
+      themeWorkbenchWorkflowSteps,
+    ],
+  );
+
   // 聊天区域内容
-  const chatContent = (
-    <ChatContainer>
-      <ChatContainerInner>
-        {/* 步骤进度条 - 仅在内容创作模式且有消息时显示 */}
-        {!hideInlineStepProgress &&
-          isContentCreationMode &&
-          hasMessages &&
-          steps.length > 0 && (
-            <StepProgress
-              steps={steps}
-              currentIndex={currentStepIndex}
-              onStepClick={goToStep}
-            />
-          )}
-
-        {showChatLayout ? (
-          <ChatContent>
-            <MessageList
-              messages={messages}
-              onDeleteMessage={deleteMessage}
-              onEditMessage={editMessage}
-              onA2UISubmit={handleA2UISubmit}
-              onWriteFile={handleWriteFile}
-              onFileClick={handleFileClick}
-              onPermissionResponse={handlePermissionResponse}
-              collapseCodeBlocks={shouldCollapseCodeBlocks}
-              onCodeBlockClick={handleCodeBlockClick}
-            />
-          </ChatContent>
-        ) : (
-          <EmptyState
-            input={input}
-            setInput={setInput}
-            onSend={(text, sendExecutionStrategy, images) => {
-              handleSend(
-                images || [],
-                chatToolPreferences.webSearch,
-                chatToolPreferences.thinking,
-                text,
-                sendExecutionStrategy,
-              );
-            }}
-            providerType={providerType}
-            setProviderType={setProviderType}
-            model={model}
-            setModel={setModel}
-            executionStrategy={executionStrategy}
-            setExecutionStrategy={setExecutionStrategy}
-            onManageProviders={handleManageProviders}
-            webSearchEnabled={chatToolPreferences.webSearch}
-            onWebSearchEnabledChange={(enabled) =>
-              setChatToolPreferences((prev) => ({
-                ...prev,
-                webSearch: enabled,
-              }))
-            }
-            thinkingEnabled={chatToolPreferences.thinking}
-            onThinkingEnabledChange={(enabled) =>
-              setChatToolPreferences((prev) => ({
-                ...prev,
-                thinking: enabled,
-              }))
-            }
-            creationMode={creationMode}
-            onCreationModeChange={setCreationMode}
-            activeTheme={activeTheme}
-            onThemeChange={(theme) => {
-              if (!lockTheme) {
-                setActiveTheme(theme);
-              }
-            }}
-            showThemeTabs={false}
-            hasCanvasContent={
-              activeTheme === "general"
-                ? Boolean(generalCanvasState.content?.trim())
-                : !isCanvasStateEmpty(canvasState)
-            }
-            hasContentId={Boolean(contentId)}
-            selectedText={selectedText}
-            onRecommendationClick={(shortLabel, fullPrompt) => {
-              // 直接将推荐提示词放入输入框，不创建项目
-              setInput(fullPrompt);
-            }}
-            characters={projectMemory?.characters || []}
-            skills={skills}
-            onNavigateToSettings={handleNavigateToSkillSettings}
-          />
-        )}
-
-        {showChatLayout && (
-          <>
-            {(workspacePathMissing || workspaceHealthError) && (
-              <div className="mx-4 mb-2 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-                <span className="flex-1">工作区目录不存在，请重新选择一个本地目录后继续</span>
-                <button
-                  type="button"
-                  onClick={() => void handleSelectWorkspaceDirectory()}
-                  className="shrink-0 rounded-md bg-amber-200 px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-300 dark:bg-amber-800 dark:text-amber-100 dark:hover:bg-amber-700"
-                >
-                  重新选择目录
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setWorkspaceHealthError(false);
-                    dismissWorkspacePathError();
-                  }}
-                  className="shrink-0 text-amber-600 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
-                  aria-label="关闭"
-                >
-                  ✕
-                </button>
-              </div>
+  const chatContent = useMemo(
+    () => (
+      <ChatContainer>
+        <ChatContainerInner>
+          {!hideInlineStepProgress &&
+            isContentCreationMode &&
+            hasMessages &&
+            steps.length > 0 && (
+              <StepProgress
+                steps={steps}
+                currentIndex={currentStepIndex}
+                onStepClick={goToStep}
+              />
             )}
-            <Inputbar
+
+          {showChatLayout ? (
+            <ChatContent>
+              {contextWorkspace.enabled ? (
+                <MessageViewport>
+                  <MessageList
+                    messages={messages}
+                    onDeleteMessage={deleteMessage}
+                    onEditMessage={editMessage}
+                    onA2UISubmit={handleA2UISubmit}
+                    onWriteFile={handleWriteFile}
+                    onFileClick={handleFileClick}
+                    onPermissionResponse={handlePermissionResponse}
+                    collapseCodeBlocks={shouldCollapseCodeBlocks}
+                    onCodeBlockClick={handleCodeBlockClick}
+                  />
+                </MessageViewport>
+              ) : (
+                <MessageList
+                  messages={messages}
+                  onDeleteMessage={deleteMessage}
+                  onEditMessage={editMessage}
+                  onA2UISubmit={handleA2UISubmit}
+                  onWriteFile={handleWriteFile}
+                  onFileClick={handleFileClick}
+                  onPermissionResponse={handlePermissionResponse}
+                  collapseCodeBlocks={shouldCollapseCodeBlocks}
+                  onCodeBlockClick={handleCodeBlockClick}
+                />
+              )}
+              {contextWorkspace.enabled && !isThemeWorkbench ? (
+                <FloatingInputbarContainer>
+                  {inputbarNode}
+                </FloatingInputbarContainer>
+              ) : null}
+            </ChatContent>
+          ) : (
+            <EmptyState
               input={input}
               setInput={setInput}
-              onSend={handleSend}
-              onStop={stopSending}
-              isLoading={isSending}
+              onSend={(text, sendExecutionStrategy, images) => {
+                handleSend(
+                  images || [],
+                  chatToolPreferences.webSearch,
+                  chatToolPreferences.thinking,
+                  text,
+                  sendExecutionStrategy,
+                );
+              }}
               providerType={providerType}
               setProviderType={setProviderType}
               model={model}
               setModel={setModel}
               executionStrategy={executionStrategy}
               setExecutionStrategy={setExecutionStrategy}
-              activeTheme={activeTheme}
               onManageProviders={handleManageProviders}
-              disabled={!projectId}
-              onClearMessages={handleClearMessages}
-              onToggleCanvas={handleToggleCanvas}
-              isCanvasOpen={layoutMode !== "chat"}
-              taskFiles={taskFiles}
-              selectedFileId={selectedFileId}
-              taskFilesExpanded={taskFilesExpanded}
-              onToggleTaskFiles={() => setTaskFilesExpanded(!taskFilesExpanded)}
-              onTaskFileClick={handleTaskFileClick}
+              webSearchEnabled={chatToolPreferences.webSearch}
+              onWebSearchEnabledChange={(enabled) =>
+                setChatToolPreferences((prev) => ({
+                  ...prev,
+                  webSearch: enabled,
+                }))
+              }
+              thinkingEnabled={chatToolPreferences.thinking}
+              onThinkingEnabledChange={(enabled) =>
+                setChatToolPreferences((prev) => ({
+                  ...prev,
+                  thinking: enabled,
+                }))
+              }
+              creationMode={creationMode}
+              onCreationModeChange={setCreationMode}
+              activeTheme={activeTheme}
+              onThemeChange={(theme) => {
+                if (!lockTheme) {
+                  setActiveTheme(theme);
+                }
+              }}
+              showThemeTabs={false}
+              hasCanvasContent={
+                activeTheme === "general"
+                  ? Boolean(generalCanvasState.content?.trim())
+                  : !isCanvasStateEmpty(resolvedCanvasState)
+              }
+              hasContentId={Boolean(contentId)}
+              selectedText={selectedText}
+              onRecommendationClick={(shortLabel, fullPrompt) => {
+                setInput(fullPrompt);
+              }}
               characters={projectMemory?.characters || []}
               skills={skills}
-              toolStates={chatToolPreferences}
-              onToolStatesChange={setChatToolPreferences}
-              onSelectCharacter={(character) => {
-                setMentionedCharacters((prev) => {
-                  // 避免重复添加
-                  if (prev.find((c) => c.id === character.id)) return prev;
-                  return [...prev, character];
-                });
-              }}
               onNavigateToSettings={handleNavigateToSkillSettings}
             />
-          </>
-        )}
-      </ChatContainerInner>
-    </ChatContainer>
+          )}
+
+          {showChatLayout && (
+            <>
+              {(workspacePathMissing || workspaceHealthError) && (
+                <div className="mx-4 mb-2 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                  <span className="flex-1">
+                    工作区目录不存在，请重新选择一个本地目录后继续
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void handleSelectWorkspaceDirectory()}
+                    className="shrink-0 rounded-md bg-amber-200 px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-300 dark:bg-amber-800 dark:text-amber-100 dark:hover:bg-amber-700"
+                  >
+                    重新选择目录
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWorkspaceHealthError(false);
+                      dismissWorkspacePathError();
+                    }}
+                    className="shrink-0 text-amber-600 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
+                    aria-label="关闭"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+              {!contextWorkspace.enabled ? inputbarNode : null}
+            </>
+          )}
+        </ChatContainerInner>
+      </ChatContainer>
+    ),
+    [
+      activeTheme,
+      chatToolPreferences.thinking,
+      chatToolPreferences.webSearch,
+      contentId,
+      contextWorkspace.enabled,
+      creationMode,
+      currentStepIndex,
+      deleteMessage,
+      dismissWorkspacePathError,
+      editMessage,
+      executionStrategy,
+      generalCanvasState.content,
+      goToStep,
+      handleA2UISubmit,
+      handleCodeBlockClick,
+      handleFileClick,
+      handleManageProviders,
+      handleNavigateToSkillSettings,
+      handlePermissionResponse,
+      handleSelectWorkspaceDirectory,
+      handleSend,
+      handleWriteFile,
+      hasMessages,
+      hideInlineStepProgress,
+      input,
+      inputbarNode,
+      isContentCreationMode,
+      isThemeWorkbench,
+      lockTheme,
+      messages,
+      model,
+      projectMemory?.characters,
+      providerType,
+      setCreationMode,
+      setExecutionStrategy,
+      setInput,
+      setModel,
+      setProviderType,
+      setWorkspaceHealthError,
+      shouldCollapseCodeBlocks,
+      selectedText,
+      showChatLayout,
+      skills,
+      steps,
+      workspaceHealthError,
+      workspacePathMissing,
+      resolvedCanvasState,
+    ],
   );
 
   // 画布区域内容
   const canvasContent = useMemo(() => {
+    const renderCanvasTheme = (
+      shouldBootstrapCanvasOnEntry ? normalizedEntryTheme : mappedTheme
+    ) as ThemeType;
+
     // 如果有 artifact，优先使用 ArtifactRenderer 渲染
     const currentArtifact =
       selectedArtifact ||
       (artifacts.length > 0 ? artifacts[artifacts.length - 1] : null);
-    if (activeTheme === "general" && currentArtifact) {
+    if (renderCanvasTheme === "general" && currentArtifact) {
       return (
         <div className="flex flex-col h-full bg-[#1e2227]">
           {/* 使用 ArtifactToolbar 组件 */}
@@ -2231,7 +5251,7 @@ export function AgentChatPage({
     }
 
     // General 主题使用专门的预览画布（无 artifact 时）
-    if (activeTheme === "general") {
+    if (renderCanvasTheme === "general") {
       if (generalCanvasState.isOpen) {
         return (
           <GeneralCanvasPanel
@@ -2246,12 +5266,35 @@ export function AgentChatPage({
       return null;
     }
 
+    const shouldShowCanvasLoadingState =
+      renderCanvasTheme !== "general" &&
+      ((!canvasState &&
+        (shouldBootstrapCanvasOnEntry ||
+          isInitialContentLoading ||
+          Boolean(initialContentLoadError))) ||
+        (resolvedCanvasState?.type === "document" &&
+          !resolvedCanvasState.content.trim() &&
+          (isInitialContentLoading || Boolean(initialContentLoadError))));
+
+    if (shouldShowCanvasLoadingState) {
+      return (
+        <div
+          data-testid="canvas-loading-state"
+          className="flex h-full items-center justify-center rounded-[14px] border border-dashed border-border bg-background text-sm text-muted-foreground"
+        >
+          {isInitialContentLoading
+            ? "正在加载文稿内容..."
+            : initialContentLoadError || "正在准备文稿画布..."}
+        </div>
+      );
+    }
+
     // 其他主题使用 CanvasFactory
-    if (canvasState) {
+    if (resolvedCanvasState) {
       return (
         <CanvasFactory
-          theme={mappedTheme}
-          state={canvasState}
+          theme={renderCanvasTheme}
+          state={resolvedCanvasState}
           onStateChange={setCanvasState}
           onBackHome={handleBackHome}
           onClose={handleCloseCanvas}
@@ -2260,8 +5303,24 @@ export function AgentChatPage({
           projectId={projectId ?? null}
           contentId={contentId ?? null}
           autoImageTopic={project?.name || undefined}
+          autoContinueProviderType={providerType}
+          onAutoContinueProviderTypeChange={setProviderType}
+          autoContinueModel={model}
+          onAutoContinueModelChange={setModel}
+          autoContinueThinkingEnabled={chatToolPreferences.thinking}
+          onAutoContinueThinkingEnabledChange={
+            handleDocumentThinkingEnabledChange
+          }
+          onAutoContinueRun={handleDocumentAutoContinueRun}
+          onAddImage={handleAddImage}
+          onImportDocument={handleImportDocument}
+          onContentReviewRun={handleDocumentContentReviewRun}
+          onTextStylizeRun={handleDocumentTextStylizeRun}
+          documentContentReviewPlacement={
+            preferContentReviewInRightRail ? "external-rail" : "inline"
+          }
           novelControls={
-            canvasState.type === "novel"
+            resolvedCanvasState.type === "novel"
               ? {
                   useExternalToolbar: true,
                   chapterListCollapsed: novelChapterListCollapsed,
@@ -2274,41 +5333,42 @@ export function AgentChatPage({
     }
     return null;
   }, [
-    activeTheme,
     artifacts,
     selectedArtifact,
     generalCanvasState,
     canvasState,
+    resolvedCanvasState,
     mappedTheme,
+    normalizedEntryTheme,
     project,
     projectId,
     contentId,
     handleCloseCanvas,
     handleBackHome,
     isSending,
+    providerType,
+    setProviderType,
+    model,
+    setModel,
+    chatToolPreferences.thinking,
     handleCanvasSelectionTextChange,
+    handleAddImage,
+    handleDocumentAutoContinueRun,
+    handleDocumentContentReviewRun,
+    handleDocumentThinkingEnabledChange,
+    handleDocumentTextStylizeRun,
+    handleImportDocument,
     artifactViewMode,
     artifactPreviewSize,
     novelChapterListCollapsed,
+    isInitialContentLoading,
+    initialContentLoadError,
+    shouldBootstrapCanvasOnEntry,
+    preferContentReviewInRightRail,
   ]);
 
-  // ========== 渲染逻辑 ==========
-
-  // 所有主题统一使用 useAgentChat 的状态和渲染逻辑
-  // General 主题与其他主题的区别仅在于不显示步骤进度条
-  return (
-    <PageContainer>
-      {showChatPanel && showSidebar && (
-        <ChatSidebar
-          onNewChat={handleClearMessages}
-          topics={topics}
-          currentTopicId={sessionId}
-          onSwitchTopic={switchTopic}
-          onDeleteTopic={deleteTopic}
-          onRenameTopic={renameTopic}
-        />
-      )}
-
+  const mainAreaNode = useMemo(
+    () => (
       <MainArea>
         {!hideTopBar && (
           <>
@@ -2318,17 +5378,11 @@ export function AgentChatPage({
               showHistoryToggle={!hideHistoryToggle && showChatPanel}
               onToggleFullscreen={() => {}}
               onBackToProjectManagement={onBackToProjectManagement}
-              onBackToResources={fromResources ? handleBackToResources : undefined}
+              onBackToResources={
+                fromResources ? handleBackToResources : undefined
+              }
               projectId={projectId ?? null}
-              onProjectChange={(newProjectId) => {
-                if (externalProjectId) {
-                  return;
-                }
-                pendingTopicSwitchRef.current = null;
-                isResolvingTopicProjectRef.current = false;
-                savePersistedProjectId(LAST_PROJECT_ID_KEY, newProjectId);
-                setInternalProjectId(newProjectId);
-              }}
+              onProjectChange={handleProjectChange}
               workspaceType={activeTheme}
               onBackHome={handleBackHome}
               onToggleSettings={() => {
@@ -2348,14 +5402,15 @@ export function AgentChatPage({
               }
             />
 
-            <LatestRunStatusBadge
-              source="chat"
-              label="统一执行状态"
-              className="px-4 py-1 border-b border-border/60"
-            />
+            {!isThemeWorkbench ? (
+              <LatestRunStatusBadge
+                source="chat"
+                label="统一执行状态"
+                className="px-4 py-1 border-b border-border/60"
+              />
+            ) : null}
 
-            {/* 同步状态指示器 */}
-            {contentId && syncStatus !== "idle" && (
+            {!isThemeWorkbench && contentId && syncStatus !== "idle" && (
               <div
                 style={{
                   padding: "4px 16px",
@@ -2386,13 +5441,98 @@ export function AgentChatPage({
           </>
         )}
 
-        {/* 使用布局过渡组件 */}
-        <LayoutTransition
-          mode={layoutMode}
-          chatContent={chatContent}
-          canvasContent={canvasContent}
-        />
+        <ThemeWorkbenchLayoutShell
+          $bottomInset={
+            isThemeWorkbench && showChatLayout
+              ? canvasContent
+                ? themeWorkbenchRunState === "auto_running"
+                  ? "24px"
+                  : currentGate.status === "waiting"
+                    ? "12px"
+                    : "0"
+                : themeWorkbenchRunState === "auto_running"
+                  ? "168px"
+                  : currentGate.status === "waiting"
+                    ? "136px"
+                    : "88px"
+              : "0"
+          }
+        >
+          <LayoutTransitionRenderGate
+            mode={isThemeWorkbench && canvasContent ? "canvas" : layoutMode}
+            chatContent={chatContent}
+            canvasContent={canvasContent}
+          />
+        </ThemeWorkbenchLayoutShell>
+        {isThemeWorkbench && showChatLayout ? (
+          <ThemeWorkbenchInputOverlay>
+            {inputbarNode}
+          </ThemeWorkbenchInputOverlay>
+        ) : null}
       </MainArea>
+    ),
+    [
+      _onNavigate,
+      activeTheme,
+      canvasContent,
+      chatContent,
+      contentId,
+      currentGate.status,
+      fromResources,
+      handleAddNovelChapter,
+      handleBackHome,
+      handleBackToResources,
+      handleCloseCanvas,
+      handleProjectChange,
+      handleToggleNovelChapterList,
+      handleToggleSidebar,
+      hideHistoryToggle,
+      hideTopBar,
+      inputbarNode,
+      isSending,
+      isThemeWorkbench,
+      layoutMode,
+      novelChapterListCollapsed,
+      onBackToProjectManagement,
+      projectId,
+      showChatLayout,
+      showChatPanel,
+      showNovelNavbarControls,
+      syncStatus,
+      themeWorkbenchRunState,
+    ],
+  );
+
+  // ========== 渲染逻辑 ==========
+
+  // 所有主题统一使用 useAgentChat 的状态和渲染逻辑
+  // General 主题与其他主题的区别仅在于不显示步骤进度条
+  return (
+    <PageContainer>
+      {isThemeWorkbench ? (
+        themeWorkbenchSidebarNode
+      ) : showChatPanel && showSidebar ? (
+        <ChatSidebar
+          onNewChat={handleClearMessages}
+          topics={topics}
+          currentTopicId={sessionId}
+          onSwitchTopic={switchTopic}
+          onDeleteTopic={deleteTopic}
+          onRenameTopic={renameTopic}
+        />
+      ) : null}
+      {showThemeWorkbenchLeftExpandButton ? (
+        <ThemeWorkbenchLeftExpandButton
+          type="button"
+          aria-label="展开上下文侧栏"
+          onClick={() => setThemeWorkbenchSidebarCollapsed(false)}
+          title="展开上下文侧栏"
+        >
+          <PanelLeftOpen size={14} />
+        </ThemeWorkbenchLeftExpandButton>
+      ) : null}
+
+      {mainAreaNode}
     </PageContainer>
   );
 }

@@ -24,6 +24,7 @@ const {
   mockGetProjectByRootPath,
   mockGetProjectTypeLabel,
   mockGetWorkspaceProjectsRoot,
+  mockListContents,
   mockResolveProjectRootPath,
   mockToastError,
   mockToastSuccess,
@@ -38,6 +39,7 @@ const {
   mockGetProjectByRootPath: vi.fn(),
   mockGetProjectTypeLabel: vi.fn(),
   mockGetWorkspaceProjectsRoot: vi.fn(),
+  mockListContents: vi.fn(),
   mockResolveProjectRootPath: vi.fn(),
   mockToastError: vi.fn(),
   mockToastSuccess: vi.fn(),
@@ -61,6 +63,7 @@ vi.mock("@/lib/api/project", () => ({
   getProjectByRootPath: mockGetProjectByRootPath,
   getProjectTypeLabel: mockGetProjectTypeLabel,
   getWorkspaceProjectsRoot: mockGetWorkspaceProjectsRoot,
+  listContents: mockListContents,
   resolveProjectRootPath: mockResolveProjectRootPath,
 }));
 
@@ -85,6 +88,9 @@ function CreationDialogsHarness(props: HarnessProps) {
       data-creation-intent-error={dialogs.creationIntentError}
       data-current-intent-length={String(dialogs.currentIntentLength)}
       data-pending-prompts={JSON.stringify(dialogs.pendingInitialPromptsByContentId)}
+      data-pending-create-confirmations={JSON.stringify(
+        dialogs.pendingCreateConfirmationByProjectId,
+      )}
       data-content-modes={JSON.stringify(dialogs.contentCreationModes)}
     >
       <button
@@ -114,6 +120,10 @@ function CreationDialogsHarness(props: HarnessProps) {
         data-testid="open-content-dialog"
         onClick={dialogs.handleOpenCreateContentDialog}
       />
+      <button
+        data-testid="force-open-content-dialog"
+        onClick={() => dialogs.setCreateContentDialogOpen(true)}
+      />
       <button data-testid="goto-intent" onClick={dialogs.handleGoToIntentStep} />
       <button
         data-testid="set-mode-hybrid"
@@ -142,6 +152,43 @@ function CreationDialogsHarness(props: HarnessProps) {
       <button
         data-testid="consume-prompt"
         onClick={() => dialogs.consumePendingInitialPrompt("content-new")}
+      />
+      <button
+        data-testid="create-from-workspace-prompt"
+        onClick={() => {
+          void dialogs.handleCreateContentFromWorkspacePrompt("请生成一条面向 CTO 的标题");
+        }}
+      />
+      <button
+        data-testid="open-project-writing"
+        onClick={() => {
+          void dialogs.handleOpenProjectForWriting("project-1", {
+            initialUserPrompt: "请先给我一个完整大纲",
+            creationMode: "guided",
+          });
+        }}
+      />
+      <button
+        data-testid="submit-confirm-create"
+        onClick={() => {
+          void dialogs.submitCreateConfirmation("project-1", {
+            create_confirmation_option: ["new_post"],
+            create_confirmation_note: "",
+          });
+        }}
+      />
+      <button
+        data-testid="submit-confirm-continue"
+        onClick={() => {
+          void dialogs.submitCreateConfirmation("project-1", {
+            create_confirmation_option: ["continue_history"],
+            create_confirmation_note: "",
+          });
+        }}
+      />
+      <button
+        data-testid="consume-create-confirmation"
+        onClick={() => dialogs.consumePendingCreateConfirmation("project-1")}
       />
     </div>
   );
@@ -178,18 +225,18 @@ function click(container: HTMLElement, testId: string): void {
 }
 
 async function openContentIntentStep(container: HTMLElement): Promise<void> {
-  click(container, "open-content-dialog");
+  click(container, "force-open-content-dialog");
   await flushEffects();
   click(container, "goto-intent");
   await flushEffects();
 }
 
-function parseRootDatasetRecord(
+function parseRootDatasetRecord<T = Record<string, unknown>>(
   root: HTMLElement | null,
   key: string,
-): Record<string, string> {
+): T {
   const value = root?.dataset[key] ?? "{}";
-  return JSON.parse(value) as Record<string, string>;
+  return JSON.parse(value) as T;
 }
 
 beforeEach(() => {
@@ -212,6 +259,7 @@ beforeEach(() => {
 
   mockGetDefaultContentTypeForProject.mockReturnValue("post");
   mockGetContentTypeLabel.mockReturnValue("文稿");
+  mockListContents.mockResolvedValue([]);
   mockCreateContent.mockResolvedValue({
     id: "content-new",
   });
@@ -223,6 +271,48 @@ afterEach(() => {
 });
 
 describe("useCreationDialogs", () => {
+  it("点击新建文稿入口应进入页面式创建，而不是打开弹窗", async () => {
+    const onEnterWorkspace = vi.fn();
+    const { container } = renderHarness({
+      selectedProjectId: "project-1",
+      onEnterWorkspace,
+    });
+    await flushEffects();
+
+    click(container, "open-content-dialog");
+    await flushEffects();
+
+    expect(onEnterWorkspace).toHaveBeenCalledWith("", { createEntryHome: true });
+    const root = getRootElement(container);
+    expect(root?.dataset.createContentOpen).toBe("false");
+    const pendingConfirmations = parseRootDatasetRecord<
+      Record<string, { source: string }>
+    >(root, "pendingCreateConfirmations");
+    expect(pendingConfirmations["project-1"]?.source).toBe("workspace_create_entry");
+  });
+
+  it("初始化传入外部创建提示词时应自动进入确认页", async () => {
+    const onEnterWorkspace = vi.fn();
+    const { container } = renderHarness({
+      selectedProjectId: "project-1",
+      onEnterWorkspace,
+      initialCreateConfirmation: {
+        prompt: "请基于推荐主题生成内容大纲",
+        source: "workspace_prompt",
+        fallbackContentTitle: "推荐主题",
+      },
+    });
+    await flushEffects(3);
+
+    expect(onEnterWorkspace).toHaveBeenCalledWith("", { createEntryHome: true });
+    const root = getRootElement(container);
+    const pendingConfirmations = parseRootDatasetRecord<
+      Record<string, { source: string; initialUserPrompt?: string }>
+    >(root, "pendingCreateConfirmations");
+    expect(pendingConfirmations["project-1"]?.source).toBe("workspace_prompt");
+    expect(pendingConfirmations["project-1"]?.initialUserPrompt).toContain("推荐主题");
+  });
+
   it("创建项目成功后应关闭弹窗并触发回调", async () => {
     const loadProjects = vi.fn(async () => undefined);
     const onProjectCreated = vi.fn();
@@ -247,11 +337,16 @@ describe("useCreationDialogs", () => {
     });
     expect(onProjectCreated).toHaveBeenCalledWith("project-new");
     expect(loadProjects).toHaveBeenCalledTimes(1);
+    expect(mockCreateContent).not.toHaveBeenCalled();
     expect(mockToastSuccess).toHaveBeenCalledWith("已创建新项目");
 
     const root = getRootElement(container);
     expect(root?.dataset.createProjectOpen).toBe("false");
     expect(root?.dataset.creatingProject).toBe("false");
+    const pendingConfirmations = parseRootDatasetRecord<
+      Record<string, { source: string }>
+    >(root, "pendingCreateConfirmations");
+    expect(pendingConfirmations["project-new"]?.source).toBe("project_created");
   });
 
   it("打开项目弹窗后应检测路径冲突", async () => {
@@ -349,7 +444,7 @@ describe("useCreationDialogs", () => {
     });
     await flushEffects();
 
-    click(container, "open-content-dialog");
+    click(container, "force-open-content-dialog");
     await flushEffects();
     click(container, "set-mode-hybrid");
     await flushEffects();
@@ -367,7 +462,7 @@ describe("useCreationDialogs", () => {
     });
     await flushEffects();
 
-    click(container, "open-content-dialog");
+    click(container, "force-open-content-dialog");
     await flushEffects();
     click(container, "set-mode-invalid");
     await flushEffects();
@@ -395,9 +490,7 @@ describe("useCreationDialogs", () => {
 
     expect(mockCreateContent).toHaveBeenCalledTimes(1);
     expect(loadContents).toHaveBeenCalledWith("project-1");
-    expect(onEnterWorkspace).toHaveBeenCalledWith("content-new", {
-      showChatPanel: true,
-    });
+    expect(onEnterWorkspace).toHaveBeenCalledWith("content-new", {});
     expect(mockToastSuccess).toHaveBeenCalledWith("已创建新文稿");
 
     const root = getRootElement(container);
@@ -417,5 +510,164 @@ describe("useCreationDialogs", () => {
       "pendingPrompts",
     );
     expect(pendingPromptsAfterConsume["content-new"]).toBeUndefined();
+  });
+
+  it("工作区提示词入口应先进入确认，提交确认后才创建文稿", async () => {
+    const loadContents = vi.fn(async () => undefined);
+    const onEnterWorkspace = vi.fn();
+
+    const { container } = renderHarness({
+      selectedProjectId: "project-1",
+      selectedContentId: "content-current",
+      loadContents,
+      onEnterWorkspace,
+    });
+    await flushEffects();
+
+    click(container, "create-from-workspace-prompt");
+    await flushEffects(3);
+
+    expect(mockCreateContent).not.toHaveBeenCalled();
+    expect(onEnterWorkspace).toHaveBeenCalledWith("", { createEntryHome: true });
+
+    let root = getRootElement(container);
+    const pendingConfirmations = parseRootDatasetRecord<
+      Record<
+        string,
+        {
+          source: string;
+          initialUserPrompt?: string;
+          preferredContentId?: string;
+        }
+      >
+    >(root, "pendingCreateConfirmations");
+    expect(pendingConfirmations["project-1"]?.source).toBe("workspace_prompt");
+    expect(pendingConfirmations["project-1"]?.initialUserPrompt).toContain("面向 CTO");
+    expect(pendingConfirmations["project-1"]?.preferredContentId).toBe("content-current");
+
+    click(container, "submit-confirm-create");
+    await flushEffects(8);
+
+    expect(mockCreateContent).toHaveBeenCalledTimes(1);
+    expect(loadContents).toHaveBeenCalledWith("project-1");
+    expect(onEnterWorkspace).toHaveBeenCalledWith("content-new", {});
+
+    root = getRootElement(container);
+    const pendingPrompts = parseRootDatasetRecord<Record<string, string>>(
+      root,
+      "pendingPrompts",
+    );
+    expect(pendingPrompts["content-new"]).toContain("面向 CTO");
+  });
+
+  it("确认提交被连续触发时应只创建一次文稿", async () => {
+    const loadContents = vi.fn(async () => undefined);
+    const onEnterWorkspace = vi.fn();
+    let resolveCreateContent: ((value: { id: string }) => void) | null = null;
+    mockCreateContent.mockImplementation(
+      () =>
+        new Promise<{ id: string }>((resolve) => {
+          resolveCreateContent = resolve;
+        }),
+    );
+
+    const { container } = renderHarness({
+      selectedProjectId: "project-1",
+      loadContents,
+      onEnterWorkspace,
+    });
+    await flushEffects();
+
+    click(container, "create-from-workspace-prompt");
+    await flushEffects(2);
+
+    click(container, "submit-confirm-create");
+    click(container, "submit-confirm-create");
+    await flushEffects(2);
+
+    expect(mockCreateContent).toHaveBeenCalledTimes(1);
+    expect(loadContents).not.toHaveBeenCalled();
+    expect(onEnterWorkspace).not.toHaveBeenCalledWith("content-new", {});
+
+    resolveCreateContent?.({ id: "content-new" });
+    await flushEffects(6);
+
+    expect(loadContents).toHaveBeenCalledWith("project-1");
+    expect(onEnterWorkspace).toHaveBeenCalledWith("content-new", {});
+  });
+
+  it("打开项目写作在无文稿时不应自动创建，而应进入创建入口页", async () => {
+    mockListContents.mockResolvedValueOnce([]);
+    const onEnterWorkspace = vi.fn();
+    const loadContents = vi.fn(async () => undefined);
+    const onProjectCreated = vi.fn();
+
+    const { container } = renderHarness({
+      onEnterWorkspace,
+      loadContents,
+      onProjectCreated,
+    });
+    await flushEffects();
+
+    click(container, "open-project-writing");
+    await flushEffects(6);
+
+    expect(mockCreateContent).not.toHaveBeenCalled();
+    expect(onProjectCreated).toHaveBeenCalledWith("project-1");
+    expect(loadContents).toHaveBeenCalledWith("project-1");
+    expect(onEnterWorkspace).toHaveBeenCalledWith("", { createEntryHome: true });
+
+    const root = getRootElement(container);
+    const pendingConfirmations = parseRootDatasetRecord<
+      Record<string, { source: string; initialUserPrompt?: string }>
+    >(root, "pendingCreateConfirmations");
+    expect(pendingConfirmations["project-1"]?.source).toBe("open_project_for_writing");
+    expect(pendingConfirmations["project-1"]?.initialUserPrompt).toBe(
+      "请先给我一个完整大纲",
+    );
+
+    click(container, "consume-create-confirmation");
+    await flushEffects();
+    const rootAfterConsume = getRootElement(container);
+    const pendingAfterConsume = parseRootDatasetRecord(
+      rootAfterConsume,
+      "pendingCreateConfirmations",
+    );
+    expect(pendingAfterConsume["project-1"]).toBeUndefined();
+  });
+
+  it("打开项目写作在已有文稿时应进入最新文稿并写入待发送提示", async () => {
+    mockListContents.mockResolvedValueOnce([
+      {
+        id: "content-old",
+        title: "旧稿",
+        updated_at: 1700000000000,
+      },
+      {
+        id: "content-newest",
+        title: "新稿",
+        updated_at: 1700000100000,
+      },
+    ]);
+
+    const onEnterWorkspace = vi.fn();
+    const loadContents = vi.fn(async () => undefined);
+
+    const { container } = renderHarness({
+      onEnterWorkspace,
+      loadContents,
+    });
+    await flushEffects();
+
+    click(container, "open-project-writing");
+    await flushEffects(6);
+
+    expect(mockCreateContent).not.toHaveBeenCalled();
+    expect(loadContents).toHaveBeenCalledWith("project-1");
+    expect(onEnterWorkspace).toHaveBeenCalledWith("content-newest", {});
+
+    const root = getRootElement(container);
+    const pendingPrompts = parseRootDatasetRecord(root, "pendingPrompts");
+    expect(pendingPrompts["content-newest"]).toBe("请先给我一个完整大纲");
   });
 });

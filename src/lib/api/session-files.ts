@@ -171,6 +171,41 @@ export async function readFile(
 }
 
 /**
+ * 解析会话文件绝对路径
+ */
+export async function resolveFilePath(
+  sessionId: string,
+  fileName: string,
+): Promise<string> {
+  return safeInvoke<string>("session_files_resolve_file_path", {
+    sessionId,
+    fileName,
+  });
+}
+
+/**
+ * 在 Finder/文件管理器中定位会话文件
+ */
+export async function revealFileInFinder(
+  sessionId: string,
+  fileName: string,
+): Promise<void> {
+  const path = await resolveFilePath(sessionId, fileName);
+  await safeInvoke("reveal_in_finder", { path });
+}
+
+/**
+ * 使用系统默认应用打开会话文件
+ */
+export async function openFileWithDefaultApp(
+  sessionId: string,
+  fileName: string,
+): Promise<void> {
+  const path = await resolveFilePath(sessionId, fileName);
+  await safeInvoke("open_with_default_app", { path });
+}
+
+/**
  * 删除会话文件
  */
 export async function deleteFile(
@@ -207,3 +242,69 @@ export async function cleanupExpired(maxAgeDays?: number): Promise<number> {
 export async function cleanupEmpty(): Promise<number> {
   return safeInvoke<number>("session_files_cleanup_empty");
 }
+
+// ============================================================================
+// 图片上传 API
+// ============================================================================
+
+/**
+ * 上传图片到会话
+ * @param sessionId 会话 ID
+ * @param filePath 本地图片文件路径
+ * @returns 图片在会话中的访问路径
+ */
+export async function uploadImageToSession(
+  sessionId: string,
+  filePath: string,
+): Promise<string> {
+  return safeInvoke<string>("upload_image_to_session", {
+    sessionId,
+    filePath,
+  });
+}
+
+/**
+ * 从会话中读取图片（返回 base64 编码）
+ * @param sessionId 会话 ID
+ * @param fileName 文件名
+ * @returns base64 编码的图片数据
+ */
+export async function readImageFromSession(
+  sessionId: string,
+  fileName: string,
+): Promise<string> {
+  return safeInvoke<string>("read_image_from_session", {
+    sessionId,
+    fileName,
+  });
+}
+
+// ============================================================================
+// 文档导入 API
+// ============================================================================
+
+/**
+ * 导入文档内容
+ * @param filePath 本地文档文件路径
+ * @returns 文档的文本内容
+ */
+export async function importDocument(filePath: string): Promise<string> {
+  return safeInvoke<string>("import_document", { filePath });
+}
+
+/**
+ * 导入文档并保存到会话
+ * @param sessionId 会话 ID
+ * @param filePath 本地文档文件路径
+ * @returns [文档内容, 保存的文件名]
+ */
+export async function importDocumentToSession(
+  sessionId: string,
+  filePath: string,
+): Promise<[string, string]> {
+  return safeInvoke<[string, string]>("import_document_to_session", {
+    sessionId,
+    filePath,
+  });
+}
+

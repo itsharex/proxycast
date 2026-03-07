@@ -40,7 +40,7 @@ impl ProviderCredentialClientCompat for ProviderCredential {
         true
     }
 }
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 
@@ -1288,23 +1288,120 @@ impl ProviderPoolService {
 
     // OpenAI API 健康检查
     // 与 OpenAI Provider 保持一致的 URL 处理逻辑
+    fn is_version_path_segment(segment: &str) -> bool {
+        segment.starts_with('v')
+            && segment.len() >= 2
+            && segment[1..].chars().all(|c| c.is_ascii_digit())
+    }
+
+    fn build_openai_url_from_base(base_url: &str, endpoint: &str) -> String {
+        let base = base_url.trim_end_matches('/');
+        let has_version = base
+            .rsplit('/')
+            .next()
+            .map(Self::is_version_path_segment)
+            .unwrap_or(false);
+
+        if has_version {
+            format!("{base}/{endpoint}")
+        } else {
+            format!("{base}/v1/{endpoint}")
+        }
+    }
+
+    fn parent_base_url(base_url: &str) -> Option<String> {
+        let base = base_url.trim();
+        if base.is_empty() {
+            return None;
+        }
+
+        let mut url = reqwest::Url::parse(base)
+            .or_else(|_| reqwest::Url::parse(&format!("http://{base}")))
+            .ok()?;
+
+        let path = url.path().trim_end_matches('/');
+        if path.is_empty() || path == "/" {
+            return None;
+        }
+
+        let mut segments: Vec<&str> = path
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .collect();
+        if segments.is_empty() {
+            return None;
+        }
+        segments.pop();
+
+        let new_path = if segments.is_empty() {
+            "/".to_string()
+        } else {
+            format!("/{}", segments.join("/"))
+        };
+
+        url.set_path(&new_path);
+        url.set_query(None);
+        url.set_fragment(None);
+
+        Some(url.to_string().trim_end_matches('/').to_string())
+    }
+
+    fn push_openai_url_candidates(urls: &mut Vec<String>, base_url: &str, endpoint: &str) {
+        if base_url.trim().is_empty() {
+            return;
+        }
+
+        let primary = Self::build_openai_url_from_base(base_url, endpoint);
+        if !urls.iter().any(|url| url == &primary) {
+            urls.push(primary.clone());
+        }
+
+        if primary.contains("/v1/") {
+            let no_v1 = primary.replacen("/v1/", "/", 1);
+            if !urls.iter().any(|url| url == &no_v1) {
+                urls.push(no_v1);
+            }
+        }
+    }
+
+    fn build_openai_health_check_urls(base_url: Option<&str>) -> Vec<String> {
+        let raw_base = base_url
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("https://api.openai.com");
+        let normalized_base = raw_base.trim_end_matches('/').to_string();
+
+        let mut urls = Vec::new();
+        let mut visited = HashSet::new();
+        visited.insert(normalized_base.clone());
+
+        Self::push_openai_url_candidates(&mut urls, &normalized_base, "chat/completions");
+
+        let mut current = normalized_base;
+        for _ in 0..6 {
+            let Some(parent) = Self::parent_base_url(&current) else {
+                break;
+            };
+            if !visited.insert(parent.clone()) {
+                break;
+            }
+            Self::push_openai_url_candidates(&mut urls, &parent, "chat/completions");
+            current = parent;
+        }
+
+        if urls.is_empty() {
+            urls.push("https://api.openai.com/v1/chat/completions".to_string());
+        }
+        urls
+    }
+
     async fn check_openai_health(
         &self,
         api_key: &str,
         base_url: Option<&str>,
         model: &str,
     ) -> Result<(), String> {
-        // base_url 应该不带 /v1，在这里拼接
-        // 但为了兼容用户可能输入带 /v1 的情况，这里做智能处理
-        let base = base_url.unwrap_or("https://api.openai.com");
-        let base = base.trim_end_matches('/');
-
-        // 如果用户输入了带 /v1 的 URL，直接使用；否则拼接 /v1
-        let url = if base.ends_with("/v1") {
-            format!("{base}/chat/completions")
-        } else {
-            format!("{base}/v1/chat/completions")
-        };
+        let urls = Self::build_openai_health_check_urls(base_url);
 
         let request_body = serde_json::json!({
             "model": model,
@@ -1312,29 +1409,66 @@ impl ProviderPoolService {
             "max_tokens": 10
         });
 
-        tracing::debug!("[HEALTH_CHECK] OpenAI API URL: {}, model: {}", url, model);
+        let mut last_error: Option<String> = None;
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(api_key)
-            .json(&request_body)
-            .timeout(self.health_check_timeout)
-            .send()
-            .await
-            .map_err(|e| format!("请求失败: {e}"))?;
+        for (index, url) in urls.iter().enumerate() {
+            tracing::debug!("[HEALTH_CHECK] OpenAI API URL: {}, model: {}", url, model);
 
-        if response.status().is_success() {
-            Ok(())
-        } else {
+            let response = match self
+                .client
+                .post(url)
+                .bearer_auth(api_key)
+                .json(&request_body)
+                .timeout(self.health_check_timeout)
+                .send()
+                .await
+            {
+                Ok(response) => response,
+                Err(error) => {
+                    let message = format!("请求失败: {error}");
+                    last_error = Some(message.clone());
+                    if index + 1 < urls.len() {
+                        tracing::warn!(
+                            "[HEALTH_CHECK] OpenAI API URL {} 请求失败，继续尝试后续候选: {}",
+                            url,
+                            message
+                        );
+                        continue;
+                    }
+                    return Err(message);
+                }
+            };
+
+            if response.status().is_success() {
+                return Ok(());
+            }
+
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            Err(format!(
+            let message = format!(
                 "HTTP {} - {}",
                 status,
                 body.chars().take(200).collect::<String>()
-            ))
+            );
+            last_error = Some(message.clone());
+
+            let can_retry_next_url = matches!(
+                status,
+                reqwest::StatusCode::NOT_FOUND | reqwest::StatusCode::METHOD_NOT_ALLOWED
+            );
+            if can_retry_next_url && index + 1 < urls.len() {
+                tracing::warn!(
+                    "[HEALTH_CHECK] OpenAI API URL {} 返回 {}，尝试下一个候选 URL",
+                    url,
+                    status
+                );
+                continue;
+            }
+
+            return Err(message);
         }
+
+        Err(last_error.unwrap_or_else(|| "OpenAI 健康检查失败".to_string()))
     }
 
     // Claude API 健康检查
@@ -2182,5 +2316,22 @@ mod tests {
             api_provider_type_to_pool_type(ApiProviderType::Openai),
             PoolProviderType::OpenAI
         );
+    }
+
+    #[test]
+    fn test_build_openai_health_check_urls_supports_nested_base_path() {
+        let urls = ProviderPoolService::build_openai_health_check_urls(Some(
+            "http://127.0.0.1:3030/openai/v1",
+        ));
+
+        assert!(urls.contains(&"http://127.0.0.1:3030/openai/v1/chat/completions".to_string()));
+        assert!(urls.contains(&"http://127.0.0.1:3030/openai/chat/completions".to_string()));
+        assert!(urls.contains(&"http://127.0.0.1:3030/v1/chat/completions".to_string()));
+    }
+
+    #[test]
+    fn test_build_openai_health_check_urls_defaults_to_official_endpoint() {
+        let urls = ProviderPoolService::build_openai_health_check_urls(None);
+        assert_eq!(urls[0], "https://api.openai.com/v1/chat/completions");
     }
 }

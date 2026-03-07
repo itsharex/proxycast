@@ -29,6 +29,7 @@ use crate::logger;
 use crate::mcp::McpManagerState;
 use crate::plugin;
 use crate::services::heartbeat_service::{HeartbeatService, HeartbeatServiceState};
+use crate::skills::ensure_default_local_skills;
 use crate::telemetry;
 use crate::voice::recording_service::{create_recording_service_state, RecordingServiceState};
 use proxycast_core::config::{Config, ConfigManager};
@@ -239,6 +240,20 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
         let conn = database::lock_db(&db).map_err(|e| format!("Failed to lock database: {e}"))?;
         database::dao::skills::SkillDao::init_default_skill_repos(&conn)
             .map_err(|e| format!("初始化默认技能仓库失败: {e}"))?;
+    }
+    match ensure_default_local_skills() {
+        Ok(installed) if installed.is_empty() => {
+            tracing::info!("[Bootstrap] 默认本地 Skills 已存在，跳过写入");
+        }
+        Ok(installed) => {
+            tracing::info!(
+                "[Bootstrap] 默认本地 Skills 安装完成: {}",
+                installed.join(", ")
+            );
+        }
+        Err(error) => {
+            tracing::warn!("[Bootstrap] 安装默认本地 Skills 失败: {}", error);
+        }
     }
 
     // 初始化调度器表，避免运行期健康检查出现缺表错误

@@ -196,6 +196,16 @@ impl ExecutionTracker {
         AgentRunDao::get_run(&conn, id).map_err(|e| format!("查询执行记录失败: {e}"))
     }
 
+    pub fn list_runs_by_session(
+        &self,
+        session_id: &str,
+        limit: usize,
+    ) -> Result<Vec<AgentRun>, String> {
+        let conn = self.db.lock().map_err(|e| format!("数据库锁定失败: {e}"))?;
+        AgentRunDao::list_runs_by_session(&conn, session_id, limit)
+            .map_err(|e| format!("查询会话执行记录失败: {e}"))
+    }
+
     pub async fn with_run<T, Fut>(
         &self,
         source: RunSource,

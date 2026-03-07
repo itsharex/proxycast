@@ -17,6 +17,7 @@ import {
   Bot,
   Blocks,
   Image,
+  Film,
   Mic,
   Server,
   Plug,
@@ -26,7 +27,6 @@ import {
   ShieldCheck,
   HeartPulse,
   Activity,
-
   FlaskConical,
   Code,
   Info,
@@ -132,8 +132,13 @@ export function useSettingsCategory(): CategoryGroup[] {
         },
         {
           key: SettingsTabs.ImageGen,
-          label: t("settings.tab.imageGen", "绘画服务"),
+          label: t("settings.tab.imageGen", "图片服务"),
           icon: Image,
+        },
+        {
+          key: SettingsTabs.VideoGen,
+          label: t("settings.tab.videoGen", "视频服务"),
+          icon: Film,
         },
         {
           key: SettingsTabs.Voice,

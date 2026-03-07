@@ -7,6 +7,7 @@
 /* eslint-disable react-refresh/only-export-components */
 
 export { DocumentCanvas } from "./DocumentCanvas";
+export { ContentReviewPanel } from "./ContentReviewPanel";
 export { DocumentToolbar } from "./DocumentToolbar";
 export { DocumentRenderer } from "./DocumentRenderer";
 export { DocumentEditor } from "./DocumentEditor";
@@ -26,6 +27,11 @@ export {
 
 // Types
 export type {
+  AutoContinueSettings,
+  AutoContinueRunPayload,
+  ContentReviewRunPayload,
+  ContentReviewExpert,
+  CustomContentReviewExpertInput,
   PlatformType,
   ExportFormat,
   DocumentVersion,

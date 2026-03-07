@@ -188,6 +188,21 @@ export interface ContentDetail extends ContentListItem {
   session_id?: string;
 }
 
+export interface ThemeWorkbenchVersionState {
+  id: string;
+  created_at: number;
+  description?: string;
+  status?: "in_progress" | "pending" | "merged" | "candidate";
+  is_current: boolean;
+}
+
+export interface ThemeWorkbenchDocumentState {
+  content_id: string;
+  current_version_id: string;
+  version_count: number;
+  versions: ThemeWorkbenchVersionState[];
+}
+
 /** 创建项目请求 */
 export interface CreateProjectRequest {
   name: string;
@@ -324,6 +339,13 @@ export async function createContent(
 /** 获取内容详情 */
 export async function getContent(id: string): Promise<ContentDetail | null> {
   return invoke("content_get", { id });
+}
+
+/** 获取主题工作台文稿版本状态（后端解析 content.metadata） */
+export async function getThemeWorkbenchDocumentState(
+  id: string,
+): Promise<ThemeWorkbenchDocumentState | null> {
+  return invoke("content_get_theme_workbench_document_state", { id });
 }
 
 /** 获取项目的内容列表 */

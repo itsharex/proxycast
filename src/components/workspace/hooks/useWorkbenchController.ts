@@ -26,6 +26,7 @@ import { useWorkbenchNavigation } from "@/components/workspace/hooks/useWorkbenc
 import { useWorkbenchPanelRenderer } from "@/components/workspace/hooks/useWorkbenchPanelRenderer";
 import { useWorkbenchProjectData } from "@/components/workspace/hooks/useWorkbenchProjectData";
 import { useWorkbenchQuickActions } from "@/components/workspace/hooks/useWorkbenchQuickActions";
+import type { A2UIFormData } from "@/components/content-creator/a2ui/types";
 
 export const DEFAULT_CREATION_MODE: CreationMode = "guided";
 export const MIN_CREATION_INTENT_LENGTH = 10;
@@ -81,6 +82,9 @@ export interface UseWorkbenchControllerParams {
   theme: WorkspaceTheme;
   initialViewMode?: WorkspaceViewMode;
   resetAt?: number;
+  initialCreatePrompt?: string;
+  initialCreateSource?: "workspace_prompt" | "quick_create" | "project_created";
+  initialCreateFallbackTitle?: string;
 }
 
 interface UseWorkbenchBootstrapParams {
@@ -180,6 +184,9 @@ export function useWorkbenchController({
   theme,
   initialViewMode,
   resetAt,
+  initialCreatePrompt,
+  initialCreateSource,
+  initialCreateFallbackTitle,
 }: UseWorkbenchControllerParams) {
   const { leftSidebarCollapsed, toggleLeftSidebar, setLeftSidebarCollapsed } =
     useWorkbenchStore();
@@ -217,10 +224,6 @@ export function useWorkbenchController({
   });
 
   const {
-    activeRightDrawer,
-    setActiveRightDrawer,
-    showChatPanel,
-    setShowChatPanel,
     workflowProgress,
     setWorkflowProgress,
     showWorkflowRail,
@@ -254,29 +257,30 @@ export function useWorkbenchController({
   const [currentChatSessionId, setCurrentChatSessionId] = useState<string | null>(
     null,
   );
+  const [showCreateContentEntryHome, setShowCreateContentEntryHome] = useState(false);
 
   const handleEnterWorkspace = useCallback(
     (
       contentId: string,
       options?: {
-        showChatPanel?: boolean;
+        createEntryHome?: boolean;
       },
     ) => {
-      setSelectedContentId(contentId);
+      const normalizedContentId = contentId.trim();
+      setSelectedContentId(normalizedContentId || null);
+      setShowCreateContentEntryHome(
+        Boolean(options?.createEntryHome && !normalizedContentId),
+      );
       setCurrentChatSessionId(null);
       setWorkspaceMode("workspace");
       setActiveWorkspaceView("create");
-      setShowChatPanel(options?.showChatPanel ?? true);
-      setActiveRightDrawer(null);
       setLeftSidebarCollapsed(true);
     },
     [
-      setActiveRightDrawer,
       setActiveWorkspaceView,
       setCurrentChatSessionId,
       setLeftSidebarCollapsed,
       setSelectedContentId,
-      setShowChatPanel,
       setWorkspaceMode,
     ],
   );
@@ -284,22 +288,32 @@ export function useWorkbenchController({
   const handleSelectProjectAndEnterWorkspace = useCallback(
     (projectId: string) => {
       setSelectedProjectId(projectId);
+      setSelectedContentId(null);
       setContentQuery("");
       setCurrentChatSessionId(null);
+      setShowCreateContentEntryHome(false);
+      setShowWorkflowRail(false);
+
+      if (workspaceMode === "project-management") {
+        setLeftSidebarCollapsed(false);
+        return;
+      }
+
       setWorkspaceMode("workspace");
       setActiveWorkspaceView(themeModule.navigation.defaultView);
-      setActiveRightDrawer(null);
       setLeftSidebarCollapsed(true);
     },
     [
-      setActiveRightDrawer,
-      setActiveWorkspaceView,
+        setActiveWorkspaceView,
       setContentQuery,
       setCurrentChatSessionId,
       setLeftSidebarCollapsed,
+      setSelectedContentId,
       setSelectedProjectId,
+        setShowWorkflowRail,
       setWorkspaceMode,
       themeModule.navigation.defaultView,
+      workspaceMode,
     ],
   );
 
@@ -323,6 +337,7 @@ export function useWorkbenchController({
     currentCreationIntentFields,
     currentIntentLength,
     pendingInitialPromptsByContentId,
+    pendingCreateConfirmationByProjectId,
     contentCreationModes,
     resolvedProjectPath,
     pathChecking,
@@ -331,12 +346,16 @@ export function useWorkbenchController({
     handleOpenCreateProjectDialog,
     handleCreateProject,
     handleOpenCreateContentDialog,
+    handleCreateContentFromWorkspaceEntry,
+    handleCreateContentFromWorkspacePrompt,
     handleCreationIntentValueChange,
     handleGoToIntentStep,
     handleCreateContent,
     handleQuickCreateProjectAndContent,
     handleOpenProjectForWriting,
+    submitCreateConfirmation,
     consumePendingInitialPrompt,
+    consumePendingCreateConfirmation,
   } = useCreationDialogs({
     theme,
     selectedProjectId,
@@ -350,6 +369,12 @@ export function useWorkbenchController({
     },
     defaultCreationMode: DEFAULT_CREATION_MODE,
     minCreationIntentLength: MIN_CREATION_INTENT_LENGTH,
+    initialCreateConfirmation: {
+      prompt: initialCreatePrompt,
+      source: initialCreateSource,
+      fallbackContentTitle: initialCreateFallbackTitle,
+      creationMode: DEFAULT_CREATION_MODE,
+    },
   });
 
   const handleQuickCreateNovelEntry = useCallback(
@@ -399,6 +424,36 @@ export function useWorkbenchController({
     }
   }, [loadContents, selectedContentId, selectedProjectId]);
 
+  useEffect(() => {
+    if (
+      workspaceMode !== "workspace" ||
+      activeWorkspaceView !== "create" ||
+      !selectedProjectId ||
+      selectedContentId ||
+      showCreateContentEntryHome ||
+      contentsLoading ||
+      contents.length === 0
+    ) {
+      return;
+    }
+
+    const latestContent = contents[0];
+    if (!latestContent?.id) {
+      return;
+    }
+
+    setSelectedContentId(latestContent.id);
+  }, [
+    activeWorkspaceView,
+    contents,
+    contentsLoading,
+    selectedContentId,
+    selectedProjectId,
+    setSelectedContentId,
+    showCreateContentEntryHome,
+    workspaceMode,
+  ]);
+
   useWorkbenchBootstrap({
     applyInitialNavigationState,
     clearContentsSelection,
@@ -427,15 +482,12 @@ export function useWorkbenchController({
     setWorkspaceMode("workspace");
     setActiveWorkspaceView("create");
     setSelectedContentId(null);
+    setShowCreateContentEntryHome(true);
     setCurrentChatSessionId(null);
-    setShowChatPanel(true);
-    setActiveRightDrawer(null);
     setShowWorkflowRail(false);
   }, [
-    setActiveRightDrawer,
     setActiveWorkspaceView,
     setSelectedContentId,
-    setShowChatPanel,
     setCurrentChatSessionId,
     setShowWorkflowRail,
     setWorkspaceMode,
@@ -465,16 +517,32 @@ export function useWorkbenchController({
 
   const ActivePanelRenderer = activePanelRenderer;
   const projectTypeLabel = getProjectTypeLabel(theme as ProjectType);
+  const pendingCreateConfirmation = selectedProjectId
+    ? pendingCreateConfirmationByProjectId[selectedProjectId]
+    : undefined;
+
+  const handleSubmitCreateConfirmation = useCallback(
+    async (formData: A2UIFormData) => {
+      if (!selectedProjectId) {
+        return;
+      }
+      await submitCreateConfirmation(selectedProjectId, formData);
+    },
+    [selectedProjectId, submitCreateConfirmation],
+  );
+
+  const handleCancelCreateConfirmation = useCallback(() => {
+    if (!selectedProjectId) {
+      return;
+    }
+    consumePendingCreateConfirmation(selectedProjectId);
+  }, [consumePendingCreateConfirmation, selectedProjectId]);
 
   return {
     themeModule,
     leftSidebarCollapsed,
     toggleLeftSidebar,
 
-    activeRightDrawer,
-    setActiveRightDrawer,
-    showChatPanel,
-    setShowChatPanel,
     workflowProgress,
     setWorkflowProgress,
     showWorkflowRail,
@@ -515,6 +583,7 @@ export function useWorkbenchController({
     currentCreationIntentFields,
     currentIntentLength,
     pendingInitialPromptsByContentId,
+    pendingCreateConfirmation,
     contentCreationModes,
     resolvedProjectPath,
     pathChecking,
@@ -523,6 +592,7 @@ export function useWorkbenchController({
 
     shouldRenderLeftSidebar,
     isCreateWorkspaceView,
+    showCreateContentEntryHome,
     shouldRenderWorkspaceRightRail,
     activeWorkspaceViewLabel,
     hasWorkflowWorkspaceView,
@@ -539,11 +609,15 @@ export function useWorkbenchController({
     handleCreateProject,
     resetCreateContentDialogState,
     handleOpenCreateContentDialog,
+    handleCreateContentFromWorkspaceEntry,
+    handleCreateContentFromWorkspacePrompt,
     handleCreationIntentValueChange,
     handleGoToIntentStep,
     handleCreateContent,
     handleQuickCreateNovelEntry,
     handleOpenProjectWriting,
+    handleSubmitCreateConfirmation,
+    handleCancelCreateConfirmation,
     consumePendingInitialPrompt,
     handleQuickSaveCurrent,
     handleBackHome,

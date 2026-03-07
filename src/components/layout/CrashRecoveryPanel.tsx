@@ -7,6 +7,7 @@ import {
 } from "@/hooks/useTauri";
 import {
   buildCrashDiagnosticPayload,
+  collectThemeWorkbenchDocumentStateForDiagnostic,
   copyCrashDiagnosticJsonToClipboard,
   copyCrashDiagnosticToClipboard,
   exportCrashDiagnosticToJson,
@@ -77,7 +78,7 @@ export function CrashRecoveryPanel({
       notes.push(`boundary_component_stack: ${stackPreview}`);
     }
 
-    const [config, logs, persistedLogs] = await Promise.all([
+    const [config, logs, persistedLogs, themeWorkbenchDocumentState] = await Promise.all([
       getConfig().catch(() => {
         notes.push("get_config_failed");
         return null;
@@ -90,12 +91,17 @@ export function CrashRecoveryPanel({
         notes.push("get_persisted_logs_tail_failed");
         return [];
       }),
+      collectThemeWorkbenchDocumentStateForDiagnostic().catch(() => {
+        notes.push("get_theme_workbench_document_state_failed");
+        return null;
+      }),
     ]);
 
     return buildCrashDiagnosticPayload({
       crashConfig: normalizeCrashReportingConfig(config?.crash_reporting),
       logs,
       persistedLogTail: persistedLogs,
+      themeWorkbenchDocumentState,
       appVersion: import.meta.env.VITE_APP_VERSION,
       platform: navigator.platform,
       userAgent: navigator.userAgent,

@@ -47,8 +47,9 @@ export function useLayoutTransition(
     () => ({ ...DEFAULT_CONFIG, ...config }),
     [config],
   );
-  const [transitionState, setTransitionState] =
-    useState<TransitionState>("idle");
+  const [transitionState, setTransitionState] = useState<TransitionState>(
+    mode === "chat" ? "idle" : "entered",
+  );
   const [isCanvasVisible, setIsCanvasVisible] = useState(mode !== "chat");
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevModeRef = useRef<LayoutMode>(mode);

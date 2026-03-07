@@ -985,6 +985,7 @@ pub fn run() {
             // Execution run commands
             commands::execution_run_cmd::execution_run_list,
             commands::execution_run_cmd::execution_run_get,
+            commands::execution_run_cmd::execution_run_get_theme_workbench_state,
             // Ecommerce Review Reply commands
             commands::ecommerce_review_reply_cmd::execute_ecommerce_review_reply,
             // Provider Pool commands
@@ -1204,6 +1205,7 @@ pub fn run() {
             commands::aster_agent_cmd::aster_session_delete,
             commands::aster_agent_cmd::aster_agent_confirm,
             commands::aster_agent_cmd::aster_agent_submit_elicitation_response,
+            commands::theme_context_cmd::aster_agent_theme_context_search,
             // Models config commands
             commands::models_cmd::get_models_config,
             commands::models_cmd::save_models_config,
@@ -1358,10 +1360,18 @@ pub fn run() {
             commands::session_files_cmd::session_files_update_meta,
             commands::session_files_cmd::session_files_save_file,
             commands::session_files_cmd::session_files_read_file,
+            commands::session_files_cmd::session_files_resolve_file_path,
             commands::session_files_cmd::session_files_delete_file,
             commands::session_files_cmd::session_files_list_files,
             commands::session_files_cmd::session_files_cleanup_expired,
             commands::session_files_cmd::session_files_cleanup_empty,
+            // Image Upload commands
+            commands::image_upload_cmd::upload_image_to_session,
+            commands::image_upload_cmd::read_image_from_session,
+            // Document Import commands
+            commands::document_import_cmd::import_document,
+            commands::document_import_cmd::import_document_to_session,
+            commands::document_import_cmd::save_exported_document,
             // General Chat commands
             commands::general_chat_cmd::general_chat_create_session,
             commands::general_chat_cmd::general_chat_list_sessions,
@@ -1462,6 +1472,7 @@ pub fn run() {
             // Content commands
             commands::content_cmd::content_create,
             commands::content_cmd::content_get,
+            commands::content_cmd::content_get_theme_workbench_document_state,
             commands::content_cmd::content_list,
             commands::content_cmd::content_update,
             commands::content_cmd::content_delete,

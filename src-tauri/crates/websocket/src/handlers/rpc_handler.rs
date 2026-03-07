@@ -427,6 +427,8 @@ impl RpcHandler {
             .require_db()
             .await
             .map_err(|e| RpcError::internal_error(e.message))?;
+        AgentScheduler::init_tables(&db)
+            .map_err(|e| RpcError::internal_error(format!("init cron tables failed: {e}")))?;
         let conn = proxycast_core::database::lock_db(&db)
             .map_err(|e| RpcError::internal_error(format!("DB lock failed: {e}")))?;
         let raw_tasks = SchedulerDao::list_tasks(
@@ -478,6 +480,8 @@ impl RpcHandler {
             .require_db()
             .await
             .map_err(|e| RpcError::internal_error(e.message))?;
+        AgentScheduler::init_tables(&db)
+            .map_err(|e| RpcError::internal_error(format!("init cron tables failed: {e}")))?;
         let execution_id = Uuid::new_v4().to_string();
         let task = {
             let conn = proxycast_core::database::lock_db(&db)

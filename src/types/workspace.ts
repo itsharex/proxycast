@@ -28,3 +28,20 @@ export const WorkspaceTypeLabels: Record<WorkspaceType, string> = {
   novel: "小说",
   general: "通用",
 };
+
+/** 媒体生成偏好设置 */
+export interface WorkspaceMediaGenerationSettings {
+  preferredProviderId?: string;
+  preferredModelId?: string;
+  allowFallback?: boolean;
+}
+
+/** Workspace 设置 */
+export interface WorkspaceSettings {
+  mcpConfig?: Record<string, unknown>;
+  defaultProvider?: string;
+  autoCompact?: boolean;
+  imageGeneration?: WorkspaceMediaGenerationSettings;
+  videoGeneration?: WorkspaceMediaGenerationSettings;
+  voiceGeneration?: WorkspaceMediaGenerationSettings;
+}

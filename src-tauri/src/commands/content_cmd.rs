@@ -10,6 +10,8 @@ use crate::database::DbConnection;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+const THEME_WORKBENCH_DOCUMENT_META_KEY: &str = "theme_workbench_document_v1";
+
 /// 内容列表项（用于前端展示）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentListItem {
@@ -76,6 +78,114 @@ impl From<Content> for ContentDetail {
             updated_at: content.updated_at.timestamp_millis(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThemeWorkbenchVersionState {
+    pub id: String,
+    pub created_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    pub is_current: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThemeWorkbenchDocumentState {
+    pub content_id: String,
+    pub current_version_id: String,
+    pub version_count: usize,
+    pub versions: Vec<ThemeWorkbenchVersionState>,
+}
+
+fn is_valid_topic_branch_status(status: &str) -> bool {
+    matches!(status, "in_progress" | "pending" | "merged" | "candidate")
+}
+
+fn parse_theme_workbench_document_state(
+    content_id: &str,
+    metadata: Option<&serde_json::Value>,
+) -> Option<ThemeWorkbenchDocumentState> {
+    let metadata = metadata?.as_object()?;
+    let raw = metadata
+        .get(THEME_WORKBENCH_DOCUMENT_META_KEY)?
+        .as_object()?;
+
+    let versions_raw = raw.get("versions")?.as_array()?;
+    if versions_raw.is_empty() {
+        return None;
+    }
+
+    let current_version_id = raw.get("currentVersionId")?.as_str()?.trim().to_string();
+    if current_version_id.is_empty() {
+        return None;
+    }
+
+    let status_map = raw
+        .get("versionStatusMap")
+        .and_then(|value| value.as_object())
+        .cloned()
+        .unwrap_or_default();
+
+    let versions: Vec<ThemeWorkbenchVersionState> = versions_raw
+        .iter()
+        .filter_map(|version| {
+            let version_obj = version.as_object()?;
+            let id = version_obj.get("id")?.as_str()?.trim().to_string();
+            if id.is_empty() {
+                return None;
+            }
+
+            let created_at = version_obj
+                .get("createdAt")
+                .and_then(|value| value.as_i64())
+                .or_else(|| {
+                    version_obj
+                        .get("created_at")
+                        .and_then(|value| value.as_i64())
+                })?;
+
+            let description = version_obj
+                .get("description")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string);
+
+            let status = status_map
+                .get(&id)
+                .and_then(|value| value.as_str())
+                .filter(|value| is_valid_topic_branch_status(value))
+                .map(ToString::to_string);
+
+            Some(ThemeWorkbenchVersionState {
+                is_current: id == current_version_id,
+                id,
+                created_at,
+                description,
+                status,
+            })
+        })
+        .collect();
+
+    if versions.is_empty() {
+        return None;
+    }
+
+    if !versions
+        .iter()
+        .any(|version| version.id == current_version_id)
+    {
+        return None;
+    }
+
+    Some(ThemeWorkbenchDocumentState {
+        content_id: content_id.to_string(),
+        current_version_id,
+        version_count: versions.len(),
+        versions,
+    })
 }
 
 /// 创建内容请求
@@ -163,6 +273,18 @@ pub async fn content_get(
     Ok(content.map(|c| c.into()))
 }
 
+/// 获取主题工作台文稿版本状态（从 content.metadata 解析）
+#[tauri::command]
+pub async fn content_get_theme_workbench_document_state(
+    db: State<'_, DbConnection>,
+    id: String,
+) -> Result<Option<ThemeWorkbenchDocumentState>, String> {
+    let manager = ContentManager::new(db.inner().clone());
+    let content = manager.get(&id)?;
+    Ok(content
+        .and_then(|item| parse_theme_workbench_document_state(&item.id, item.metadata.as_ref())))
+}
+
 /// 列出项目的所有内容
 #[tauri::command]
 pub async fn content_list(
@@ -236,4 +358,49 @@ pub async fn content_stats(
 ) -> Result<(i64, i64, i64), String> {
     let manager = ContentManager::new(db.inner().clone());
     manager.get_project_stats(&project_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_theme_workbench_document_state, THEME_WORKBENCH_DOCUMENT_META_KEY};
+
+    #[test]
+    fn test_parse_theme_workbench_document_state_success() {
+        let metadata = serde_json::json!({
+          THEME_WORKBENCH_DOCUMENT_META_KEY: {
+            "currentVersionId": "v2",
+            "versions": [
+              { "id": "v1", "createdAt": 1700000000000_i64, "description": "初稿" },
+              { "id": "v2", "createdAt": 1700000100000_i64, "description": "修订版" }
+            ],
+            "versionStatusMap": {
+              "v1": "merged",
+              "v2": "in_progress"
+            }
+          }
+        });
+
+        let parsed = parse_theme_workbench_document_state("content-1", Some(&metadata))
+            .expect("should parse");
+        assert_eq!(parsed.content_id, "content-1");
+        assert_eq!(parsed.current_version_id, "v2");
+        assert_eq!(parsed.version_count, 2);
+        assert_eq!(parsed.versions[0].status.as_deref(), Some("merged"));
+        assert!(parsed.versions[1].is_current);
+    }
+
+    #[test]
+    fn test_parse_theme_workbench_document_state_rejects_invalid_current_version() {
+        let metadata = serde_json::json!({
+          THEME_WORKBENCH_DOCUMENT_META_KEY: {
+            "currentVersionId": "v-not-exists",
+            "versions": [
+              { "id": "v1", "createdAt": 1700000000000_i64, "description": "初稿" }
+            ],
+            "versionStatusMap": { "v1": "merged" }
+          }
+        });
+
+        assert!(parse_theme_workbench_document_state("content-1", Some(&metadata)).is_none());
+    }
 }

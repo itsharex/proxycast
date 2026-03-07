@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   Container,
   InputBarContainer,
@@ -24,6 +24,16 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { MessageImage } from "../../../types";
+
+const INTERACTIVE_TARGET_SELECTOR =
+  "button, a, input, textarea, select, option, [role='button'], [contenteditable=''], [contenteditable='true'], [contenteditable='plaintext-only']";
+
+function shouldFocusComposerTextarea(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) {
+    return true;
+  }
+  return !target.closest(INTERACTIVE_TARGET_SELECTOR);
+}
 
 interface InputbarCoreProps {
   text: string;
@@ -51,6 +61,16 @@ interface InputbarCoreProps {
   rightExtra?: React.ReactNode;
   /** 输入框内部顶部扩展区域（textarea 上方） */
   topExtra?: React.ReactNode;
+  /** 输入框提示文案 */
+  placeholder?: string;
+  /** 工具栏模式 */
+  toolMode?: "default" | "attach-only";
+  /** 是否显示翻译按钮 */
+  showTranslate?: boolean;
+  /** 是否显示顶部拖拽条 */
+  showDragHandle?: boolean;
+  /** 视觉风格 */
+  visualVariant?: "default" | "floating";
 }
 
 export const InputbarCore: React.FC<InputbarCoreProps> = ({
@@ -73,7 +93,84 @@ export const InputbarCore: React.FC<InputbarCoreProps> = ({
   leftExtra,
   rightExtra,
   topExtra,
+  placeholder,
+  toolMode = "default",
+  showTranslate = true,
+  showDragHandle = true,
+  visualVariant = "default",
 }) => {
+  const [isComposerExpanded, setIsComposerExpanded] = useState(false);
+  const inputBarContainerRef = useRef<HTMLDivElement | null>(null);
+  const isFloatingVariant = visualVariant === "floating";
+  const shouldCollapseFloatingTools =
+    isFloatingVariant &&
+    toolMode === "attach-only" &&
+    !isComposerExpanded &&
+    pendingImages.length === 0;
+  const shouldUseCompactFloatingComposer =
+    shouldCollapseFloatingTools && !topExtra;
+  const containerClassName = [
+    isFullscreen ? "flex-1 flex flex-col" : "",
+    isFloatingVariant ? "floating-composer" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const inputBarClassName = [
+    isFullscreen ? "flex-1 flex flex-col" : "",
+    isFloatingVariant ? "floating-composer" : "",
+    shouldUseCompactFloatingComposer ? "floating-collapsed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const textareaClassName = [
+    isFullscreen ? "flex-1 resize-none" : "",
+    isFloatingVariant ? "floating-composer" : "",
+    shouldUseCompactFloatingComposer ? "floating-collapsed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const bottomBarClassName = [
+    isFloatingVariant ? "floating-composer" : "",
+    shouldUseCompactFloatingComposer ? "floating-collapsed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const leftSectionClassName = shouldCollapseFloatingTools ? "floating-collapsed" : "";
+  const rightSectionClassName = shouldUseCompactFloatingComposer
+    ? "floating-collapsed"
+    : "";
+
+  const handleExpandComposer = useCallback(() => {
+    if (!isFloatingVariant || toolMode !== "attach-only") {
+      return;
+    }
+    setIsComposerExpanded(true);
+  }, [isFloatingVariant, toolMode]);
+
+  const handleCollapseComposer = useCallback(() => {
+    if (!isFloatingVariant || toolMode !== "attach-only" || pendingImages.length > 0) {
+      return;
+    }
+    const activeElement = document.activeElement;
+    if (activeElement && inputBarContainerRef.current?.contains(activeElement)) {
+      return;
+    }
+    setIsComposerExpanded(false);
+  }, [isFloatingVariant, pendingImages.length, toolMode]);
+
+  const handleBlurCapture = useCallback(() => {
+    if (!isFloatingVariant || toolMode !== "attach-only") {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      const nextActiveElement = document.activeElement;
+      if (inputBarContainerRef.current?.contains(nextActiveElement)) {
+        return;
+      }
+      setIsComposerExpanded(false);
+    });
+  }, [isFloatingVariant, toolMode]);
+
   return (
     <BaseComposer
       text={text}
@@ -86,88 +183,117 @@ export const InputbarCore: React.FC<InputbarCoreProps> = ({
       isFullscreen={isFullscreen}
       fillHeightWhenFullscreen
       hasAdditionalContent={pendingImages.length > 0}
-      maxAutoHeight={300}
+      maxAutoHeight={isFloatingVariant ? 160 : 300}
       textareaRef={externalTextareaRef}
       onEscape={() => onToolClick("fullscreen")}
       placeholder={
-        isFullscreen
+        placeholder ||
+        (isFullscreen
           ? "全屏编辑模式，按 ESC 退出，Enter 发送"
-          : "在这里输入消息, 按 Enter 发送"
+          : "在这里输入消息, 按 Enter 发送")
       }
     >
-      {({ textareaProps, textareaRef, isPrimaryDisabled, onPrimaryAction }) => (
-        <Container className={isFullscreen ? "flex-1 flex flex-col" : ""}>
-          <InputBarContainer
-            className={isFullscreen ? "flex-1 flex flex-col" : ""}
-          >
-            {!isFullscreen && <DragHandle />}
+      {({ textareaProps, textareaRef, isPrimaryDisabled, onPrimaryAction }) => {
+        const handleContainerMouseDownCapture = (
+          event: React.MouseEvent<HTMLDivElement>,
+        ) => {
+          handleExpandComposer();
+          if (!isFloatingVariant || toolMode !== "attach-only") {
+            return;
+          }
+          if (!shouldFocusComposerTextarea(event.target)) {
+            return;
+          }
+          window.requestAnimationFrame(() => {
+            textareaRef.current?.focus();
+          });
+        };
 
-            {pendingImages.length > 0 && (
-              <ImagePreviewContainer>
-                {pendingImages.map((img, index) => (
-                  <ImagePreviewItem key={index}>
-                    <ImagePreviewImg
-                      src={`data:${img.mediaType};base64,${img.data}`}
-                      alt={`预览 ${index + 1}`}
-                    />
-                    <ImageRemoveButton onClick={() => onRemoveImage?.(index)}>
-                      <X size={12} />
-                    </ImageRemoveButton>
-                  </ImagePreviewItem>
-                ))}
-              </ImagePreviewContainer>
-            )}
+        return (
+          <Container className={containerClassName}>
+            <InputBarContainer
+              ref={inputBarContainerRef}
+              data-testid="inputbar-core-container"
+              className={inputBarClassName}
+              onFocusCapture={handleExpandComposer}
+              onMouseDownCapture={handleContainerMouseDownCapture}
+              onMouseLeave={handleCollapseComposer}
+              onBlurCapture={handleBlurCapture}
+            >
+              {!isFullscreen && showDragHandle && <DragHandle />}
 
-            {topExtra}
+              {pendingImages.length > 0 && (
+                <ImagePreviewContainer>
+                  {pendingImages.map((img, index) => (
+                    <ImagePreviewItem key={index}>
+                      <ImagePreviewImg
+                        src={`data:${img.mediaType};base64,${img.data}`}
+                        alt={`预览 ${index + 1}`}
+                      />
+                      <ImageRemoveButton onClick={() => onRemoveImage?.(index)}>
+                        <X size={12} />
+                      </ImageRemoveButton>
+                    </ImagePreviewItem>
+                  ))}
+                </ImagePreviewContainer>
+              )}
 
-            <StyledTextarea
-              ref={textareaRef}
-              {...textareaProps}
-              className={isFullscreen ? "flex-1 resize-none" : ""}
-            />
+              {topExtra}
 
-            <BottomBar>
-              <LeftSection>
-                {leftExtra && (
-                  <div className="flex items-center gap-2 mr-2">{leftExtra}</div>
-                )}
-                <InputbarTools
-                  onToolClick={onToolClick}
-                  activeTools={activeTools}
-                  executionStrategy={executionStrategy}
-                  showExecutionStrategy={showExecutionStrategy}
-                  isCanvasOpen={isCanvasOpen}
-                />
-              </LeftSection>
+              <StyledTextarea
+                ref={textareaRef}
+                {...textareaProps}
+                className={textareaClassName}
+              />
 
-              <RightSection>
-                {rightExtra}
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <ToolButton onClick={() => onToolClick("translate")}>
-                        <Languages size={18} />
-                      </ToolButton>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">翻译</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-                <SendButton
-                  onClick={onPrimaryAction}
-                  disabled={isPrimaryDisabled}
-                  $isStop={isLoading}
-                >
-                  {isLoading ? (
-                    <Square size={16} fill="currentColor" />
-                  ) : (
-                    <ArrowUp size={20} strokeWidth={3} />
+              <BottomBar className={bottomBarClassName}>
+                <LeftSection className={leftSectionClassName}>
+                  {leftExtra && (
+                    <div className="flex items-center gap-2 mr-2">{leftExtra}</div>
                   )}
-                </SendButton>
-              </RightSection>
-            </BottomBar>
-          </InputBarContainer>
-        </Container>
-      )}
+                  {!shouldCollapseFloatingTools ? (
+                    <InputbarTools
+                      onToolClick={onToolClick}
+                      activeTools={activeTools}
+                      executionStrategy={executionStrategy}
+                      showExecutionStrategy={showExecutionStrategy}
+                      toolMode={toolMode}
+                      isCanvasOpen={isCanvasOpen}
+                    />
+                  ) : null}
+                </LeftSection>
+
+                <RightSection className={rightSectionClassName}>
+                  {rightExtra}
+                  {showTranslate ? (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <ToolButton onClick={() => onToolClick("translate")}>
+                            <Languages size={18} />
+                          </ToolButton>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">翻译</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : null}
+                  <SendButton
+                    onClick={onPrimaryAction}
+                    disabled={isPrimaryDisabled}
+                    $isStop={isLoading}
+                  >
+                    {isLoading ? (
+                      <Square size={16} fill="currentColor" />
+                    ) : (
+                      <ArrowUp size={20} strokeWidth={3} />
+                    )}
+                  </SendButton>
+                </RightSection>
+              </BottomBar>
+            </InputBarContainer>
+          </Container>
+        );
+      }}
     </BaseComposer>
   );
 };

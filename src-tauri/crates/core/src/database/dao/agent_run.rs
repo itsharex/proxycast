@@ -206,6 +206,44 @@ impl AgentRunDao {
 
         iter.collect()
     }
+
+    pub fn list_runs_by_session(
+        conn: &Connection,
+        session_id: &str,
+        limit: usize,
+    ) -> Result<Vec<AgentRun>, rusqlite::Error> {
+        let mut stmt = conn.prepare(
+            "SELECT id, source, source_ref, session_id, status, started_at, finished_at, duration_ms,
+                    error_code, error_message, metadata, created_at, updated_at
+             FROM agent_runs
+             WHERE session_id = ?1
+             ORDER BY started_at DESC
+             LIMIT ?2",
+        )?;
+
+        let iter = stmt.query_map(params![session_id, limit as i64], |row| {
+            let status_raw: String = row.get(4)?;
+            let status =
+                AgentRunStatus::try_from(status_raw.as_str()).unwrap_or(AgentRunStatus::Error);
+            Ok(AgentRun {
+                id: row.get(0)?,
+                source: row.get(1)?,
+                source_ref: row.get(2)?,
+                session_id: row.get(3)?,
+                status,
+                started_at: row.get(5)?,
+                finished_at: row.get(6)?,
+                duration_ms: row.get(7)?,
+                error_code: row.get(8)?,
+                error_message: row.get(9)?,
+                metadata: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+            })
+        })?;
+
+        iter.collect()
+    }
 }
 
 #[cfg(test)]
@@ -291,5 +329,37 @@ mod tests {
             .expect("run 不存在");
         assert_eq!(fetched.status, AgentRunStatus::Success);
         assert_eq!(fetched.duration_ms, Some(100));
+    }
+
+    #[test]
+    fn list_runs_by_session_should_filter_and_sort() {
+        let conn = setup_conn();
+
+        let mut run_1 = sample_run("run-a-1", AgentRunStatus::Success);
+        run_1.session_id = Some("session-a".to_string());
+        run_1.started_at = "2026-03-06T10:00:00Z".to_string();
+        run_1.created_at = run_1.started_at.clone();
+        run_1.updated_at = run_1.started_at.clone();
+        AgentRunDao::create_run(&conn, &run_1).expect("写入 run-a-1 失败");
+
+        let mut run_2 = sample_run("run-b-1", AgentRunStatus::Running);
+        run_2.session_id = Some("session-b".to_string());
+        run_2.started_at = "2026-03-06T11:00:00Z".to_string();
+        run_2.created_at = run_2.started_at.clone();
+        run_2.updated_at = run_2.started_at.clone();
+        AgentRunDao::create_run(&conn, &run_2).expect("写入 run-b-1 失败");
+
+        let mut run_3 = sample_run("run-a-2", AgentRunStatus::Error);
+        run_3.session_id = Some("session-a".to_string());
+        run_3.started_at = "2026-03-06T12:00:00Z".to_string();
+        run_3.created_at = run_3.started_at.clone();
+        run_3.updated_at = run_3.started_at.clone();
+        AgentRunDao::create_run(&conn, &run_3).expect("写入 run-a-2 失败");
+
+        let runs = AgentRunDao::list_runs_by_session(&conn, "session-a", 10)
+            .expect("按 session 查询执行记录失败");
+        assert_eq!(runs.len(), 2);
+        assert_eq!(runs[0].id, "run-a-2");
+        assert_eq!(runs[1].id, "run-a-1");
     }
 }

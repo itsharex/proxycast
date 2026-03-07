@@ -5,7 +5,7 @@
  * 功能包括：图像生成服务商选择、默认参数配置等
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Image as ImageIcon,
   Palette,
@@ -15,7 +15,18 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useApiKeyProvider } from "@/hooks/useApiKeyProvider";
 import { getConfig, saveConfig, Config } from "@/hooks/useTauri";
+import {
+  buildPersistedMediaGenerationPreference,
+  hasMediaGenerationPreferenceOverride,
+  type MediaGenerationPreference,
+} from "@/lib/mediaGeneration";
+import {
+  getImageModelsForProvider,
+  isImageProvider,
+} from "@/lib/imageGeneration";
+import { MediaPreferenceSection } from "../shared/MediaPreferenceSection";
 
 type ImageService = "dall_e" | "midjourney" | "stable_diffusion" | "flux";
 
@@ -88,6 +99,11 @@ const IMAGE_STYLES = [
   { value: "natural", label: "自然", desc: "更自然、更真实" },
 ];
 
+const AUTO_VALUE = "__auto__";
+const DEFAULT_MEDIA_PREFERENCE: MediaGenerationPreference = {
+  allowFallback: true,
+};
+
 export function ImageGenSettings() {
   const [config, setConfig] = useState<Config | null>(null);
   const [imageConfig, setImageConfig] = useState<ImageGenConfig>(
@@ -99,6 +115,9 @@ export function ImageGenSettings() {
     type: "success" | "error";
     text: string;
   } | null>(null);
+  const { providers, loading: providersLoading } = useApiKeyProvider();
+  const [globalImagePreference, setGlobalImagePreference] =
+    useState<MediaGenerationPreference>(DEFAULT_MEDIA_PREFERENCE);
 
   // 加载配置
   useEffect(() => {
@@ -111,6 +130,9 @@ export function ImageGenSettings() {
       const c = await getConfig();
       setConfig(c);
       setImageConfig(c.image_gen || DEFAULT_IMAGE_GEN_CONFIG);
+      setGlobalImagePreference(
+        c.content_creator?.media_defaults?.image ?? DEFAULT_MEDIA_PREFERENCE,
+      );
     } catch (e) {
       console.error("加载绘画服务配置失败:", e);
     } finally {
@@ -145,13 +167,177 @@ export function ImageGenSettings() {
     }
   };
 
+  const saveGlobalImagePreference = async (
+    nextPreference: MediaGenerationPreference,
+  ) => {
+    if (!config) return;
+
+    try {
+      const persistedPreference =
+        buildPersistedMediaGenerationPreference(nextPreference);
+      const updatedFullConfig: Config = {
+        ...config,
+        content_creator: {
+          enabled_themes: config.content_creator?.enabled_themes ?? [],
+          ...config.content_creator,
+          media_defaults: {
+            ...config.content_creator?.media_defaults,
+            image: persistedPreference,
+          },
+        },
+      };
+      await saveConfig(updatedFullConfig);
+      setConfig(updatedFullConfig);
+      setGlobalImagePreference(nextPreference);
+      showMessage("success", "设置已保存");
+    } catch (e) {
+      console.error("保存全局图片服务配置失败:", e);
+      showMessage("error", "保存失败");
+    }
+  };
+
   const showMessage = (type: "success" | "error", text: string) => {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), 3000);
   };
 
+  const imageProviders = useMemo(
+    () =>
+      providers.filter(
+        (provider) =>
+          provider.enabled &&
+          provider.api_key_count > 0 &&
+          isImageProvider(provider.id, provider.type),
+      ),
+    [providers],
+  );
+
+  const selectedGlobalImageProvider = useMemo(
+    () =>
+      imageProviders.find(
+        (provider) => provider.id === globalImagePreference.preferredProviderId,
+      ) ?? null,
+    [globalImagePreference.preferredProviderId, imageProviders],
+  );
+
+  const availableGlobalImageModels = useMemo(() => {
+    if (!selectedGlobalImageProvider) {
+      return [];
+    }
+    return getImageModelsForProvider(
+      selectedGlobalImageProvider.id,
+      selectedGlobalImageProvider.type,
+      selectedGlobalImageProvider.custom_models,
+    );
+  }, [selectedGlobalImageProvider]);
+
+  const providerUnavailableLabel =
+    globalImagePreference.preferredProviderId && !selectedGlobalImageProvider
+      ? "当前配置不可用：" + globalImagePreference.preferredProviderId
+      : undefined;
+
+  const modelUnavailableLabel =
+    globalImagePreference.preferredModelId &&
+    !availableGlobalImageModels.some(
+      (model) => model.id === globalImagePreference.preferredModelId,
+    )
+      ? "当前配置不可用：" + globalImagePreference.preferredModelId
+      : undefined;
+
+  const handleGlobalImageProviderChange = (value: string) => {
+    const preferredProviderId = value === AUTO_VALUE ? undefined : value;
+    const nextProvider = imageProviders.find(
+      (provider) => provider.id === preferredProviderId,
+    );
+    const nextModels = nextProvider
+      ? getImageModelsForProvider(
+          nextProvider.id,
+          nextProvider.type,
+          nextProvider.custom_models,
+        )
+      : [];
+    const preferredModelId = preferredProviderId
+      ? nextModels.some(
+          (model) => model.id === globalImagePreference.preferredModelId,
+        )
+        ? globalImagePreference.preferredModelId
+        : nextModels[0]?.id
+      : undefined;
+
+    void saveGlobalImagePreference({
+      preferredProviderId,
+      preferredModelId,
+      allowFallback: globalImagePreference.allowFallback ?? true,
+    });
+  };
+
+  const handleGlobalImageModelChange = (value: string) => {
+    void saveGlobalImagePreference({
+      ...globalImagePreference,
+      preferredModelId: value === AUTO_VALUE ? undefined : value,
+      allowFallback: globalImagePreference.allowFallback ?? true,
+    });
+  };
+
+  const handleGlobalImageFallbackChange = (value: boolean) => {
+    void saveGlobalImagePreference({
+      ...globalImagePreference,
+      allowFallback: value,
+    });
+  };
+
+  const handleResetGlobalImagePreference = () => {
+    void saveGlobalImagePreference(DEFAULT_MEDIA_PREFERENCE);
+  };
+
   return (
     <div className="space-y-4 max-w-2xl">
+      <MediaPreferenceSection
+        title="全局默认图片服务"
+        description="新项目默认继承这里的设置；项目里留空时会继续跟随这里。"
+        providerLabel="默认图片 Provider"
+        providerValue={globalImagePreference.preferredProviderId ?? AUTO_VALUE}
+        providerAutoLabel="自动选择"
+        onProviderChange={handleGlobalImageProviderChange}
+        providers={imageProviders.map((provider) => ({
+          value: provider.id,
+          label: provider.name,
+        }))}
+        providerUnavailableLabel={providerUnavailableLabel}
+        modelLabel="默认图片模型"
+        modelValue={globalImagePreference.preferredModelId ?? AUTO_VALUE}
+        modelAutoLabel="自动选择"
+        onModelChange={handleGlobalImageModelChange}
+        models={availableGlobalImageModels.map((model) => ({
+          value: model.id,
+          label: model.name,
+        }))}
+        modelUnavailableLabel={modelUnavailableLabel}
+        modelHint="仅在指定全局默认图片 Provider 时生效；未指定模型时沿用自动匹配策略。"
+        allowFallback={globalImagePreference.allowFallback ?? true}
+        onAllowFallbackChange={handleGlobalImageFallbackChange}
+        fallbackTitle="默认图片服务不可用时自动回退"
+        fallbackDescription="关闭后，若全局默认图片服务缺失、被禁用或无可用 Key，将直接提示错误。"
+        emptyHint={
+          providersLoading
+            ? "正在加载图片 Provider..."
+            : imageProviders.length === 0
+              ? "暂无可用图片 Provider，请先到凭证管理中配置可出图服务。"
+              : "未指定时将沿用现有自动匹配规则。"
+        }
+        disabled={!config}
+        modelDisabled={
+          providersLoading ||
+          !globalImagePreference.preferredProviderId ||
+          availableGlobalImageModels.length === 0
+        }
+        onReset={handleResetGlobalImagePreference}
+        resetLabel="恢复默认"
+        resetDisabled={
+          !hasMediaGenerationPreferenceOverride(globalImagePreference)
+        }
+      />
+
       {/* 服务商选择 */}
       <div className="rounded-lg border p-3">
         <div className="flex items-center gap-2 mb-3">

@@ -132,6 +132,12 @@ export interface AgentPageParams {
   workspaceResetAt?: number;
   /** 工作台视图模式（仅主题工作台使用） */
   workspaceViewMode?: WorkspaceViewMode;
+  /** 进入主题工作台时，预填并触发“创建前确认”提示词 */
+  workspaceCreatePrompt?: string;
+  /** 创建确认来源（用于策略路由与埋点） */
+  workspaceCreateSource?: "workspace_prompt" | "quick_create" | "project_created";
+  /** 创建确认建议标题（可选） */
+  workspaceCreateFallbackTitle?: string;
 }
 
 /**

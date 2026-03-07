@@ -14,7 +14,7 @@ import type {
 } from "@/components/content-creator/canvas/canvasUtils";
 import { createInitialDocumentState } from "@/components/content-creator/canvas/document";
 import { createInitialPosterState } from "@/components/content-creator/canvas/poster";
-import { createInitialMusicState } from "@/components/content-creator/canvas/music";
+import { createInitialMusicState } from "@/components/content-creator/canvas/music/types";
 import { createInitialScriptState } from "@/components/content-creator/canvas/script";
 import { createInitialNovelState } from "@/components/content-creator/canvas/novel";
 import { createInitialVideoState } from "@/components/content-creator/canvas/video";

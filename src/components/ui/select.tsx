@@ -54,15 +54,22 @@ const Select: React.FC<SelectProps> = ({
         setOpen(false);
       }
     };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
 
     // 延迟添加监听器，避免立即触发
     const timer = setTimeout(() => {
       document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("keydown", handleKeyDown);
     }, 0);
 
     return () => {
       clearTimeout(timer);
       document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [open]);
 
@@ -148,12 +155,14 @@ const SelectContent: React.FC<SelectContentProps> = ({
 
   const { open } = context;
 
-  if (!open) return null;
-
   return (
     <div
+      aria-hidden={!open}
       className={cn(
-        "absolute z-50 w-full rounded-md border bg-background shadow-lg",
+        "absolute z-50 w-full rounded-md border bg-background shadow-lg transition-[opacity,transform] will-change-[opacity,transform]",
+        open
+          ? "opacity-100 scale-100 pointer-events-auto duration-[160ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+          : "opacity-0 scale-95 pointer-events-none duration-[120ms] ease-[cubic-bezier(0.4,0,1,1)]",
         side === "top" ? "bottom-full mb-1" : "top-full mt-1",
         align === "end" ? "right-0" : "left-0",
         className,

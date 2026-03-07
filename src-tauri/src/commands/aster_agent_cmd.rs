@@ -9,10 +9,11 @@ use crate::agent::{
     AsterAgentState, AsterAgentWrapper, HeartbeatServiceAdapter, SessionDetail, SessionInfo,
     TauriAgentEvent,
 };
+use crate::commands::api_key_provider_cmd::ApiKeyProviderServiceState;
 use crate::commands::webview_cmd::{
     browser_execute_action_global, BrowserActionRequest, BrowserBackendType,
 };
-use crate::config::GlobalConfigManagerState;
+use crate::config::{GlobalConfigManager, GlobalConfigManagerState};
 use crate::database::dao::agent::AgentDao;
 use crate::database::DbConnection;
 use crate::mcp::{McpManagerState, McpServerConfig};
@@ -48,7 +49,11 @@ use proxycast_agent::request_tool_policy::{
     merge_system_prompt_with_request_tool_policy, resolve_request_tool_policy,
     stream_reply_with_policy, ReplyAttemptError, RequestToolPolicy,
 };
+use proxycast_services::api_key_provider_service::ApiKeyProviderService;
 use proxycast_services::mcp_service::McpService;
+use proxycast_services::video_generation_service::{
+    CreateVideoGenerationRequest, VideoGenerationService,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -65,6 +70,20 @@ const WORKSPACE_SANDBOX_STRICT_ENV: &str = "PROXYCAST_WORKSPACE_SANDBOX_STRICT";
 const WORKSPACE_SANDBOX_NOTIFY_ENV: &str = "PROXYCAST_WORKSPACE_SANDBOX_NOTIFY_ON_FALLBACK";
 const WORKSPACE_SANDBOX_FALLBACK_WARNING_CODE: &str = "workspace_sandbox_fallback";
 const WORKSPACE_PATH_AUTO_CREATED_WARNING_CODE: &str = "workspace_path_auto_created";
+const SOCIAL_IMAGE_TOOL_NAME: &str = "social_generate_cover_image";
+const SOCIAL_IMAGE_DEFAULT_MODEL: &str = "gemini-3-pro-image-preview";
+const SOCIAL_IMAGE_DEFAULT_SIZE: &str = "1024x1024";
+const SOCIAL_IMAGE_DEFAULT_RESPONSE_FORMAT: &str = "url";
+const PROXYCAST_CREATE_VIDEO_TASK_TOOL_NAME: &str = "proxycast_create_video_generation_task";
+const PROXYCAST_CREATE_BROADCAST_TASK_TOOL_NAME: &str =
+    "proxycast_create_broadcast_generation_task";
+const PROXYCAST_CREATE_COVER_TASK_TOOL_NAME: &str = "proxycast_create_cover_generation_task";
+const PROXYCAST_CREATE_RESOURCE_SEARCH_TASK_TOOL_NAME: &str =
+    "proxycast_create_modal_resource_search_task";
+const PROXYCAST_CREATE_IMAGE_TASK_TOOL_NAME: &str = "proxycast_create_image_generation_task";
+const PROXYCAST_CREATE_URL_PARSE_TASK_TOOL_NAME: &str = "proxycast_create_url_parse_task";
+const PROXYCAST_CREATE_TYPESETTING_TASK_TOOL_NAME: &str = "proxycast_create_typesetting_task";
+const AUTO_CONTINUE_PROMPT_MARKER: &str = "【自动续写策略】";
 
 static SHARED_TASK_MANAGER: OnceLock<Arc<TaskManager>> = OnceLock::new();
 
@@ -339,6 +358,113 @@ pub struct AsterChatRequest {
     /// 执行策略（react / code_orchestrated / auto）
     #[serde(default, alias = "executionStrategy")]
     pub execution_strategy: Option<AsterExecutionStrategy>,
+    /// 自动续写策略（用于文稿续写等场景）
+    #[serde(default, alias = "autoContinue")]
+    pub auto_continue: Option<AutoContinuePayload>,
+}
+
+/// 自动续写参数
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutoContinuePayload {
+    /// 主开关
+    pub enabled: bool,
+    /// 快速模式
+    #[serde(default, alias = "fastModeEnabled")]
+    pub fast_mode_enabled: bool,
+    /// 续写长度：0=短、1=中、2=长
+    #[serde(default, alias = "continuationLength")]
+    pub continuation_length: u8,
+    /// 灵敏度：0-100
+    #[serde(default)]
+    pub sensitivity: u8,
+    /// 来源标识
+    #[serde(default)]
+    pub source: Option<String>,
+}
+
+impl AutoContinuePayload {
+    fn normalized(mut self) -> Self {
+        self.continuation_length = self.continuation_length.min(2);
+        self.sensitivity = self.sensitivity.min(100);
+        self.source = self
+            .source
+            .as_ref()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        self
+    }
+
+    fn length_instruction(&self) -> &'static str {
+        match self.continuation_length.min(2) {
+            0 => "短（补全 1-2 段，聚焦核心信息）",
+            1 => "中（补全 3-5 段，兼顾结构与细节）",
+            _ => "长（扩展为可发布草稿，结构完整）",
+        }
+    }
+
+    fn sensitivity_instruction(&self) -> &'static str {
+        match self.sensitivity.min(100) {
+            0..=33 => "低：优先稳健延续原文表达",
+            34..=66 => "中：保持一致性并适度优化表达",
+            _ => "高：在不偏题前提下积极补充观点亮点",
+        }
+    }
+}
+
+fn build_auto_continue_system_prompt(config: &AutoContinuePayload) -> String {
+    let mode_instruction = if config.fast_mode_enabled {
+        "快速模式：优先产出可用结果，减少解释与冗余。"
+    } else {
+        "标准模式：兼顾可读性、完整性与发布可用性。"
+    };
+    let source = config
+        .source
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("document_canvas");
+
+    format!(
+        "{AUTO_CONTINUE_PROMPT_MARKER}\n\
+执行来源：{source}\n\
+执行要求：\n\
+1. 本轮任务是“基于已有文稿的续写”，不得重复已有内容。\n\
+2. 从现有结尾自然衔接，保持原文语气、受众和主题方向。\n\
+3. 续写长度：{}。\n\
+4. 灵敏度（{}%）：{}。\n\
+5. {}\n\
+6. 输出正文时不要显式提及你看到了该策略配置。",
+        config.length_instruction(),
+        config.sensitivity,
+        config.sensitivity_instruction(),
+        mode_instruction,
+    )
+}
+
+fn merge_system_prompt_with_auto_continue(
+    base_prompt: Option<String>,
+    auto_continue: Option<&AutoContinuePayload>,
+) -> Option<String> {
+    let Some(config) = auto_continue else {
+        return base_prompt;
+    };
+    if !config.enabled {
+        return base_prompt;
+    }
+
+    let auto_continue_prompt = build_auto_continue_system_prompt(config);
+
+    match base_prompt {
+        Some(base) => {
+            if base.contains(AUTO_CONTINUE_PROMPT_MARKER) {
+                Some(base)
+            } else if base.trim().is_empty() {
+                Some(auto_continue_prompt)
+            } else {
+                Some(format!("{base}\n\n{auto_continue_prompt}"))
+            }
+        }
+        None => Some(auto_continue_prompt),
+    }
 }
 
 /// Agent 执行策略
@@ -1005,6 +1131,976 @@ impl Tool for ProxycastBrowserMcpTool {
     }
 }
 
+#[derive(Clone)]
+struct SocialGenerateCoverImageTool {
+    config_manager: Arc<GlobalConfigManager>,
+    client: reqwest::Client,
+}
+
+impl SocialGenerateCoverImageTool {
+    fn new(config_manager: Arc<GlobalConfigManager>) -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(180))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        Self {
+            config_manager,
+            client,
+        }
+    }
+
+    fn normalize_server_host(host: &str) -> String {
+        let trimmed = host.trim();
+        if trimmed.is_empty() || trimmed == "0.0.0.0" || trimmed == "::" {
+            return "127.0.0.1".to_string();
+        }
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            return trimmed.to_string();
+        }
+        if trimmed.contains(':') {
+            return format!("[{trimmed}]");
+        }
+        trimmed.to_string()
+    }
+
+    fn parse_non_empty_string(
+        params: &serde_json::Value,
+        key: &str,
+        default: Option<&str>,
+    ) -> Option<String> {
+        if let Some(value) = params.get(key).and_then(|v| v.as_str()) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+        default.map(ToString::to_string)
+    }
+
+    fn extract_first_image_payload(
+        response_body: &serde_json::Value,
+    ) -> Result<(Option<String>, Option<String>, Option<String>), String> {
+        let data = response_body
+            .get("data")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| "图像接口返回缺少 data 字段".to_string())?;
+
+        let first = data
+            .first()
+            .ok_or_else(|| "图像接口返回 data 为空".to_string())?;
+
+        let image_url = first
+            .get("url")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let image_b64 = first
+            .get("b64_json")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let revised_prompt = first
+            .get("revised_prompt")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        Ok((image_url, image_b64, revised_prompt))
+    }
+}
+
+#[async_trait]
+impl Tool for SocialGenerateCoverImageTool {
+    fn name(&self) -> &str {
+        SOCIAL_IMAGE_TOOL_NAME
+    }
+
+    fn description(&self) -> &str {
+        "为社媒文章生成封面图，内部复用 ProxyCast 的 /v1/images/generations 能力。"
+    }
+
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "图片描述词，建议包含主体、风格、氛围、构图。"
+                },
+                "model": {
+                    "type": "string",
+                    "description": "可选模型名；不传则使用默认图像模型。"
+                },
+                "size": {
+                    "type": "string",
+                    "description": "图片尺寸，例如 1024x1024、1024x1792。"
+                },
+                "response_format": {
+                    "type": "string",
+                    "enum": ["url", "b64_json"],
+                    "description": "返回格式，默认 url。"
+                }
+            },
+            "required": ["prompt"],
+            "additionalProperties": false,
+            "x-proxycast": {
+                "always_visible": true,
+                "tags": ["image", "social-media", "cover"],
+                "allowed_callers": ["assistant", "skill"],
+                "input_examples": [
+                    {
+                        "prompt": "科技感蓝紫渐变背景，一位年轻创作者在笔记本前沉思，暖色轮廓光，简洁社媒封面风格",
+                        "size": "1024x1024"
+                    }
+                ]
+            }
+        })
+    }
+
+    fn options(&self) -> ToolOptions {
+        ToolOptions::new()
+            .with_max_retries(1)
+            .with_base_timeout(Duration::from_secs(180))
+            .with_dynamic_timeout(false)
+    }
+
+    async fn execute(
+        &self,
+        params: serde_json::Value,
+        _context: &ToolContext,
+    ) -> Result<ToolResult, ToolError> {
+        let prompt = Self::parse_non_empty_string(&params, "prompt", None).ok_or_else(|| {
+            ToolError::invalid_params("参数 prompt 必填，且不能为空字符串".to_string())
+        })?;
+
+        let runtime_config = self.config_manager.config();
+        let model =
+            Self::parse_non_empty_string(&params, "model", Some(SOCIAL_IMAGE_DEFAULT_MODEL))
+                .unwrap_or_else(|| SOCIAL_IMAGE_DEFAULT_MODEL.to_string());
+        let size = Self::parse_non_empty_string(
+            &params,
+            "size",
+            runtime_config.image_gen.default_size.as_deref(),
+        )
+        .unwrap_or_else(|| SOCIAL_IMAGE_DEFAULT_SIZE.to_string());
+        let response_format = Self::parse_non_empty_string(
+            &params,
+            "response_format",
+            Some(SOCIAL_IMAGE_DEFAULT_RESPONSE_FORMAT),
+        )
+        .unwrap_or_else(|| SOCIAL_IMAGE_DEFAULT_RESPONSE_FORMAT.to_string());
+
+        if response_format != "url" && response_format != "b64_json" {
+            return Err(ToolError::invalid_params(
+                "response_format 仅支持 url 或 b64_json".to_string(),
+            ));
+        }
+
+        let server_host = Self::normalize_server_host(&runtime_config.server.host);
+        let endpoint = format!(
+            "http://{}:{}/v1/images/generations",
+            server_host, runtime_config.server.port
+        );
+        let request_body = serde_json::json!({
+            "prompt": prompt,
+            "model": model,
+            "n": 1,
+            "size": size,
+            "response_format": response_format
+        });
+
+        let response = self
+            .client
+            .post(&endpoint)
+            .header(
+                "Authorization",
+                format!("Bearer {}", runtime_config.server.api_key),
+            )
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| ToolError::execution_failed(format!("调用图像接口失败: {e}")))?;
+
+        let status = response.status();
+        let response_body: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| ToolError::execution_failed(format!("图像接口响应解析失败: {e}")))?;
+
+        if !status.is_success() {
+            let error_message = response_body
+                .get("error")
+                .and_then(|v| v.get("message"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("图像生成失败")
+                .to_string();
+            let error_code = response_body
+                .get("error")
+                .and_then(|v| v.get("code"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("image_generation_failed")
+                .to_string();
+            let result_payload = serde_json::json!({
+                "success": false,
+                "error_code": error_code,
+                "error_message": error_message,
+                "status": status.as_u16(),
+                "retryable": status.is_server_error() || status.as_u16() == 429
+            });
+            return Ok(ToolResult::error(result_payload.to_string())
+                .with_metadata("result", result_payload));
+        }
+
+        let (image_url, image_b64, revised_prompt) =
+            Self::extract_first_image_payload(&response_body)
+                .map_err(ToolError::execution_failed)?;
+
+        if image_url.is_none() && image_b64.is_none() {
+            return Err(ToolError::execution_failed(
+                "图像接口返回中未找到 url 或 b64_json".to_string(),
+            ));
+        }
+
+        let result_payload = serde_json::json!({
+            "success": true,
+            "image_url": image_url,
+            "b64_json": image_b64,
+            "revised_prompt": revised_prompt,
+            "model": request_body.get("model").cloned(),
+            "size": request_body.get("size").cloned(),
+            "response_format": request_body.get("response_format").cloned()
+        });
+        let output = serde_json::to_string_pretty(&result_payload)
+            .unwrap_or_else(|_| result_payload.to_string());
+        Ok(ToolResult::success(output).with_metadata("result", result_payload))
+    }
+}
+
+fn is_safe_relative_path(path: &Path) -> bool {
+    if path.is_absolute() {
+        return false;
+    }
+    !path.components().any(|component| {
+        matches!(
+            component,
+            std::path::Component::ParentDir
+                | std::path::Component::RootDir
+                | std::path::Component::Prefix(_)
+        )
+    })
+}
+
+fn resolve_output_relative_path(
+    task_type: &str,
+    output_path: Option<&str>,
+) -> Result<PathBuf, ToolError> {
+    if let Some(raw) = output_path {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(ToolError::invalid_params(
+                "outputPath 不能为空字符串".to_string(),
+            ));
+        }
+        let candidate = PathBuf::from(trimmed);
+        if !is_safe_relative_path(&candidate) {
+            return Err(ToolError::invalid_params(
+                "outputPath 必须是安全的相对路径，且不能包含 '..'".to_string(),
+            ));
+        }
+        return Ok(candidate);
+    }
+
+    let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S").to_string();
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    Ok(PathBuf::from(".proxycast")
+        .join("tasks")
+        .join(task_type)
+        .join(format!("{timestamp}-{suffix}.json")))
+}
+
+fn submit_creation_task_record(
+    app_handle: &AppHandle,
+    context: &ToolContext,
+    task_type: &str,
+    title: Option<String>,
+    payload: serde_json::Value,
+    output_path: Option<&str>,
+) -> Result<ToolResult, ToolError> {
+    let output_rel_path = resolve_output_relative_path(task_type, output_path)?;
+    let output_abs_path = context.working_directory.join(&output_rel_path);
+
+    let parent = output_abs_path
+        .parent()
+        .ok_or_else(|| ToolError::execution_failed("无法解析任务文件父目录".to_string()))?;
+    std::fs::create_dir_all(parent)
+        .map_err(|error| ToolError::execution_failed(format!("创建任务目录失败: {error}")))?;
+
+    let task_id = uuid::Uuid::new_v4().to_string();
+    let task_record = serde_json::json!({
+        "task_id": task_id,
+        "task_type": task_type,
+        "title": title,
+        "payload": payload,
+        "status": "pending_submit",
+        "created_at": chrono::Utc::now().to_rfc3339()
+    });
+    let task_content =
+        serde_json::to_string_pretty(&task_record).unwrap_or_else(|_| task_record.to_string());
+
+    std::fs::write(&output_abs_path, task_content.as_bytes())
+        .map_err(|error| ToolError::execution_failed(format!("写入任务文件失败: {error}")))?;
+
+    let emitted_payload = serde_json::json!({
+        "task_id": task_id,
+        "task_type": task_type,
+        "path": output_rel_path.to_string_lossy().to_string(),
+        "absolute_path": output_abs_path.to_string_lossy().to_string()
+    });
+    if let Err(error) = app_handle.emit("proxycast://creation_task_submitted", &emitted_payload) {
+        tracing::warn!(
+            "[AsterAgent] creation_task_submitted 事件发送失败: {}",
+            error
+        );
+    }
+
+    let output_payload = serde_json::json!({
+        "success": true,
+        "task_id": task_id,
+        "task_type": task_type,
+        "path": output_rel_path.to_string_lossy().to_string(),
+        "absolute_path": output_abs_path.to_string_lossy().to_string(),
+        "record": task_record
+    });
+    let output = serde_json::to_string_pretty(&output_payload)
+        .unwrap_or_else(|_| output_payload.to_string());
+    Ok(ToolResult::success(output)
+        .with_metadata("task_id", serde_json::json!(task_id))
+        .with_metadata("task_type", serde_json::json!(task_type))
+        .with_metadata("path", serde_json::json!(output_abs_path.to_string_lossy())))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BroadcastTaskInput {
+    content: String,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    audience: Option<String>,
+    #[serde(default)]
+    tone: Option<String>,
+    #[serde(default)]
+    duration_hint_minutes: Option<u32>,
+    #[serde(default)]
+    output_path: Option<String>,
+}
+
+#[derive(Clone)]
+struct ProxycastCreateBroadcastTaskTool {
+    app_handle: AppHandle,
+}
+
+impl ProxycastCreateBroadcastTaskTool {
+    fn new(app_handle: AppHandle) -> Self {
+        Self { app_handle }
+    }
+}
+
+#[async_trait]
+impl Tool for ProxycastCreateBroadcastTaskTool {
+    fn name(&self) -> &str {
+        PROXYCAST_CREATE_BROADCAST_TASK_TOOL_NAME
+    }
+
+    fn description(&self) -> &str {
+        "创建播客内容整理任务（broadcast_generate）。"
+    }
+
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "content": { "type": "string", "description": "可播报正文内容。" },
+                "title": { "type": "string", "description": "任务标题（可选）。" },
+                "audience": { "type": "string", "description": "目标听众（可选）。" },
+                "tone": { "type": "string", "description": "语气风格（可选）。" },
+                "durationHintMinutes": { "type": "integer", "minimum": 1, "maximum": 180, "description": "建议时长（分钟，可选）。" },
+                "outputPath": { "type": "string", "description": "可选输出路径（相对工作目录）。" }
+            },
+            "required": ["content"],
+            "additionalProperties": false,
+            "x-proxycast": {
+                "always_visible": true,
+                "tags": ["broadcast", "task", "creation"],
+                "allowed_callers": ["assistant", "skill"]
+            }
+        })
+    }
+
+    async fn execute(
+        &self,
+        params: serde_json::Value,
+        context: &ToolContext,
+    ) -> Result<ToolResult, ToolError> {
+        let input: BroadcastTaskInput = serde_json::from_value(params)
+            .map_err(|error| ToolError::invalid_params(format!("参数解析失败: {error}")))?;
+        if input.content.trim().is_empty() {
+            return Err(ToolError::invalid_params(
+                "content 不能为空字符串".to_string(),
+            ));
+        }
+        let payload = serde_json::json!({
+            "content": input.content,
+            "audience": input.audience,
+            "tone": input.tone,
+            "durationHintMinutes": input.duration_hint_minutes
+        });
+        submit_creation_task_record(
+            &self.app_handle,
+            context,
+            "broadcast_generate",
+            input.title,
+            payload,
+            input.output_path.as_deref(),
+        )
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CoverTaskInput {
+    prompt: String,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    platform: Option<String>,
+    #[serde(default)]
+    size: Option<String>,
+    #[serde(default)]
+    image_url: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    remark: Option<String>,
+    #[serde(default)]
+    output_path: Option<String>,
+}
+
+#[derive(Clone)]
+struct ProxycastCreateCoverTaskTool {
+    app_handle: AppHandle,
+}
+
+impl ProxycastCreateCoverTaskTool {
+    fn new(app_handle: AppHandle) -> Self {
+        Self { app_handle }
+    }
+}
+
+#[async_trait]
+impl Tool for ProxycastCreateCoverTaskTool {
+    fn name(&self) -> &str {
+        PROXYCAST_CREATE_COVER_TASK_TOOL_NAME
+    }
+
+    fn description(&self) -> &str {
+        "创建封面生成任务记录（cover_generate）。"
+    }
+
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "prompt": { "type": "string", "description": "封面提示词。" },
+                "title": { "type": "string", "description": "任务标题（可选）。" },
+                "platform": { "type": "string", "description": "目标平台（可选）。" },
+                "size": { "type": "string", "description": "尺寸（可选）。" },
+                "imageUrl": { "type": "string", "description": "生成后的封面 URL（可选）。" },
+                "status": { "type": "string", "description": "状态（成功/失败，可选）。" },
+                "remark": { "type": "string", "description": "备注（可选）。" },
+                "outputPath": { "type": "string", "description": "可选输出路径（相对工作目录）。" }
+            },
+            "required": ["prompt"],
+            "additionalProperties": false,
+            "x-proxycast": {
+                "always_visible": true,
+                "tags": ["cover", "image", "task"],
+                "allowed_callers": ["assistant", "skill"]
+            }
+        })
+    }
+
+    async fn execute(
+        &self,
+        params: serde_json::Value,
+        context: &ToolContext,
+    ) -> Result<ToolResult, ToolError> {
+        let input: CoverTaskInput = serde_json::from_value(params)
+            .map_err(|error| ToolError::invalid_params(format!("参数解析失败: {error}")))?;
+        if input.prompt.trim().is_empty() {
+            return Err(ToolError::invalid_params(
+                "prompt 不能为空字符串".to_string(),
+            ));
+        }
+        let payload = serde_json::json!({
+            "prompt": input.prompt,
+            "platform": input.platform,
+            "size": input.size,
+            "imageUrl": input.image_url,
+            "status": input.status,
+            "remark": input.remark
+        });
+        submit_creation_task_record(
+            &self.app_handle,
+            context,
+            "cover_generate",
+            input.title,
+            payload,
+            input.output_path.as_deref(),
+        )
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResourceSearchTaskInput {
+    resource_type: String,
+    query: String,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    usage: Option<String>,
+    #[serde(default)]
+    count: Option<u32>,
+    #[serde(default)]
+    filters: Option<serde_json::Value>,
+    #[serde(default)]
+    output_path: Option<String>,
+}
+
+#[derive(Clone)]
+struct ProxycastCreateResourceSearchTaskTool {
+    app_handle: AppHandle,
+}
+
+impl ProxycastCreateResourceSearchTaskTool {
+    fn new(app_handle: AppHandle) -> Self {
+        Self { app_handle }
+    }
+}
+
+#[async_trait]
+impl Tool for ProxycastCreateResourceSearchTaskTool {
+    fn name(&self) -> &str {
+        PROXYCAST_CREATE_RESOURCE_SEARCH_TASK_TOOL_NAME
+    }
+
+    fn description(&self) -> &str {
+        "创建资源检索任务（modal_resource_search）。"
+    }
+
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "resourceType": { "type": "string", "description": "资源类型，例如 image/bgm/sfx。" },
+                "query": { "type": "string", "description": "检索关键词。" },
+                "title": { "type": "string", "description": "任务标题（可选）。" },
+                "usage": { "type": "string", "description": "用途说明（可选）。" },
+                "count": { "type": "integer", "minimum": 1, "maximum": 50, "description": "候选数量（可选）。" },
+                "filters": { "type": "object", "description": "过滤条件（可选）。" },
+                "outputPath": { "type": "string", "description": "可选输出路径（相对工作目录）。" }
+            },
+            "required": ["resourceType", "query"],
+            "additionalProperties": false,
+            "x-proxycast": {
+                "always_visible": true,
+                "tags": ["resource", "search", "task"],
+                "allowed_callers": ["assistant", "skill"]
+            }
+        })
+    }
+
+    async fn execute(
+        &self,
+        params: serde_json::Value,
+        context: &ToolContext,
+    ) -> Result<ToolResult, ToolError> {
+        let input: ResourceSearchTaskInput = serde_json::from_value(params)
+            .map_err(|error| ToolError::invalid_params(format!("参数解析失败: {error}")))?;
+        if input.resource_type.trim().is_empty() || input.query.trim().is_empty() {
+            return Err(ToolError::invalid_params(
+                "resourceType/query 不能为空字符串".to_string(),
+            ));
+        }
+        let payload = serde_json::json!({
+            "resourceType": input.resource_type,
+            "query": input.query,
+            "usage": input.usage,
+            "count": input.count,
+            "filters": input.filters
+        });
+        submit_creation_task_record(
+            &self.app_handle,
+            context,
+            "modal_resource_search",
+            input.title,
+            payload,
+            input.output_path.as_deref(),
+        )
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImageTaskInput {
+    prompt: String,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    style: Option<String>,
+    #[serde(default)]
+    size: Option<String>,
+    #[serde(default)]
+    count: Option<u32>,
+    #[serde(default)]
+    usage: Option<String>,
+    #[serde(default)]
+    output_path: Option<String>,
+}
+
+#[derive(Clone)]
+struct ProxycastCreateImageTaskTool {
+    app_handle: AppHandle,
+}
+
+impl ProxycastCreateImageTaskTool {
+    fn new(app_handle: AppHandle) -> Self {
+        Self { app_handle }
+    }
+}
+
+#[async_trait]
+impl Tool for ProxycastCreateImageTaskTool {
+    fn name(&self) -> &str {
+        PROXYCAST_CREATE_IMAGE_TASK_TOOL_NAME
+    }
+
+    fn description(&self) -> &str {
+        "创建图片生成任务（image_generate）。"
+    }
+
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "prompt": { "type": "string", "description": "图像提示词。" },
+                "title": { "type": "string", "description": "任务标题（可选）。" },
+                "style": { "type": "string", "description": "风格（可选）。" },
+                "size": { "type": "string", "description": "尺寸（可选）。" },
+                "count": { "type": "integer", "minimum": 1, "maximum": 20, "description": "生成数量（可选）。" },
+                "usage": { "type": "string", "description": "用途（可选）。" },
+                "outputPath": { "type": "string", "description": "可选输出路径（相对工作目录）。" }
+            },
+            "required": ["prompt"],
+            "additionalProperties": false,
+            "x-proxycast": {
+                "always_visible": true,
+                "tags": ["image", "task", "generation"],
+                "allowed_callers": ["assistant", "skill"]
+            }
+        })
+    }
+
+    async fn execute(
+        &self,
+        params: serde_json::Value,
+        context: &ToolContext,
+    ) -> Result<ToolResult, ToolError> {
+        let input: ImageTaskInput = serde_json::from_value(params)
+            .map_err(|error| ToolError::invalid_params(format!("参数解析失败: {error}")))?;
+        if input.prompt.trim().is_empty() {
+            return Err(ToolError::invalid_params(
+                "prompt 不能为空字符串".to_string(),
+            ));
+        }
+        let payload = serde_json::json!({
+            "prompt": input.prompt,
+            "style": input.style,
+            "size": input.size,
+            "count": input.count,
+            "usage": input.usage
+        });
+        submit_creation_task_record(
+            &self.app_handle,
+            context,
+            "image_generate",
+            input.title,
+            payload,
+            input.output_path.as_deref(),
+        )
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UrlParseTaskInput {
+    url: String,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    summary: Option<String>,
+    #[serde(default)]
+    key_points: Option<Vec<String>>,
+    #[serde(default)]
+    extract_status: Option<String>,
+    #[serde(default)]
+    output_path: Option<String>,
+}
+
+#[derive(Clone)]
+struct ProxycastCreateUrlParseTaskTool {
+    app_handle: AppHandle,
+}
+
+impl ProxycastCreateUrlParseTaskTool {
+    fn new(app_handle: AppHandle) -> Self {
+        Self { app_handle }
+    }
+}
+
+#[async_trait]
+impl Tool for ProxycastCreateUrlParseTaskTool {
+    fn name(&self) -> &str {
+        PROXYCAST_CREATE_URL_PARSE_TASK_TOOL_NAME
+    }
+
+    fn description(&self) -> &str {
+        "创建链接解析任务（url_parse）。"
+    }
+
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "url": { "type": "string", "description": "目标 URL。" },
+                "title": { "type": "string", "description": "任务标题（可选）。" },
+                "summary": { "type": "string", "description": "摘要（可选）。" },
+                "keyPoints": { "type": "array", "items": { "type": "string" }, "description": "关键要点（可选）。" },
+                "extractStatus": { "type": "string", "description": "提取状态（可选）。" },
+                "outputPath": { "type": "string", "description": "可选输出路径（相对工作目录）。" }
+            },
+            "required": ["url"],
+            "additionalProperties": false,
+            "x-proxycast": {
+                "always_visible": true,
+                "tags": ["url", "parse", "task"],
+                "allowed_callers": ["assistant", "skill"]
+            }
+        })
+    }
+
+    async fn execute(
+        &self,
+        params: serde_json::Value,
+        context: &ToolContext,
+    ) -> Result<ToolResult, ToolError> {
+        let input: UrlParseTaskInput = serde_json::from_value(params)
+            .map_err(|error| ToolError::invalid_params(format!("参数解析失败: {error}")))?;
+        if input.url.trim().is_empty() {
+            return Err(ToolError::invalid_params("url 不能为空字符串".to_string()));
+        }
+        let payload = serde_json::json!({
+            "url": input.url,
+            "summary": input.summary,
+            "keyPoints": input.key_points,
+            "extractStatus": input.extract_status
+        });
+        submit_creation_task_record(
+            &self.app_handle,
+            context,
+            "url_parse",
+            input.title,
+            payload,
+            input.output_path.as_deref(),
+        )
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TypesettingTaskInput {
+    content: String,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    target_platform: Option<String>,
+    #[serde(default)]
+    rules: Option<serde_json::Value>,
+    #[serde(default)]
+    output_path: Option<String>,
+}
+
+#[derive(Clone)]
+struct ProxycastCreateTypesettingTaskTool {
+    app_handle: AppHandle,
+}
+
+impl ProxycastCreateTypesettingTaskTool {
+    fn new(app_handle: AppHandle) -> Self {
+        Self { app_handle }
+    }
+}
+
+#[async_trait]
+impl Tool for ProxycastCreateTypesettingTaskTool {
+    fn name(&self) -> &str {
+        PROXYCAST_CREATE_TYPESETTING_TASK_TOOL_NAME
+    }
+
+    fn description(&self) -> &str {
+        "创建排版优化任务（typesetting）。"
+    }
+
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "content": { "type": "string", "description": "待排版内容。" },
+                "title": { "type": "string", "description": "任务标题（可选）。" },
+                "targetPlatform": { "type": "string", "description": "目标平台（可选）。" },
+                "rules": { "type": "object", "description": "排版规则（可选）。" },
+                "outputPath": { "type": "string", "description": "可选输出路径（相对工作目录）。" }
+            },
+            "required": ["content"],
+            "additionalProperties": false,
+            "x-proxycast": {
+                "always_visible": true,
+                "tags": ["typesetting", "task", "text"],
+                "allowed_callers": ["assistant", "skill"]
+            }
+        })
+    }
+
+    async fn execute(
+        &self,
+        params: serde_json::Value,
+        context: &ToolContext,
+    ) -> Result<ToolResult, ToolError> {
+        let input: TypesettingTaskInput = serde_json::from_value(params)
+            .map_err(|error| ToolError::invalid_params(format!("参数解析失败: {error}")))?;
+        if input.content.trim().is_empty() {
+            return Err(ToolError::invalid_params(
+                "content 不能为空字符串".to_string(),
+            ));
+        }
+        let payload = serde_json::json!({
+            "content": input.content,
+            "targetPlatform": input.target_platform,
+            "rules": input.rules
+        });
+        submit_creation_task_record(
+            &self.app_handle,
+            context,
+            "typesetting",
+            input.title,
+            payload,
+            input.output_path.as_deref(),
+        )
+    }
+}
+
+#[derive(Clone)]
+struct ProxycastCreateVideoGenerationTaskTool {
+    db: DbConnection,
+    api_key_provider_service: Arc<ApiKeyProviderService>,
+}
+
+impl ProxycastCreateVideoGenerationTaskTool {
+    fn new(db: DbConnection, api_key_provider_service: Arc<ApiKeyProviderService>) -> Self {
+        Self {
+            db,
+            api_key_provider_service,
+        }
+    }
+}
+
+#[async_trait]
+impl Tool for ProxycastCreateVideoGenerationTaskTool {
+    fn name(&self) -> &str {
+        PROXYCAST_CREATE_VIDEO_TASK_TOOL_NAME
+    }
+
+    fn description(&self) -> &str {
+        "调用 ProxyCast 视频任务服务，创建真实的视频生成任务。"
+    }
+
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "projectId": { "type": "string", "description": "项目 ID。" },
+                "providerId": { "type": "string", "description": "视频服务 Provider ID。" },
+                "model": { "type": "string", "description": "模型名。" },
+                "prompt": { "type": "string", "description": "视频生成提示词。" },
+                "aspectRatio": { "type": "string", "description": "画幅比例，例如 16:9、9:16。" },
+                "resolution": { "type": "string", "description": "分辨率，例如 720p。" },
+                "duration": { "type": "integer", "description": "时长（秒）。" },
+                "imageUrl": { "type": "string", "description": "首帧图 URL（可选）。" },
+                "endImageUrl": { "type": "string", "description": "末帧图 URL（可选）。" },
+                "seed": { "type": "integer", "description": "随机种子（可选）。" },
+                "generateAudio": { "type": "boolean", "description": "是否生成音频（可选）。" },
+                "cameraFixed": { "type": "boolean", "description": "是否固定镜头（可选）。" }
+            },
+            "required": ["projectId", "providerId", "model", "prompt"],
+            "additionalProperties": false,
+            "x-proxycast": {
+                "always_visible": true,
+                "tags": ["video", "task", "generation"],
+                "allowed_callers": ["assistant", "skill"],
+                "input_examples": [
+                    {
+                        "projectId": "project-demo",
+                        "providerId": "volcengine",
+                        "model": "doubao-seedance-1-0-pro-250528",
+                        "prompt": "未来城市清晨，镜头缓慢推进，电影感",
+                        "aspectRatio": "16:9",
+                        "duration": 5
+                    }
+                ]
+            }
+        })
+    }
+
+    async fn execute(
+        &self,
+        params: serde_json::Value,
+        _context: &ToolContext,
+    ) -> Result<ToolResult, ToolError> {
+        let request: CreateVideoGenerationRequest = serde_json::from_value(params)
+            .map_err(|error| ToolError::invalid_params(format!("参数解析失败: {error}")))?;
+        if request.project_id.trim().is_empty()
+            || request.provider_id.trim().is_empty()
+            || request.model.trim().is_empty()
+            || request.prompt.trim().is_empty()
+        {
+            return Err(ToolError::invalid_params(
+                "projectId/providerId/model/prompt 均不能为空".to_string(),
+            ));
+        }
+
+        let service = VideoGenerationService::new();
+        let created = service
+            .create_task(&self.db, self.api_key_provider_service.as_ref(), request)
+            .await
+            .map_err(|error| ToolError::execution_failed(format!("创建视频任务失败: {error}")))?;
+
+        let payload = serde_json::json!({
+            "success": true,
+            "task": created
+        });
+        let output = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string());
+        Ok(ToolResult::success(output))
+    }
+}
+
 struct ToolSearchBridgeTool {
     registry: Arc<tokio::sync::RwLock<aster::tools::ToolRegistry>>,
 }
@@ -1299,6 +2395,60 @@ fn register_browser_mcp_tools_to_registry(registry: &mut aster::tools::ToolRegis
     }
 }
 
+fn register_social_image_tool_to_registry(
+    registry: &mut aster::tools::ToolRegistry,
+    config_manager: Arc<GlobalConfigManager>,
+) {
+    if registry.contains(SOCIAL_IMAGE_TOOL_NAME) {
+        return;
+    }
+    registry.register(Box::new(SocialGenerateCoverImageTool::new(config_manager)));
+}
+
+fn register_creation_task_tools_to_registry(
+    registry: &mut aster::tools::ToolRegistry,
+    db: DbConnection,
+    api_key_provider_service: Arc<ApiKeyProviderService>,
+    app_handle: AppHandle,
+) {
+    if !registry.contains(PROXYCAST_CREATE_VIDEO_TASK_TOOL_NAME) {
+        registry.register(Box::new(ProxycastCreateVideoGenerationTaskTool::new(
+            db.clone(),
+            api_key_provider_service.clone(),
+        )));
+    }
+    if !registry.contains(PROXYCAST_CREATE_BROADCAST_TASK_TOOL_NAME) {
+        registry.register(Box::new(ProxycastCreateBroadcastTaskTool::new(
+            app_handle.clone(),
+        )));
+    }
+    if !registry.contains(PROXYCAST_CREATE_COVER_TASK_TOOL_NAME) {
+        registry.register(Box::new(ProxycastCreateCoverTaskTool::new(
+            app_handle.clone(),
+        )));
+    }
+    if !registry.contains(PROXYCAST_CREATE_RESOURCE_SEARCH_TASK_TOOL_NAME) {
+        registry.register(Box::new(ProxycastCreateResourceSearchTaskTool::new(
+            app_handle.clone(),
+        )));
+    }
+    if !registry.contains(PROXYCAST_CREATE_IMAGE_TASK_TOOL_NAME) {
+        registry.register(Box::new(ProxycastCreateImageTaskTool::new(
+            app_handle.clone(),
+        )));
+    }
+    if !registry.contains(PROXYCAST_CREATE_URL_PARSE_TASK_TOOL_NAME) {
+        registry.register(Box::new(ProxycastCreateUrlParseTaskTool::new(
+            app_handle.clone(),
+        )));
+    }
+    if !registry.contains(PROXYCAST_CREATE_TYPESETTING_TASK_TOOL_NAME) {
+        registry.register(Box::new(ProxycastCreateTypesettingTaskTool::new(
+            app_handle,
+        )));
+    }
+}
+
 fn register_tool_search_tool_to_registry(
     registry: &mut aster::tools::ToolRegistry,
     registry_arc: Arc<tokio::sync::RwLock<aster::tools::ToolRegistry>>,
@@ -1321,6 +2471,47 @@ pub async fn ensure_browser_mcp_tools_registered(state: &AsterAgentState) -> Res
     let mut registry = registry_arc.write().await;
     register_browser_mcp_tools_to_registry(&mut registry);
     register_tool_search_tool_to_registry(&mut registry, registry_arc.clone());
+    Ok(())
+}
+
+pub async fn ensure_social_image_tool_registered(
+    state: &AsterAgentState,
+    config_manager: &GlobalConfigManagerState,
+) -> Result<(), String> {
+    let agent_arc = state.get_agent_arc();
+    let guard = agent_arc.read().await;
+    let agent = guard
+        .as_ref()
+        .ok_or_else(|| "Agent not initialized".to_string())?;
+    let registry_arc = agent.tool_registry().clone();
+    drop(guard);
+
+    let mut registry = registry_arc.write().await;
+    register_social_image_tool_to_registry(&mut registry, config_manager.0.clone());
+    Ok(())
+}
+
+pub async fn ensure_creation_task_tools_registered(
+    state: &AsterAgentState,
+    db: &DbConnection,
+    api_key_provider_service: &ApiKeyProviderServiceState,
+    app_handle: &AppHandle,
+) -> Result<(), String> {
+    let agent_arc = state.get_agent_arc();
+    let guard = agent_arc.read().await;
+    let agent = guard
+        .as_ref()
+        .ok_or_else(|| "Agent not initialized".to_string())?;
+    let registry_arc = agent.tool_registry().clone();
+    drop(guard);
+
+    let mut registry = registry_arc.write().await;
+    register_creation_task_tools_to_registry(
+        &mut registry,
+        db.clone(),
+        api_key_provider_service.0.clone(),
+        app_handle.clone(),
+    );
     Ok(())
 }
 
@@ -1357,6 +2548,8 @@ fn build_workspace_shell_allow_pattern(
 async fn apply_workspace_sandbox_permissions(
     state: &AsterAgentState,
     config_manager: &GlobalConfigManagerState,
+    db: &DbConnection,
+    api_key_provider_service: &ApiKeyProviderServiceState,
     heartbeat_state: &HeartbeatServiceState,
     app_handle: &AppHandle,
     workspace_root: &str,
@@ -1800,6 +2993,14 @@ async fn apply_workspace_sandbox_permissions(
         "tool_search",
         "three_stage_workflow",
         "heartbeat",
+        SOCIAL_IMAGE_TOOL_NAME,
+        PROXYCAST_CREATE_VIDEO_TASK_TOOL_NAME,
+        PROXYCAST_CREATE_BROADCAST_TASK_TOOL_NAME,
+        PROXYCAST_CREATE_COVER_TASK_TOOL_NAME,
+        PROXYCAST_CREATE_RESOURCE_SEARCH_TASK_TOOL_NAME,
+        PROXYCAST_CREATE_IMAGE_TASK_TOOL_NAME,
+        PROXYCAST_CREATE_URL_PARSE_TASK_TOOL_NAME,
+        PROXYCAST_CREATE_TYPESETTING_TASK_TOOL_NAME,
     ] {
         permissions.push(ToolPermission {
             tool: tool_name.to_string(),
@@ -1880,6 +3081,14 @@ async fn apply_workspace_sandbox_permissions(
     let heartbeat_tool = proxycast_agent::tools::HeartbeatTool::new(Arc::new(heartbeat_adapter));
     registry.register(Box::new(heartbeat_tool));
 
+    register_social_image_tool_to_registry(&mut registry, config_manager.0.clone());
+    register_creation_task_tools_to_registry(
+        &mut registry,
+        db.clone(),
+        api_key_provider_service.0.clone(),
+        app_handle.clone(),
+    );
+
     // 注册浏览器 MCP 工具
     register_browser_mcp_tools_to_registry(&mut registry);
 
@@ -1900,6 +3109,7 @@ pub async fn aster_agent_chat_stream(
     app: AppHandle,
     state: State<'_, AsterAgentState>,
     db: State<'_, DbConnection>,
+    api_key_provider_service: State<'_, ApiKeyProviderServiceState>,
     logs: State<'_, LogState>,
     config_manager: State<'_, GlobalConfigManagerState>,
     mcp_manager: State<'_, McpManagerState>,
@@ -1929,6 +3139,7 @@ pub async fn aster_agent_chat_stream(
             tracing::warn!("[AsterAgent] session_store 存在: {}", has_store);
         }
     }
+    ensure_social_image_tool_registered(state.inner(), config_manager.inner()).await?;
 
     // 直接使用前端传递的 session_id
     // ProxyCastSessionStore 会在 add_message 时自动创建不存在的 session
@@ -1974,6 +3185,26 @@ pub async fn aster_agent_chat_stream(
     let workspace_root = ensured.root_path.to_string_lossy().to_string();
     let runtime_config = config_manager.config();
     apply_web_search_runtime_env(&runtime_config);
+    let auto_continue_config = request
+        .auto_continue
+        .clone()
+        .map(AutoContinuePayload::normalized);
+    let auto_continue_enabled = auto_continue_config
+        .as_ref()
+        .map(|config| config.enabled)
+        .unwrap_or(false);
+    if let Some(config) = auto_continue_config
+        .as_ref()
+        .filter(|config| config.enabled)
+    {
+        tracing::info!(
+            "[AsterAgent] 自动续写策略已启用: source={:?}, fast_mode={}, continuation_length={}, sensitivity={}",
+            config.source,
+            config.fast_mode_enabled,
+            config.continuation_length,
+            config.sensitivity
+        );
+    }
 
     if ensured.repaired {
         let warning_message = ensured.warning.unwrap_or_else(|| {
@@ -2098,12 +3329,15 @@ pub async fn aster_agent_chat_stream(
             }
         };
 
-        let merged_prompt = merge_system_prompt_with_request_tool_policy(
-            merge_system_prompt_with_web_search(
-                merge_system_prompt_with_memory_profile(resolved_prompt, &runtime_config),
-                &runtime_config,
+        let merged_prompt = merge_system_prompt_with_auto_continue(
+            merge_system_prompt_with_request_tool_policy(
+                merge_system_prompt_with_web_search(
+                    merge_system_prompt_with_memory_profile(resolved_prompt, &runtime_config),
+                    &runtime_config,
+                ),
+                &request_tool_policy,
             ),
-            &request_tool_policy,
+            auto_continue_config.as_ref(),
         );
 
         (merged_prompt, persisted)
@@ -2181,6 +3415,8 @@ pub async fn aster_agent_chat_stream(
     let sandbox_outcome = apply_workspace_sandbox_permissions(
         &state,
         config_manager.inner(),
+        db.inner(),
+        api_key_provider_service.inner(),
         heartbeat_state.inner(),
         &app,
         &workspace_root,
@@ -2226,6 +3462,7 @@ pub async fn aster_agent_chat_stream(
 
     let tracker = ExecutionTracker::new(db.inner().clone());
     let cancel_token = state.create_cancel_token(session_id).await;
+    let auto_continue_metadata = auto_continue_config.clone();
 
     // 获取 Agent Arc 并保持 guard 在整个流处理期间存活
     let agent_arc = state.get_agent_arc();
@@ -2256,18 +3493,22 @@ pub async fn aster_agent_chat_stream(
                 "execution_strategy": format!("{:?}", effective_strategy).to_lowercase(),
                 "message_length": request.message.chars().count(),
                 "web_search_enabled": request_tool_policy.effective_web_search,
+                "auto_continue_enabled": auto_continue_enabled,
+                "auto_continue": auto_continue_metadata,
             })),
             RunFinalizeOptions {
                 success_metadata: Some(serde_json::json!({
                     "execution_strategy": format!("{:?}", effective_strategy).to_lowercase(),
                     "workspace_id": workspace_id.clone(),
                     "web_search_enabled": request_tool_policy.effective_web_search,
+                    "auto_continue_enabled": auto_continue_enabled,
                 })),
                 error_code: Some("chat_stream_failed".to_string()),
                 error_metadata: Some(serde_json::json!({
                     "execution_strategy": format!("{:?}", effective_strategy).to_lowercase(),
                     "workspace_id": workspace_id.clone(),
                     "web_search_enabled": request_tool_policy.effective_web_search,
+                    "auto_continue_enabled": auto_continue_enabled,
                 })),
             },
             async {
@@ -2655,6 +3896,7 @@ mod tests {
         assert_eq!(request.event_name, "agent_stream");
         assert_eq!(request.workspace_id, "workspace-test");
         assert_eq!(request.execution_strategy, None);
+        assert_eq!(request.auto_continue, None);
     }
 
     #[test]
@@ -2686,6 +3928,63 @@ mod tests {
 
         let request: AsterChatRequest = serde_json::from_str(json).unwrap();
         assert_eq!(request.web_search, Some(true));
+    }
+
+    #[test]
+    fn test_aster_chat_request_deserialize_with_auto_continue_payload() {
+        let json = r#"{
+            "message": "Hello",
+            "session_id": "test-session",
+            "event_name": "agent_stream",
+            "workspace_id": "workspace-test",
+            "auto_continue": {
+                "enabled": true,
+                "fast_mode_enabled": true,
+                "continuation_length": 2,
+                "sensitivity": 88,
+                "source": "document_canvas"
+            }
+        }"#;
+
+        let request: AsterChatRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            request.auto_continue,
+            Some(AutoContinuePayload {
+                enabled: true,
+                fast_mode_enabled: true,
+                continuation_length: 2,
+                sensitivity: 88,
+                source: Some("document_canvas".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn test_aster_chat_request_deserialize_with_auto_continue_camel_case_aliases() {
+        let json = r#"{
+            "message": "Hello",
+            "session_id": "test-session",
+            "event_name": "agent_stream",
+            "workspace_id": "workspace-test",
+            "autoContinue": {
+                "enabled": true,
+                "fastModeEnabled": true,
+                "continuationLength": 1,
+                "sensitivity": 45
+            }
+        }"#;
+
+        let request: AsterChatRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            request.auto_continue,
+            Some(AutoContinuePayload {
+                enabled: true,
+                fast_mode_enabled: true,
+                continuation_length: 1,
+                sensitivity: 45,
+                source: None,
+            })
+        );
     }
 
     #[test]
@@ -2770,6 +4069,37 @@ mod tests {
         let base = Some(format!("{REQUEST_TOOL_POLICY_MARKER}\n已有策略"));
         let policy = resolve_request_tool_policy(Some(true), false);
         let merged = merge_system_prompt_with_request_tool_policy(base.clone(), &policy);
+        assert_eq!(merged, base);
+    }
+
+    #[test]
+    fn test_merge_system_prompt_with_auto_continue_appends_prompt() {
+        let config = AutoContinuePayload {
+            enabled: true,
+            fast_mode_enabled: false,
+            continuation_length: 1,
+            sensitivity: 55,
+            source: Some("theme_workbench_document_auto_continue".to_string()),
+        };
+        let merged =
+            merge_system_prompt_with_auto_continue(Some("你是助手".to_string()), Some(&config))
+                .expect("should contain merged prompt");
+        assert!(merged.contains(AUTO_CONTINUE_PROMPT_MARKER));
+        assert!(merged.contains("续写长度"));
+        assert!(merged.contains("theme_workbench_document_auto_continue"));
+    }
+
+    #[test]
+    fn test_merge_system_prompt_with_auto_continue_skip_when_disabled() {
+        let config = AutoContinuePayload {
+            enabled: false,
+            fast_mode_enabled: false,
+            continuation_length: 1,
+            sensitivity: 55,
+            source: None,
+        };
+        let base = Some("你是助手".to_string());
+        let merged = merge_system_prompt_with_auto_continue(base.clone(), Some(&config));
         assert_eq!(merged, base);
     }
 
@@ -2948,6 +4278,70 @@ mod tests {
             "web_fetch",
         );
         assert!(exact > partial);
+    }
+
+    #[test]
+    fn test_social_generate_cover_image_parse_non_empty_string() {
+        let params = serde_json::json!({
+            "prompt": "  封面图描述  ",
+            "size": "   "
+        });
+
+        let prompt = SocialGenerateCoverImageTool::parse_non_empty_string(&params, "prompt", None);
+        let size = SocialGenerateCoverImageTool::parse_non_empty_string(
+            &params,
+            "size",
+            Some(SOCIAL_IMAGE_DEFAULT_SIZE),
+        );
+
+        assert_eq!(prompt, Some("封面图描述".to_string()));
+        assert_eq!(size, Some(SOCIAL_IMAGE_DEFAULT_SIZE.to_string()));
+    }
+
+    #[test]
+    fn test_social_generate_cover_image_extract_first_image_payload() {
+        let response = serde_json::json!({
+            "data": [
+                {
+                    "url": "https://example.com/image.png",
+                    "revised_prompt": "优化后的提示词"
+                }
+            ]
+        });
+
+        let (image_url, image_b64, revised_prompt) =
+            SocialGenerateCoverImageTool::extract_first_image_payload(&response).unwrap();
+        assert_eq!(image_url, Some("https://example.com/image.png".to_string()));
+        assert_eq!(image_b64, None);
+        assert_eq!(revised_prompt, Some("优化后的提示词".to_string()));
+    }
+
+    #[test]
+    fn test_social_generate_cover_image_extract_first_image_payload_rejects_empty_data() {
+        let response = serde_json::json!({ "data": [] });
+        let result = SocialGenerateCoverImageTool::extract_first_image_payload(&response);
+
+        assert!(result.is_err());
+        assert!(result
+            .err()
+            .unwrap_or_default()
+            .contains("图像接口返回 data 为空"));
+    }
+
+    #[test]
+    fn test_social_generate_cover_image_normalize_server_host() {
+        assert_eq!(
+            SocialGenerateCoverImageTool::normalize_server_host("0.0.0.0"),
+            "127.0.0.1".to_string()
+        );
+        assert_eq!(
+            SocialGenerateCoverImageTool::normalize_server_host("::"),
+            "127.0.0.1".to_string()
+        );
+        assert_eq!(
+            SocialGenerateCoverImageTool::normalize_server_host("  localhost "),
+            "localhost".to_string()
+        );
     }
 
     #[tokio::test]

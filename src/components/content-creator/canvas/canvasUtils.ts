@@ -9,7 +9,7 @@ import { createInitialDocumentState } from "./document";
 import type { DocumentCanvasState } from "./document/types";
 import { createInitialPosterState } from "./poster";
 import type { PosterCanvasState } from "./poster/types";
-import { createInitialMusicState } from "./music";
+import { createInitialMusicState } from "./music/types";
 import type { MusicCanvasState } from "./music/types";
 import { createInitialScriptState } from "./script";
 import type { ScriptCanvasState } from "./script/types";

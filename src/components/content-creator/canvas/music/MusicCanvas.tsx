@@ -15,7 +15,6 @@ import {
   PianoRollRenderer,
 } from "./renderers";
 import { Copy, Check, Music } from "lucide-react";
-import { CanvasBreadcrumbHeader } from "../shared/CanvasBreadcrumbHeader";
 import {
   ackCanvasImageInsertRequest,
   emitCanvasImageInsertAck,
@@ -252,7 +251,6 @@ export const MusicCanvas: React.FC<MusicCanvasProps> = memo(
     onStateChange,
     projectId,
     contentId,
-    onBackHome,
     onClose,
     isStreaming = false,
   }) => {
@@ -554,8 +552,6 @@ export const MusicCanvas: React.FC<MusicCanvasProps> = memo(
 
     return (
       <Container>
-        <CanvasBreadcrumbHeader label="音乐" onBackHome={onBackHome} />
-
         <InnerContainer>
           <MusicToolbar
             spec={state.spec}

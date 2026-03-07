@@ -8,6 +8,7 @@
  */
 
 import type { WorkspaceType } from "./workspace";
+import type { WorkspaceSettings } from "./workspace";
 
 // ============================================================================
 // 项目类型
@@ -22,6 +23,7 @@ export interface Project {
   workspaceType: WorkspaceType;
   rootPath: string;
   isDefault: boolean;
+  settings?: WorkspaceSettings;
   icon?: string;
   color?: string;
   isFavorite: boolean;
@@ -59,6 +61,7 @@ export interface CreateProjectRequest {
  */
 export interface ProjectUpdate {
   name?: string;
+  settings?: WorkspaceSettings;
   icon?: string;
   color?: string;
   isFavorite?: boolean;

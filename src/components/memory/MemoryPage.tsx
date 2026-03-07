@@ -31,10 +31,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { buildHomeAgentParams } from "@/lib/workspace/navigation";
 import type { Page, PageParams } from "@/types/page";
 import { SettingsTabs } from "@/types/settings";
-import { CanvasBreadcrumbHeader } from "@/components/content-creator/canvas/shared/CanvasBreadcrumbHeader";
 import {
   getConfig,
   getMemoryOverview as getContextMemoryOverview,
@@ -64,6 +62,8 @@ import {
   getStoredResourceProjectId,
   onResourceProjectChange,
 } from "@/lib/resourceProjectSelection";
+import { buildHomeAgentParams } from "@/lib/workspace/navigation";
+import { CanvasBreadcrumbHeader } from "@/components/content-creator/canvas/shared/CanvasBreadcrumbHeader";
 import { buildLayerMetrics } from "./memoryLayerMetrics";
 type CategoryType = MemoryCategory;
 type CategoryFilter = "all" | CategoryType;
@@ -637,6 +637,10 @@ export function MemoryPage({ onNavigate }: MemoryPageProps) {
     setTimeout(() => setMessage(null), 3500);
   }, []);
 
+  const handleBackHome = useCallback(() => {
+    onNavigate?.("agent", buildHomeAgentParams());
+  }, [onNavigate]);
+
   const stats: MemoryStatsResponse = useMemo(
     () =>
       overview?.stats ?? {
@@ -1045,16 +1049,10 @@ export function MemoryPage({ onNavigate }: MemoryPageProps) {
       ? "查看全部记忆并触发分析任务"
       : CATEGORY_META[activeSection].description;
 
-  const handleBackToHome = useCallback(() => {
-    if (onNavigate) {
-      onNavigate("agent", buildHomeAgentParams());
-    }
-  }, [onNavigate]);
-
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <div className="flex items-center bg-background px-6 pt-3 pb-2">
-        <CanvasBreadcrumbHeader label="记忆" onBackHome={handleBackToHome} />
+      <div className="flex items-center border-b bg-background px-6 py-3">
+        <CanvasBreadcrumbHeader label="记忆" onBackHome={handleBackHome} />
       </div>
 
       <div className="flex flex-1 min-h-0 overflow-hidden">

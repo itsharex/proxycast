@@ -91,18 +91,119 @@ impl WorkspaceType {
     }
 }
 
+fn default_image_generation_allow_fallback() -> bool {
+    true
+}
+
+/// 图片生成偏好设置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceImageGenerationSettings {
+    /// 默认图片 Provider ID
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "preferred_provider_id"
+    )]
+    pub preferred_provider_id: Option<String>,
+    /// 默认图片模型 ID
+    #[serde(skip_serializing_if = "Option::is_none", alias = "preferred_model_id")]
+    pub preferred_model_id: Option<String>,
+    /// 默认图片 Provider 不可用时是否允许回退自动选择
+    #[serde(
+        default = "default_image_generation_allow_fallback",
+        alias = "allow_fallback"
+    )]
+    pub allow_fallback: bool,
+}
+
+/// 视频生成偏好设置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceVideoGenerationSettings {
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "preferred_provider_id"
+    )]
+    pub preferred_provider_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "preferred_model_id")]
+    pub preferred_model_id: Option<String>,
+    #[serde(
+        default = "default_image_generation_allow_fallback",
+        alias = "allow_fallback"
+    )]
+    pub allow_fallback: bool,
+}
+
+impl Default for WorkspaceVideoGenerationSettings {
+    fn default() -> Self {
+        Self {
+            preferred_provider_id: None,
+            preferred_model_id: None,
+            allow_fallback: true,
+        }
+    }
+}
+
+/// 语音生成偏好设置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceVoiceGenerationSettings {
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "preferred_provider_id"
+    )]
+    pub preferred_provider_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "preferred_model_id")]
+    pub preferred_model_id: Option<String>,
+    #[serde(
+        default = "default_image_generation_allow_fallback",
+        alias = "allow_fallback"
+    )]
+    pub allow_fallback: bool,
+}
+
+impl Default for WorkspaceVoiceGenerationSettings {
+    fn default() -> Self {
+        Self {
+            preferred_provider_id: None,
+            preferred_model_id: None,
+            allow_fallback: true,
+        }
+    }
+}
+
+impl Default for WorkspaceImageGenerationSettings {
+    fn default() -> Self {
+        Self {
+            preferred_provider_id: None,
+            preferred_model_id: None,
+            allow_fallback: true,
+        }
+    }
+}
+
 /// Workspace 级别设置
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceSettings {
     /// Workspace 级 MCP 配置
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", alias = "mcp_config")]
     pub mcp_config: Option<serde_json::Value>,
     /// 默认 provider
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", alias = "default_provider")]
     pub default_provider: Option<String>,
     /// 自动压缩 context
-    #[serde(default)]
+    #[serde(default, alias = "auto_compact")]
     pub auto_compact: bool,
+    /// 图片生成偏好
+    #[serde(skip_serializing_if = "Option::is_none", alias = "image_generation")]
+    pub image_generation: Option<WorkspaceImageGenerationSettings>,
+    /// 视频生成偏好
+    #[serde(skip_serializing_if = "Option::is_none", alias = "video_generation")]
+    pub video_generation: Option<WorkspaceVideoGenerationSettings>,
+    /// 语音生成偏好
+    #[serde(skip_serializing_if = "Option::is_none", alias = "voice_generation")]
+    pub voice_generation: Option<WorkspaceVoiceGenerationSettings>,
 }
 
 /// 项目统计信息
@@ -329,5 +430,123 @@ mod tests {
         let wt = WorkspaceType::SocialMedia;
         let debug_str = format!("{wt:?}");
         assert_eq!(debug_str, "SocialMedia");
+    }
+
+    #[test]
+    fn test_workspace_settings_accepts_legacy_snake_case() {
+        let settings: WorkspaceSettings = serde_json::from_str(
+            r#"{
+                "default_provider": "openai",
+                "auto_compact": true,
+                "image_generation": {
+                    "preferred_provider_id": "new-api",
+                    "preferred_model_id": "gpt-image-1",
+                    "allow_fallback": false
+                },
+                "video_generation": {
+                    "preferred_provider_id": "doubao-video",
+                    "preferred_model_id": "seedance-1-5-pro-251215",
+                    "allow_fallback": true
+                },
+                "voice_generation": {
+                    "preferred_provider_id": "openai-tts",
+                    "preferred_model_id": "gpt-4o-mini-tts",
+                    "allow_fallback": false
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(settings.default_provider.as_deref(), Some("openai"));
+        assert!(settings.auto_compact);
+        let image_generation = settings.image_generation.expect("应解析图片配置");
+        assert_eq!(
+            image_generation.preferred_provider_id.as_deref(),
+            Some("new-api")
+        );
+        assert_eq!(
+            image_generation.preferred_model_id.as_deref(),
+            Some("gpt-image-1")
+        );
+        assert!(!image_generation.allow_fallback);
+        let video_generation = settings.video_generation.expect("应解析视频配置");
+        assert_eq!(
+            video_generation.preferred_provider_id.as_deref(),
+            Some("doubao-video")
+        );
+        assert_eq!(
+            video_generation.preferred_model_id.as_deref(),
+            Some("seedance-1-5-pro-251215")
+        );
+        assert!(video_generation.allow_fallback);
+        let voice_generation = settings.voice_generation.expect("应解析语音配置");
+        assert_eq!(
+            voice_generation.preferred_provider_id.as_deref(),
+            Some("openai-tts")
+        );
+        assert_eq!(
+            voice_generation.preferred_model_id.as_deref(),
+            Some("gpt-4o-mini-tts")
+        );
+        assert!(!voice_generation.allow_fallback);
+    }
+
+    #[test]
+    fn test_workspace_settings_serializes_to_camel_case() {
+        let settings = WorkspaceSettings {
+            image_generation: Some(WorkspaceImageGenerationSettings {
+                preferred_provider_id: Some("new-api".to_string()),
+                preferred_model_id: Some("gpt-image-1".to_string()),
+                allow_fallback: false,
+            }),
+            video_generation: Some(WorkspaceVideoGenerationSettings {
+                preferred_provider_id: Some("doubao-video".to_string()),
+                preferred_model_id: Some("seedance-1-5-pro-251215".to_string()),
+                allow_fallback: true,
+            }),
+            voice_generation: Some(WorkspaceVoiceGenerationSettings {
+                preferred_provider_id: Some("openai-tts".to_string()),
+                preferred_model_id: Some("gpt-4o-mini-tts".to_string()),
+                allow_fallback: false,
+            }),
+            ..WorkspaceSettings::default()
+        };
+
+        let value = serde_json::to_value(&settings).unwrap();
+        assert_eq!(
+            value
+                .get("imageGeneration")
+                .and_then(|item| item.get("preferredProviderId"))
+                .and_then(|item| item.as_str()),
+            Some("new-api")
+        );
+        assert_eq!(
+            value
+                .get("imageGeneration")
+                .and_then(|item| item.get("preferredModelId"))
+                .and_then(|item| item.as_str()),
+            Some("gpt-image-1")
+        );
+        assert_eq!(
+            value
+                .get("imageGeneration")
+                .and_then(|item| item.get("allowFallback"))
+                .and_then(|item| item.as_bool()),
+            Some(false)
+        );
+        assert_eq!(
+            value
+                .get("videoGeneration")
+                .and_then(|item| item.get("preferredProviderId"))
+                .and_then(|item| item.as_str()),
+            Some("doubao-video")
+        );
+        assert_eq!(
+            value
+                .get("voiceGeneration")
+                .and_then(|item| item.get("preferredModelId"))
+                .and_then(|item| item.as_str()),
+            Some("gpt-4o-mini-tts")
+        );
     }
 }

@@ -5,7 +5,7 @@
  * 功能包括：TTS 服务商选择、STT 服务商选择、语音参数配置等
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Mic,
   Volume2,
@@ -16,7 +16,16 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useApiKeyProvider } from "@/hooks/useApiKeyProvider";
 import { getConfig, saveConfig, Config } from "@/hooks/useTauri";
+import {
+  buildPersistedMediaGenerationPreference,
+  getTtsModelsForProvider,
+  hasMediaGenerationPreferenceOverride,
+  isTtsProvider,
+  type MediaGenerationPreference,
+} from "@/lib/mediaGeneration";
+import { MediaPreferenceSection } from "../shared/MediaPreferenceSection";
 
 type TTSService = "openai" | "azure" | "google" | "edge" | "macos";
 type STTService = "openai" | "azure" | "google" | "whisper";
@@ -123,6 +132,11 @@ const STT_LANGUAGES = [
   { value: "ko-KR", label: "韩语" },
 ];
 
+const AUTO_VALUE = "__auto__";
+const DEFAULT_MEDIA_PREFERENCE: MediaGenerationPreference = {
+  allowFallback: true,
+};
+
 export function VoiceSettings() {
   const [config, setConfig] = useState<Config | null>(null);
   const [voiceConfig, setVoiceConfig] =
@@ -134,6 +148,9 @@ export function VoiceSettings() {
     type: "success" | "error";
     text: string;
   } | null>(null);
+  const { providers, loading: providersLoading } = useApiKeyProvider();
+  const [globalVoicePreference, setGlobalVoicePreference] =
+    useState<MediaGenerationPreference>(DEFAULT_MEDIA_PREFERENCE);
 
   // 加载配置
   useEffect(() => {
@@ -146,6 +163,9 @@ export function VoiceSettings() {
       const c = await getConfig();
       setConfig(c);
       setVoiceConfig(c.voice || DEFAULT_VOICE_CONFIG);
+      setGlobalVoicePreference(
+        c.content_creator?.media_defaults?.voice ?? DEFAULT_MEDIA_PREFERENCE,
+      );
     } catch (e) {
       console.error("加载语音配置失败:", e);
     } finally {
@@ -199,15 +219,167 @@ export function VoiceSettings() {
     }
   };
 
+  const saveGlobalVoicePreference = async (
+    nextPreference: MediaGenerationPreference,
+  ) => {
+    if (!config) return;
+
+    try {
+      const persistedPreference =
+        buildPersistedMediaGenerationPreference(nextPreference);
+      const updatedFullConfig: Config = {
+        ...config,
+        content_creator: {
+          enabled_themes: config.content_creator?.enabled_themes ?? [],
+          ...config.content_creator,
+          media_defaults: {
+            ...config.content_creator?.media_defaults,
+            voice: persistedPreference,
+          },
+        },
+      };
+      await saveConfig(updatedFullConfig);
+      setConfig(updatedFullConfig);
+      setGlobalVoicePreference(nextPreference);
+      showMessage("success", "设置已保存");
+    } catch (e) {
+      console.error("保存全局语音服务配置失败:", e);
+      showMessage("error", "保存失败");
+    }
+  };
+
   const showMessage = (type: "success" | "error", text: string) => {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), 3000);
+  };
+
+  const ttsProviders = useMemo(
+    () =>
+      providers.filter(
+        (provider) =>
+          provider.enabled &&
+          provider.api_key_count > 0 &&
+          isTtsProvider(provider.id, provider.type),
+      ),
+    [providers],
+  );
+
+  const selectedGlobalVoiceProvider = useMemo(
+    () =>
+      ttsProviders.find(
+        (provider) => provider.id === globalVoicePreference.preferredProviderId,
+      ) ?? null,
+    [globalVoicePreference.preferredProviderId, ttsProviders],
+  );
+
+  const availableGlobalVoiceModels = useMemo(() => {
+    if (!selectedGlobalVoiceProvider) {
+      return [];
+    }
+    return getTtsModelsForProvider(selectedGlobalVoiceProvider.custom_models);
+  }, [selectedGlobalVoiceProvider]);
+
+  const providerUnavailableLabel =
+    globalVoicePreference.preferredProviderId && !selectedGlobalVoiceProvider
+      ? "当前配置不可用：" + globalVoicePreference.preferredProviderId
+      : undefined;
+
+  const modelUnavailableLabel =
+    globalVoicePreference.preferredModelId &&
+    !availableGlobalVoiceModels.includes(globalVoicePreference.preferredModelId)
+      ? "当前配置不可用：" + globalVoicePreference.preferredModelId
+      : undefined;
+
+  const handleGlobalVoiceProviderChange = (value: string) => {
+    const preferredProviderId = value === AUTO_VALUE ? undefined : value;
+    const nextProvider = ttsProviders.find(
+      (provider) => provider.id === preferredProviderId,
+    );
+    const nextModels = nextProvider
+      ? getTtsModelsForProvider(nextProvider.custom_models)
+      : [];
+    const preferredModelId = preferredProviderId
+      ? nextModels.includes(globalVoicePreference.preferredModelId || "")
+        ? globalVoicePreference.preferredModelId
+        : nextModels[0]
+      : undefined;
+
+    void saveGlobalVoicePreference({
+      preferredProviderId,
+      preferredModelId,
+      allowFallback: globalVoicePreference.allowFallback ?? true,
+    });
+  };
+
+  const handleGlobalVoiceModelChange = (value: string) => {
+    void saveGlobalVoicePreference({
+      ...globalVoicePreference,
+      preferredModelId: value === AUTO_VALUE ? undefined : value,
+      allowFallback: globalVoicePreference.allowFallback ?? true,
+    });
+  };
+
+  const handleGlobalVoiceFallbackChange = (value: boolean) => {
+    void saveGlobalVoicePreference({
+      ...globalVoicePreference,
+      allowFallback: value,
+    });
+  };
+
+  const handleResetGlobalVoicePreference = () => {
+    void saveGlobalVoicePreference(DEFAULT_MEDIA_PREFERENCE);
   };
 
   const availableVoices = TTS_VOICES[voiceConfig.tts_service || "openai"] || [];
 
   return (
     <div className="space-y-4 max-w-2xl">
+      <MediaPreferenceSection
+        title="全局默认语音服务"
+        description="新项目默认继承这里的设置；项目里留空时会继续跟随这里。"
+        providerLabel="默认语音 Provider"
+        providerValue={globalVoicePreference.preferredProviderId ?? AUTO_VALUE}
+        providerAutoLabel="自动选择"
+        onProviderChange={handleGlobalVoiceProviderChange}
+        providers={ttsProviders.map((provider) => ({
+          value: provider.id,
+          label: provider.name,
+        }))}
+        providerUnavailableLabel={providerUnavailableLabel}
+        modelLabel="默认语音模型"
+        modelValue={globalVoicePreference.preferredModelId ?? AUTO_VALUE}
+        modelAutoLabel="自动选择"
+        onModelChange={handleGlobalVoiceModelChange}
+        models={availableGlobalVoiceModels.map((model) => ({
+          value: model,
+          label: model,
+        }))}
+        modelUnavailableLabel={modelUnavailableLabel}
+        modelHint="配音、BGM 与音效生成会优先使用这里的 Provider / 模型；未指定时沿用自动匹配策略。"
+        allowFallback={globalVoicePreference.allowFallback ?? true}
+        onAllowFallbackChange={handleGlobalVoiceFallbackChange}
+        fallbackTitle="默认语音服务不可用时自动回退"
+        fallbackDescription="关闭后，若全局默认语音服务缺失、被禁用或无可用 Key，将直接提示错误。"
+        emptyHint={
+          providersLoading
+            ? "正在加载语音 Provider..."
+            : ttsProviders.length === 0
+              ? "暂无可用语音 Provider，请先到凭证管理中配置可配音 / TTS 的服务。"
+              : "未指定时将沿用现有自动匹配规则。"
+        }
+        disabled={!config}
+        modelDisabled={
+          providersLoading ||
+          !globalVoicePreference.preferredProviderId ||
+          availableGlobalVoiceModels.length === 0
+        }
+        onReset={handleResetGlobalVoicePreference}
+        resetLabel="恢复默认"
+        resetDisabled={
+          !hasMediaGenerationPreferenceOverride(globalVoicePreference)
+        }
+      />
+
       {/* 语音总开关 */}
       <div className="rounded-lg border p-3">
         <div className="flex items-center justify-between mb-3">

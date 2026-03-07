@@ -4,7 +4,7 @@
  * 提供防抖同步、状态管理和失败重试功能
  */
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { updateContent } from "@/lib/api/project";
 
 export type SyncStatus = "idle" | "syncing" | "success" | "error";
@@ -35,6 +35,8 @@ export function useContentSync(
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const statusResetTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const isSyncingRef = useRef(false);
   const lastSyncDataRef = useRef<{ contentId: string; body: string } | null>(
     null,
   );
@@ -43,29 +45,56 @@ export function useContentSync(
     body: string;
   } | null>(null);
 
+  const clearTimers = useCallback(() => {
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+      syncTimeoutRef.current = undefined;
+    }
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = undefined;
+    }
+    if (statusResetTimeoutRef.current) {
+      clearTimeout(statusResetTimeoutRef.current);
+      statusResetTimeoutRef.current = undefined;
+    }
+  }, []);
+
   const syncContent = useCallback(
     (contentId: string, body: string) => {
-      // 与最近一次成功同步内容一致时，跳过重复同步
-      if (
+      const isSameAsLastSuccess =
         lastSuccessfulSyncRef.current?.contentId === contentId &&
-        lastSuccessfulSyncRef.current.body === body
+        lastSuccessfulSyncRef.current.body === body;
+      if (isSameAsLastSuccess) {
+        return;
+      }
+
+      const isSameAsLatestPending =
+        lastSyncDataRef.current?.contentId === contentId &&
+        lastSyncDataRef.current.body === body;
+      if (
+        isSameAsLatestPending &&
+        (Boolean(syncTimeoutRef.current) ||
+          Boolean(retryTimeoutRef.current) ||
+          isSyncingRef.current)
       ) {
         return;
       }
 
-      // 保存最后的同步数据（用于重试）
       lastSyncDataRef.current = { contentId, body };
 
-      // 清除之前的定时器
       if (syncTimeoutRef.current) {
         clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = undefined;
       }
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = undefined;
       }
 
-      // 防抖：延迟后同步
       syncTimeoutRef.current = setTimeout(async () => {
+        syncTimeoutRef.current = undefined;
+        isSyncingRef.current = true;
         setSyncStatus("syncing");
 
         try {
@@ -73,8 +102,11 @@ export function useContentSync(
           lastSuccessfulSyncRef.current = { contentId, body };
           setSyncStatus("success");
 
-          // 3 秒后重置状态
-          setTimeout(() => {
+          if (statusResetTimeoutRef.current) {
+            clearTimeout(statusResetTimeoutRef.current);
+          }
+          statusResetTimeoutRef.current = setTimeout(() => {
+            statusResetTimeoutRef.current = undefined;
             setSyncStatus((current) =>
               current === "success" ? "idle" : current,
             );
@@ -83,9 +115,9 @@ export function useContentSync(
           console.error("同步内容失败:", error);
           setSyncStatus("error");
 
-          // 自动重试
           if (autoRetry && lastSyncDataRef.current) {
             retryTimeoutRef.current = setTimeout(() => {
+              retryTimeoutRef.current = undefined;
               if (lastSyncDataRef.current) {
                 console.log("[useContentSync] 重试同步...");
                 syncContent(
@@ -95,6 +127,8 @@ export function useContentSync(
               }
             }, retryDelayMs);
           }
+        } finally {
+          isSyncingRef.current = false;
         }
       }, debounceMs);
     },
@@ -103,13 +137,14 @@ export function useContentSync(
 
   const resetStatus = useCallback(() => {
     setSyncStatus("idle");
-    if (syncTimeoutRef.current) {
-      clearTimeout(syncTimeoutRef.current);
-    }
-    if (retryTimeoutRef.current) {
-      clearTimeout(retryTimeoutRef.current);
-    }
-  }, []);
+    clearTimers();
+    isSyncingRef.current = false;
+  }, [clearTimers]);
+
+  useEffect(() => () => {
+    clearTimers();
+    isSyncingRef.current = false;
+  }, [clearTimers]);
 
   return { syncContent, syncStatus, resetStatus };
 }

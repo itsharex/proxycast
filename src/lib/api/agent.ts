@@ -739,6 +739,14 @@ export interface AsterProviderConfig {
   base_url?: string;
 }
 
+export interface AutoContinueRequestPayload {
+  enabled: boolean;
+  fast_mode_enabled: boolean;
+  continuation_length: number;
+  sensitivity: number;
+  source?: string;
+}
+
 /**
  * Aster 会话信息（匹配后端 SessionInfo 结构）
  */
@@ -827,6 +835,7 @@ export async function sendAsterMessageStream(
   providerConfig?: AsterProviderConfig,
   executionStrategy?: AsterExecutionStrategy,
   webSearch?: boolean,
+  autoContinue?: AutoContinueRequestPayload,
 ): Promise<void> {
   const resolvedWorkspaceId = requireWorkspaceId(workspaceId);
 
@@ -840,6 +849,7 @@ export async function sendAsterMessageStream(
       workspace_id: resolvedWorkspaceId,
       execution_strategy: executionStrategy,
       web_search: webSearch,
+      auto_continue: autoContinue,
     },
   });
 }

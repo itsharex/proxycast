@@ -8,16 +8,18 @@ import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useApiKeyProvider } from "@/hooks/useApiKeyProvider";
 import { apiKeyProviderApi } from "@/lib/api/apiKeyProvider";
+import { getImageModelsForProvider } from "@/lib/imageGeneration";
+import { isDebugFlagEnabled } from "@/lib/perfDebug";
 import { setStoredResourceProjectId } from "@/lib/resourceProjectSelection";
 import type {
   GeneratedImage,
   ImageGenRequest,
   ImageGenResponse,
-  ImageGenModel,
 } from "./types";
-import { IMAGE_GEN_MODELS, IMAGE_GEN_PROVIDER_IDS } from "./types";
+import { IMAGE_GEN_PROVIDER_IDS } from "./types";
 
 const HISTORY_KEY = "image-gen-history";
+const PROVIDER_DEBUG_KEY = "proxycast:provider-debug";
 
 interface GenerateImageOptions {
   imageCount?: number;
@@ -59,6 +61,11 @@ interface SaveImageToResourceResult {
   error?: string;
 }
 
+interface UseImageGenOptions {
+  preferredProviderId?: string;
+  preferredModelId?: string;
+}
+
 const IMAGE_REQUEST_TIMEOUT_MS = 180_000;
 const FAL_DEFAULT_API_HOST = "https://fal.run";
 const FAL_QUEUE_API_HOST = "https://queue.fal.run";
@@ -66,6 +73,13 @@ const FAL_QUEUE_POLL_INTERVAL_MS = 1500;
 const FAL_QUEUE_TIMEOUT_MS = 180_000;
 const IMAGE_GEN_MATERIAL_TAG = "image-gen";
 const IMAGE_MATERIAL_NAME_MAX_LENGTH = 48;
+
+function imageGenDebugLog(...args: unknown[]): void {
+  if (!isDebugFlagEnabled(PROVIDER_DEBUG_KEY)) {
+    return;
+  }
+  console.debug(...args);
+}
 
 function sanitizeMaterialName(value: string): string {
   return value
@@ -1509,42 +1523,10 @@ function isImageGenProvider(providerId: string, providerType: string): boolean {
   );
 }
 
-/**
- * 根据 Provider 获取支持的图片模型
- * 优先使用 Provider 的 custom_models，回退到预设模型
- */
-function getModelsForProvider(
-  providerId: string,
-  providerType: string,
-  customModels?: string[],
-): ImageGenModel[] {
-  // 优先使用 Provider 的自定义模型
-  if (customModels && customModels.length > 0) {
-    return customModels.map((modelId) => ({
-      id: modelId,
-      name: modelId,
-      supportedSizes: [
-        "1024x1024",
-        "768x1344",
-        "1344x768",
-        "1792x1024",
-        "1024x1792",
-      ],
-    }));
-  }
-  // 回退到预设模型（Provider ID 匹配）
-  if (IMAGE_GEN_MODELS[providerId]) {
-    return IMAGE_GEN_MODELS[providerId];
-  }
-  // 回退到预设模型（Provider type 匹配）
-  if (IMAGE_GEN_MODELS[providerType]) {
-    return IMAGE_GEN_MODELS[providerType];
-  }
-  return [];
-}
-
-export function useImageGen() {
+export function useImageGen(options: UseImageGenOptions = {}) {
   const { providers, loading: providersLoading } = useApiKeyProvider();
+  const preferredProviderId = options.preferredProviderId?.trim() || "";
+  const preferredModelId = options.preferredModelId?.trim() || "";
 
   const [selectedProviderId, setSelectedProviderId] = useState<string>("");
   const [selectedModelId, setSelectedModelId] = useState<string>("");
@@ -1557,11 +1539,11 @@ export function useImageGen() {
 
   // 过滤出支持图片生成、启用且有 API Key 的 Provider
   const availableProviders = useMemo(() => {
-    console.log(
+    imageGenDebugLog(
       "[useImageGen] 支持图片生成的 Provider IDs:",
       IMAGE_GEN_PROVIDER_IDS,
     );
-    console.log(
+    imageGenDebugLog(
       "[useImageGen] 所有 Provider:",
       providers.map((p) => ({
         id: p.id,
@@ -1577,7 +1559,7 @@ export function useImageGen() {
         p.enabled && p.api_key_count > 0 && isImageGenProvider(p.id, p.type),
     );
 
-    console.log(
+    imageGenDebugLog(
       "[useImageGen] 过滤后的 Provider:",
       filtered.map((p) => p.id),
     );
@@ -1604,22 +1586,29 @@ export function useImageGen() {
     imagesRef.current = images;
   }, [images]);
 
-  // 自动选择第一个可用的 Provider
+  // 自动选择可用 Provider，优先使用项目偏好
   useEffect(() => {
-    if (!selectedProviderId && availableProviders.length > 0) {
-      const firstProvider = availableProviders[0];
-      setSelectedProviderId(firstProvider.id);
-      // 设置默认模型
-      const models = getModelsForProvider(
-        firstProvider.id,
-        firstProvider.type,
-        firstProvider.custom_models,
-      );
-      if (models.length > 0) {
-        setSelectedModelId(models[0].id);
-      }
+    if (availableProviders.length === 0) {
+      return;
     }
-  }, [availableProviders, selectedProviderId]);
+
+    const currentProviderAvailable = availableProviders.some(
+      (provider) => provider.id === selectedProviderId,
+    );
+
+    if (selectedProviderId && currentProviderAvailable) {
+      return;
+    }
+
+    const preferredProvider = preferredProviderId
+      ? availableProviders.find((provider) => provider.id === preferredProviderId)
+      : null;
+    const nextProvider = preferredProvider ?? availableProviders[0];
+
+    if (nextProvider) {
+      setSelectedProviderId(nextProvider.id);
+    }
+  }, [availableProviders, preferredProviderId, selectedProviderId]);
 
   // 保存历史记录
   const saveHistory = useCallback((newImages: GeneratedImage[]) => {
@@ -1719,7 +1708,7 @@ export function useImageGen() {
   // 获取当前 Provider 支持的模型
   const availableModels = useMemo(() => {
     if (!selectedProvider) return [];
-    return getModelsForProvider(
+    return getImageModelsForProvider(
       selectedProvider.id,
       selectedProvider.type,
       selectedProvider.custom_models,
@@ -1730,6 +1719,29 @@ export function useImageGen() {
   const selectedModel = useMemo(() => {
     return availableModels.find((m) => m.id === selectedModelId);
   }, [availableModels, selectedModelId]);
+
+  useEffect(() => {
+    if (availableModels.length === 0) {
+      return;
+    }
+
+    if (
+      preferredModelId &&
+      availableModels.some((model) => model.id === preferredModelId) &&
+      selectedModelId !== preferredModelId
+    ) {
+      setSelectedModelId(preferredModelId);
+      return;
+    }
+
+    const hasSelectedModel = availableModels.some(
+      (model) => model.id === selectedModelId,
+    );
+
+    if (!hasSelectedModel) {
+      setSelectedModelId(availableModels[0]?.id ?? "");
+    }
+  }, [availableModels, preferredModelId, selectedModelId]);
 
   // 获取当前选中的图片
   const selectedImage = useMemo(() => {
@@ -1742,7 +1754,7 @@ export function useImageGen() {
       setSelectedProviderId(providerId);
       const provider = availableProviders.find((p) => p.id === providerId);
       if (provider) {
-        const models = getModelsForProvider(
+        const models = getImageModelsForProvider(
           provider.id,
           provider.type,
           provider.custom_models,
@@ -2160,7 +2172,7 @@ export function useImageGen() {
 
   // 新建图片（创建一个新的空白图片项）
   const newImage = useCallback(() => {
-    console.log("[useImageGen] newImage 被调用，创建新图片项");
+    imageGenDebugLog("[useImageGen] newImage 被调用，创建新图片项");
     const imageId = `img-${Date.now()}`;
     const newImg: GeneratedImage = {
       id: imageId,

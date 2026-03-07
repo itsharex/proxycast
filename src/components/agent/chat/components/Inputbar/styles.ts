@@ -31,6 +31,10 @@ export const Container = styled.div`
   width: 100%;
   max-width: none;
   margin: 0;
+
+  &.floating-composer {
+    padding: 0 0 4px 0;
+  }
 `;
 
 export const InputBarContainer = styled.div`
@@ -58,6 +62,50 @@ export const InputBarContainer = styled.div`
     border: 2px dashed #2ecc71;
     background-color: rgba(46, 204, 113, 0.03);
   }
+
+  &.floating-composer {
+    border-radius: 14px;
+    padding-top: 1px;
+    background: linear-gradient(180deg, #fcfdff 0%, #f7f9fc 100%);
+    border-color: #d7e0ea;
+    box-shadow:
+      0 10px 26px rgba(15, 23, 42, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.78);
+    backdrop-filter: none;
+    opacity: 1;
+
+    @media (prefers-color-scheme: dark) {
+      background: linear-gradient(180deg, #2a2f39 0%, #232831 100%);
+      border-color: #404958;
+      box-shadow:
+        0 12px 28px rgba(0, 0, 0, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+  }
+
+  &.floating-composer.floating-collapsed {
+    padding-top: 0;
+    min-height: 44px;
+    cursor: text;
+  }
+
+  &.floating-composer:focus-within {
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    border-color: #c5d3e2;
+    box-shadow:
+      0 0 0 3px rgba(191, 219, 254, 0.38),
+      0 12px 28px rgba(15, 23, 42, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.86);
+
+    @media (prefers-color-scheme: dark) {
+      background: linear-gradient(180deg, #303744 0%, #272d37 100%);
+      border-color: #556174;
+      box-shadow:
+        0 0 0 3px rgba(96, 165, 250, 0.16),
+        0 12px 28px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+  }
 `;
 
 export const StyledTextarea = styled.textarea`
@@ -78,8 +126,22 @@ export const StyledTextarea = styled.textarea`
   color: hsl(var(--foreground));
   min-height: 30px;
 
+  &.floating-composer {
+    padding: 0 12px;
+    font-size: 13px;
+    line-height: 1.4;
+    min-height: 22px;
+  }
+
+  &.floating-composer.floating-collapsed {
+    padding: 10px 48px 10px 14px;
+    min-height: 42px;
+    line-height: 1.35;
+    overflow: hidden;
+  }
+
   &::placeholder {
-    color: hsl(var(--muted-foreground));
+    color: hsl(var(--muted-foreground) / 0.78);
   }
 
   &::-webkit-scrollbar {
@@ -103,6 +165,26 @@ export const BottomBar = styled.div`
   z-index: 2;
   flex-shrink: 0;
   min-width: 0;
+
+  &.floating-composer {
+    padding: 2px 8px 6px;
+    height: 34px;
+    gap: 10px;
+    border-top: 1px solid hsl(var(--border) / 0.75);
+  }
+
+  &.floating-composer.floating-collapsed {
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    transform: translateY(-50%);
+    width: auto;
+    min-width: 0;
+    height: auto;
+    padding: 0;
+    gap: 0;
+    border-top: none;
+  }
 `;
 // ... (LeftSection and RightSection seem fine without vars, skipping for brevity of replace block if possible but might as well include to be safe or target specific chunks)
 
@@ -117,6 +199,11 @@ export const LeftSection = styled.div`
   overflow-y: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  transition:
+    opacity 0.16s ease,
+    width 0.16s ease,
+    flex-basis 0.16s ease,
+    margin 0.16s ease;
 
   &::-webkit-scrollbar {
     display: none;
@@ -124,6 +211,13 @@ export const LeftSection = styled.div`
 
   > * {
     flex-shrink: 0;
+  }
+
+  &.floating-collapsed {
+    flex: 0 0 0;
+    width: 0;
+    opacity: 0;
+    pointer-events: none;
   }
 `;
 
@@ -133,6 +227,10 @@ export const RightSection = styled.div`
   gap: 6px; /* Cherry Studio Exact: 6px */
   flex-shrink: 0;
   margin-left: 4px;
+
+  &.floating-collapsed {
+    margin-left: 0;
+  }
 `;
 
 // --- InputbarTools Styles ---

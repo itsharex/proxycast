@@ -12,6 +12,7 @@ import type {
   ExportFormat,
 } from "../types";
 import { createInitialDocumentState } from "../types";
+import { exportDocumentContent } from "../utils/exportDocument";
 
 /**
  * 文档画布状态管理 Hook
@@ -136,41 +137,7 @@ export function useDocumentCanvas(initialContent: string = "") {
    */
   const exportDocument = useCallback(
     async (format: ExportFormat) => {
-      const content = state.content;
-
-      switch (format) {
-        case "markdown": {
-          const blob = new Blob([content], { type: "text/markdown" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = "document.md";
-          a.click();
-          URL.revokeObjectURL(url);
-          break;
-        }
-        case "text": {
-          // 简单去除 Markdown 格式
-          const plainText = content
-            .replace(/#{1,6}\s/g, "")
-            .replace(/\*\*(.+?)\*\*/g, "$1")
-            .replace(/\*(.+?)\*/g, "$1")
-            .replace(/`(.+?)`/g, "$1")
-            .replace(/\[(.+?)\]\(.+?\)/g, "$1");
-          const blob = new Blob([plainText], { type: "text/plain" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = "document.txt";
-          a.click();
-          URL.revokeObjectURL(url);
-          break;
-        }
-        case "clipboard": {
-          await navigator.clipboard.writeText(content);
-          break;
-        }
-      }
+      await exportDocumentContent(state.content, format);
     },
     [state.content],
   );

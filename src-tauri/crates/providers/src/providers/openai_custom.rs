@@ -256,9 +256,11 @@ impl OpenAICustomProvider {
         }
     }
 
-    fn base_url_parent(&self) -> Option<String> {
-        let base = self.get_base_url();
+    fn parent_base_url(base: &str) -> Option<String> {
         let base = base.trim();
+        if base.is_empty() {
+            return None;
+        }
 
         let mut url = Url::parse(base)
             .or_else(|_| Url::parse(&format!("http://{base}")))
@@ -288,6 +290,11 @@ impl OpenAICustomProvider {
         Some(url.to_string().trim_end_matches('/').to_string())
     }
 
+    fn base_url_parent(&self) -> Option<String> {
+        let base = self.get_base_url();
+        Self::parent_base_url(&base)
+    }
+
     fn build_urls_with_fallbacks(&self, endpoint: &str) -> Vec<String> {
         let mut urls: Vec<String> = Vec::new();
 
@@ -300,8 +307,13 @@ impl OpenAICustomProvider {
             }
         }
 
-        if let Some(parent_base) = self.base_url_parent() {
-            let u = Self::build_url_from_base(&parent_base, endpoint);
+        let mut parent_base = self.base_url_parent();
+        for _ in 0..6 {
+            let Some(current_parent) = parent_base else {
+                break;
+            };
+
+            let u = Self::build_url_from_base(&current_parent, endpoint);
             if !urls.iter().any(|x| x == &u) {
                 urls.push(u.clone());
             }
@@ -312,6 +324,8 @@ impl OpenAICustomProvider {
                     urls.push(u2);
                 }
             }
+
+            parent_base = Self::parent_base_url(&current_parent);
         }
 
         urls
@@ -764,6 +778,19 @@ mod tests {
             .unwrap_or_default();
 
         assert!(description.contains("[InputExamples]"));
+    }
+
+    #[test]
+    fn test_build_urls_with_fallbacks_supports_nested_proxy_path() {
+        let provider = OpenAICustomProvider::with_config(
+            "sk-test".to_string(),
+            Some("http://127.0.0.1:3030/openai/v1".to_string()),
+        );
+        let urls = provider.build_urls_with_fallbacks("chat/completions");
+
+        assert!(urls.contains(&"http://127.0.0.1:3030/openai/v1/chat/completions".to_string()));
+        assert!(urls.contains(&"http://127.0.0.1:3030/openai/chat/completions".to_string()));
+        assert!(urls.contains(&"http://127.0.0.1:3030/v1/chat/completions".to_string()));
     }
 
     #[tokio::test]

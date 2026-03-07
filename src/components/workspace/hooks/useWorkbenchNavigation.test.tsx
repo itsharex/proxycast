@@ -20,9 +20,7 @@ function NavigationHarness(props: NavigationHarnessProps) {
     <div
       data-mode={navigation.workspaceMode}
       data-view={navigation.activeWorkspaceView}
-      data-drawer={navigation.activeRightDrawer ?? "none"}
       data-show-workflow-rail={String(navigation.showWorkflowRail)}
-      data-show-chat={String(navigation.showChatPanel)}
       data-should-render-left-sidebar={String(navigation.shouldRenderLeftSidebar)}
       data-is-create-view={String(navigation.isCreateWorkspaceView)}
       data-right-rail={String(navigation.shouldRenderWorkspaceRightRail)}
@@ -56,12 +54,6 @@ function NavigationHarness(props: NavigationHarnessProps) {
         data-testid="prepare-workflow-rail-state"
         onClick={() => {
           navigation.setShowWorkflowRail(true);
-        }}
-      />
-      <button
-        data-testid="prepare-activity-log-state"
-        onClick={() => {
-          navigation.setActiveRightDrawer("activity-log");
         }}
       />
     </div>
@@ -173,7 +165,6 @@ describe("useWorkbenchNavigation", () => {
     clickElement(prepareButton);
 
     let root = container.firstElementChild as HTMLElement | null;
-    expect(root?.dataset.drawer).toBe("none");
     expect(root?.dataset.showWorkflowRail).toBe("true");
 
     const switchPublishButton = container.querySelector(
@@ -183,40 +174,10 @@ describe("useWorkbenchNavigation", () => {
     clickElement(switchPublishButton);
 
     root = container.firstElementChild as HTMLElement | null;
-    expect(root?.dataset.drawer).toBe("none");
     expect(root?.dataset.showWorkflowRail).toBe("false");
   });
 
-  it("切换到非 create 视图时收起活动日志抽屉", () => {
-    const setLeftSidebarCollapsed = vi.fn();
 
-    const { container } = renderHarness({
-      navigationItems: [
-        { key: "create", label: "创作" },
-        { key: "publish", label: "发布" },
-        { key: "settings", label: "设置" },
-      ],
-      setLeftSidebarCollapsed,
-    });
-
-    const prepareButton = container.querySelector(
-      "button[data-testid='prepare-activity-log-state']",
-    );
-    expect(prepareButton).not.toBeNull();
-    clickElement(prepareButton);
-
-    let root = container.firstElementChild as HTMLElement | null;
-    expect(root?.dataset.drawer).toBe("activity-log");
-
-    const switchPublishButton = container.querySelector(
-      "button[data-testid='switch-publish']",
-    );
-    expect(switchPublishButton).not.toBeNull();
-    clickElement(switchPublishButton);
-
-    root = container.firstElementChild as HTMLElement | null;
-    expect(root?.dataset.drawer).toBe("none");
-  });
 
   it("返回项目管理时恢复项目管理模式并展开左栏", () => {
     const setLeftSidebarCollapsed = vi.fn();
@@ -238,7 +199,6 @@ describe("useWorkbenchNavigation", () => {
 
     const root = container.firstElementChild as HTMLElement | null;
     expect(root?.dataset.mode).toBe("project-management");
-    expect(root?.dataset.showChat).toBe("true");
     expect(root?.dataset.shouldRenderLeftSidebar).toBe("true");
     expect(setLeftSidebarCollapsed).toHaveBeenLastCalledWith(false);
   });

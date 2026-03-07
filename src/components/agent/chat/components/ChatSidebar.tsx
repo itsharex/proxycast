@@ -1,9 +1,5 @@
 import React, { useState } from "react";
-import {
-  Plus,
-  MessageSquare,
-  Trash2,
-} from "lucide-react";
+import { MessageSquare, Plus, Trash2 } from "lucide-react";
 import styled from "styled-components";
 import type { Topic } from "../hooks/useAgentChat";
 
@@ -17,7 +13,8 @@ const SidebarContainer = styled.div`
 `;
 
 const Toolbar = styled.div`
-  padding: 12px 12px 8px;
+  padding: 12px;
+  border-bottom: 1px solid hsl(var(--border));
 `;
 
 const NewTopicButton = styled.button`
@@ -43,7 +40,7 @@ const NewTopicButton = styled.button`
 const ListContainer = styled.div`
   flex: 1;
   overflow-y: auto;
-  padding: 0 8px 8px;
+  padding: 8px;
 `;
 
 const ListItem = styled.div<{ $active: boolean }>`
@@ -78,11 +75,11 @@ const ListItem = styled.div<{ $active: boolean }>`
     transition: opacity 0.15s;
     padding: 4px;
     border-radius: 4px;
+  }
 
-    &:hover {
-      background-color: hsl(var(--destructive) / 0.15);
-      color: hsl(var(--destructive));
-    }
+  .delete-btn:hover {
+    background-color: hsl(var(--destructive) / 0.15);
+    color: hsl(var(--destructive));
   }
 
   &:hover .delete-btn {
@@ -118,23 +115,21 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   const [editTitle, setEditTitle] = useState("");
   const editInputRef = React.useRef<HTMLInputElement>(null);
 
-  const handleDeleteClick = (e: React.MouseEvent, topicId: string) => {
-    e.stopPropagation();
+  const handleDeleteClick = (event: React.MouseEvent, topicId: string) => {
+    event.stopPropagation();
     onDeleteTopic(topicId);
   };
 
-  // 开始编辑标题
   const handleStartEdit = (
-    e: React.MouseEvent,
+    event: React.MouseEvent,
     topicId: string,
     currentTitle: string,
   ) => {
-    e.stopPropagation();
+    event.stopPropagation();
     setEditingTopicId(topicId);
     setEditTitle(currentTitle);
   };
 
-  // 保存编辑的标题
   const handleSaveEdit = () => {
     if (editingTopicId && editTitle.trim() && onRenameTopic) {
       onRenameTopic(editingTopicId, editTitle.trim());
@@ -143,22 +138,19 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
     setEditTitle("");
   };
 
-  // 取消编辑
   const handleCancelEdit = () => {
     setEditingTopicId(null);
     setEditTitle("");
   };
 
-  // 处理输入框键盘事件
-  const handleEditKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
+  const handleEditKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Enter") {
       handleSaveEdit();
-    } else if (e.key === "Escape") {
+    } else if (event.key === "Escape") {
       handleCancelEdit();
     }
   };
 
-  // 当编辑状态变化时，自动聚焦输入框
   React.useEffect(() => {
     if (editingTopicId && editInputRef.current) {
       editInputRef.current.focus();
@@ -188,16 +180,14 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                   onSwitchTopic(topic.id);
                 }
               }}
-              onDoubleClick={(e) =>
-                handleStartEdit(e, topic.id, topic.title)
+              onDoubleClick={(event) =>
+                handleStartEdit(event, topic.id, topic.title)
               }
             >
               <MessageSquare
                 size={15}
                 className={
-                  topic.id === currentTopicId
-                    ? "text-primary"
-                    : "opacity-50"
+                  topic.id === currentTopicId ? "text-primary" : "opacity-50"
                 }
               />
               {editingTopicId === topic.id ? (
@@ -205,10 +195,10 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                   ref={editInputRef}
                   type="text"
                   value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
+                  onChange={(event) => setEditTitle(event.target.value)}
                   onKeyDown={handleEditKeyDown}
                   onBlur={handleSaveEdit}
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={(event) => event.stopPropagation()}
                   style={{
                     flex: 1,
                     fontSize: "13px",
@@ -221,14 +211,14 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
               ) : (
                 <span className="title">{topic.title}</span>
               )}
-              {editingTopicId !== topic.id && (
+              {editingTopicId !== topic.id ? (
                 <button
                   className="delete-btn"
-                  onClick={(e) => handleDeleteClick(e, topic.id)}
+                  onClick={(event) => handleDeleteClick(event, topic.id)}
                 >
                   <Trash2 size={14} />
                 </button>
-              )}
+              ) : null}
             </ListItem>
           ))
         )}
@@ -236,3 +226,4 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
     </SidebarContainer>
   );
 };
+

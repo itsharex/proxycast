@@ -10,10 +10,6 @@ use tracing;
 use uuid::Uuid;
 
 #[cfg(target_os = "windows")]
-use std::ptr;
-#[cfg(target_os = "windows")]
-use winapi::um::winnt::KEY_READ;
-#[cfg(target_os = "windows")]
 use winreg::{enums::*, RegKey};
 
 pub struct MachineIdService {

@@ -12,7 +12,6 @@ import { VideoCanvasProps } from "./types";
 import { VideoSidebar, type VideoProviderOption } from "./VideoSidebar";
 import { VideoWorkspace } from "./VideoWorkspace";
 import { apiKeyProviderApi } from "@/lib/api/apiKeyProvider";
-import { CanvasBreadcrumbHeader } from "../shared/CanvasBreadcrumbHeader";
 import {
   ackCanvasImageInsertRequest,
   emitCanvasImageInsertAck,
@@ -213,7 +212,6 @@ export const VideoCanvas: React.FC<VideoCanvasProps> = memo(
     projectId,
     contentId,
     onClose: _onClose,
-    onBackHome,
   }) => {
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [topicPanelCollapsed, setTopicPanelCollapsed] = useState(false);
@@ -350,8 +348,6 @@ export const VideoCanvas: React.FC<VideoCanvasProps> = memo(
 
     return (
       <Root>
-        <CanvasBreadcrumbHeader label="视频" onBackHome={onBackHome} />
-
         <Body>
           <SidebarContainer $collapsed={sidebarCollapsed}>
             <VideoSidebar

@@ -4,13 +4,17 @@
  * @module components/content-creator/canvas/CanvasFactory
  */
 
-import React, { memo, useMemo } from "react";
+import React, { memo, useMemo, lazy, Suspense } from "react";
 import type { ThemeType } from "../types";
 import { DocumentCanvas } from "./document";
-import type { DocumentCanvasState } from "./document/types";
+import type {
+  AutoContinueRunPayload,
+  ContentReviewRunPayload,
+  DocumentCanvasState,
+  TextStylizeRunPayload,
+} from "./document/types";
 import { PosterCanvas } from "./poster";
 import type { PosterCanvasState } from "./poster/types";
-import { MusicCanvas } from "./music";
 import type { MusicCanvasState } from "./music/types";
 import { ScriptCanvas } from "./script";
 import type { ScriptCanvasState } from "./script/types";
@@ -19,6 +23,12 @@ import type { NovelCanvasState } from "./novel/types";
 import { VideoCanvas } from "./video";
 import type { VideoCanvasState } from "./video/types";
 import { getCanvasTypeForTheme, type CanvasStateUnion } from "./canvasUtils";
+
+// 延迟加载 MusicCanvas，避免 tone.js 在模块加载时创建 blob URL
+// （WebKit WebView 不支持通过 blob URL 加载 AudioWorklet）
+const LazyMusicCanvas = lazy(() =>
+  import("./music").then((mod) => ({ default: mod.MusicCanvas })),
+);
 
 /**
  * 画布工厂 Props
@@ -53,6 +63,34 @@ interface CanvasFactoryProps {
   contentId?: string | null;
   /** 自动配图主题关键词 */
   autoImageTopic?: string;
+  /** 自动续写同步的 Provider */
+  autoContinueProviderType?: string;
+  /** 自动续写 Provider 切换 */
+  onAutoContinueProviderTypeChange?: (providerType: string) => void;
+  /** 自动续写同步的模型 */
+  autoContinueModel?: string;
+  /** 自动续写模型切换 */
+  onAutoContinueModelChange?: (model: string) => void;
+  /** 自动续写同步的思考开关 */
+  autoContinueThinkingEnabled?: boolean;
+  /** 自动续写思考开关切换 */
+  onAutoContinueThinkingEnabledChange?: (enabled: boolean) => void;
+  /** 自动续写执行回调 */
+  onAutoContinueRun?: (payload: AutoContinueRunPayload) => Promise<void> | void;
+  /** 添加图片动作 */
+  onAddImage?: () => Promise<void> | void;
+  /** 导入文稿动作 */
+  onImportDocument?: () => Promise<void> | void;
+  /** 内容评审执行回调 */
+  onContentReviewRun?: (
+    payload: ContentReviewRunPayload,
+  ) => Promise<string> | string;
+  /** 文本风格化执行回调 */
+  onTextStylizeRun?: (
+    payload: TextStylizeRunPayload,
+  ) => Promise<string> | string;
+  /** 文档评审面板位置 */
+  documentContentReviewPlacement?: "inline" | "external-rail";
 }
 
 /**
@@ -74,6 +112,18 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
     projectId,
     contentId,
     autoImageTopic,
+    autoContinueProviderType,
+    onAutoContinueProviderTypeChange,
+    autoContinueModel,
+    onAutoContinueModelChange,
+    autoContinueThinkingEnabled,
+    onAutoContinueThinkingEnabledChange,
+    onAutoContinueRun,
+    onAddImage,
+    onImportDocument,
+    onContentReviewRun,
+    onTextStylizeRun,
+    documentContentReviewPlacement = "inline",
   }) => {
     const resolvedBackHome = onBackHome ?? onClose;
 
@@ -101,6 +151,20 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
           projectId={projectId}
           contentId={contentId}
           autoImageTopic={autoImageTopic}
+          autoContinueProviderType={autoContinueProviderType}
+          onAutoContinueProviderTypeChange={onAutoContinueProviderTypeChange}
+          autoContinueModel={autoContinueModel}
+          onAutoContinueModelChange={onAutoContinueModelChange}
+          autoContinueThinkingEnabled={autoContinueThinkingEnabled}
+          onAutoContinueThinkingEnabledChange={
+            onAutoContinueThinkingEnabledChange
+          }
+          onAutoContinueRun={onAutoContinueRun}
+          onAddImage={onAddImage}
+          onImportDocument={onImportDocument}
+          onContentReviewRun={onContentReviewRun}
+          onTextStylizeRun={onTextStylizeRun}
+          contentReviewPlacement={documentContentReviewPlacement}
         />
       );
     }
@@ -120,15 +184,17 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
 
     if (canvasType === "music" && state.type === "music") {
       return (
-        <MusicCanvas
-          state={state}
-          onStateChange={onStateChange as (s: MusicCanvasState) => void}
-          onBackHome={resolvedBackHome}
-          onClose={onClose}
-          isStreaming={isStreaming}
-          projectId={projectId}
-          contentId={contentId}
-        />
+        <Suspense fallback={null}>
+          <LazyMusicCanvas
+            state={state}
+            onStateChange={onStateChange as (s: MusicCanvasState) => void}
+            onBackHome={resolvedBackHome}
+            onClose={onClose}
+            isStreaming={isStreaming}
+            projectId={projectId}
+            contentId={contentId}
+          />
+        </Suspense>
       );
     }
 

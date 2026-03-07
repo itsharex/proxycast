@@ -12,21 +12,13 @@ import type {
   WorkspaceViewMode,
 } from "@/types/page";
 import { WorkspaceShell, WorkspaceTopbar } from "@/components/workspace/shell";
-import {
-  WorkbenchCreateContentDialog,
-  WorkbenchCreateContentDialogBoundary,
-  WorkbenchCreateProjectDialog,
-} from "@/components/workspace/dialogs";
+import { WorkbenchCreateProjectDialog } from "@/components/workspace/dialogs";
 import {
   WorkbenchLeftSidebar,
   WorkbenchMainContent,
   WorkbenchRightRail,
 } from "@/components/workspace/panels";
-import {
-  CREATION_MODE_OPTIONS,
-  MIN_CREATION_INTENT_LENGTH,
-  useWorkbenchController,
-} from "@/components/workspace/hooks/useWorkbenchController";
+import { useWorkbenchController } from "@/components/workspace/hooks/useWorkbenchController";
 
 export interface WorkbenchPageProps {
   onNavigate?: (page: Page, params?: PageParams) => void;
@@ -35,6 +27,9 @@ export interface WorkbenchPageProps {
   theme: WorkspaceTheme;
   viewMode?: WorkspaceViewMode;
   resetAt?: number;
+  initialCreatePrompt?: string;
+  initialCreateSource?: "workspace_prompt" | "quick_create" | "project_created";
+  initialCreateFallbackTitle?: string;
 }
 
 export function WorkbenchPage({
@@ -44,26 +39,20 @@ export function WorkbenchPage({
   theme,
   viewMode: initialViewMode,
   resetAt,
+  initialCreatePrompt,
+  initialCreateSource,
+  initialCreateFallbackTitle,
 }: WorkbenchPageProps) {
   const {
     themeModule,
     leftSidebarCollapsed,
     toggleLeftSidebar,
-    activeRightDrawer,
-    setActiveRightDrawer,
-    showChatPanel,
-    setShowChatPanel,
     setWorkflowProgress,
-    currentChatSessionId,
     setCurrentChatSessionId,
     workspaceMode,
     activeWorkspaceView,
     setCreateProjectDialogOpen,
-    setCreateContentDialogOpen,
-    setCreateContentDialogStep,
-    setCreationIntentError,
     setNewProjectName,
-    setSelectedCreationMode,
     setProjectQuery,
     setContentQuery,
     selectedProject,
@@ -76,18 +65,11 @@ export function WorkbenchPage({
     projectQuery,
     contentQuery,
     createProjectDialogOpen,
-    createContentDialogOpen,
-    createContentDialogStep,
     newProjectName,
     workspaceProjectsRoot,
     creatingProject,
-    creatingContent,
-    selectedCreationMode,
-    creationIntentValues,
-    creationIntentError,
-    currentCreationIntentFields,
-    currentIntentLength,
     pendingInitialPromptsByContentId,
+    pendingCreateConfirmation,
     contentCreationModes,
     resolvedProjectPath,
     pathChecking,
@@ -95,6 +77,7 @@ export function WorkbenchPage({
     projectTypeLabel,
     shouldRenderLeftSidebar,
     isCreateWorkspaceView,
+    showCreateContentEntryHome,
     shouldRenderWorkspaceRightRail,
     activeWorkspaceViewLabel,
     currentContentTitle,
@@ -106,13 +89,12 @@ export function WorkbenchPage({
     loadProjects,
     handleOpenCreateProjectDialog,
     handleCreateProject,
-    resetCreateContentDialogState,
     handleOpenCreateContentDialog,
-    handleCreationIntentValueChange,
-    handleGoToIntentStep,
-    handleCreateContent,
+    handleCreateContentFromWorkspacePrompt,
     handleQuickCreateNovelEntry,
     handleOpenProjectWriting,
+    handleSubmitCreateConfirmation,
+    handleCancelCreateConfirmation,
     consumePendingInitialPrompt,
     handleBackHome,
     handleOpenCreateHome,
@@ -127,6 +109,9 @@ export function WorkbenchPage({
     theme,
     initialViewMode,
     resetAt,
+    initialCreatePrompt,
+    initialCreateSource,
+    initialCreateFallbackTitle,
   });
 
   return (
@@ -199,9 +184,15 @@ export function WorkbenchPage({
             onNavigate={onNavigate}
             theme={theme}
             pendingInitialPromptsByContentId={pendingInitialPromptsByContentId}
+            pendingCreateConfirmation={pendingCreateConfirmation}
+            onSubmitCreateConfirmation={(formData) => {
+              void handleSubmitCreateConfirmation(formData);
+            }}
+            onCancelCreateConfirmation={handleCancelCreateConfirmation}
             onConsumePendingInitialPrompt={consumePendingInitialPrompt}
             contentCreationModes={contentCreationModes}
-            showChatPanel={showChatPanel}
+            showChatPanel={true}
+            showCreateContentEntryHome={showCreateContentEntryHome}
             onWorkflowProgressChange={setWorkflowProgress}
             onChatSessionChange={setCurrentChatSessionId}
             activePanelRenderer={ActivePanelRenderer}
@@ -211,17 +202,9 @@ export function WorkbenchPage({
           <WorkbenchRightRail
             shouldRender={shouldRenderWorkspaceRightRail}
             isCreateWorkspaceView={isCreateWorkspaceView}
-            activeRightDrawer={activeRightDrawer}
-            showChatPanel={showChatPanel}
-            onToggleChatPanel={() => setShowChatPanel((visible) => !visible)}
-            onToggleActivityLogDrawer={() =>
-              setActiveRightDrawer((previous) =>
-                previous === "activity-log" ? null : "activity-log",
-              )
-            }
+            projectId={selectedProjectId}
             onBackToCreateView={() => handleSwitchWorkspaceView("create")}
-            activityLogWorkspaceId={selectedProjectId}
-            activityLogSessionId={currentChatSessionId}
+            onCreateContentFromPrompt={handleCreateContentFromWorkspacePrompt}
           />
         }
       />
@@ -246,48 +229,6 @@ export function WorkbenchPage({
         }}
       />
 
-      <WorkbenchCreateContentDialogBoundary
-        open={createContentDialogOpen}
-        step={createContentDialogStep}
-        mode={selectedCreationMode}
-      >
-        <WorkbenchCreateContentDialog
-          open={createContentDialogOpen}
-          creatingContent={creatingContent}
-          step={createContentDialogStep}
-          selectedProjectId={selectedProjectId}
-          creationModeOptions={CREATION_MODE_OPTIONS}
-          selectedCreationMode={selectedCreationMode}
-          onCreationModeChange={setSelectedCreationMode}
-          currentCreationIntentFields={currentCreationIntentFields}
-          creationIntentValues={creationIntentValues}
-          onCreationIntentValueChange={handleCreationIntentValueChange}
-          currentIntentLength={currentIntentLength}
-          minCreationIntentLength={MIN_CREATION_INTENT_LENGTH}
-          creationIntentError={creationIntentError}
-          onOpenChange={(open) => {
-            if (!creatingContent) {
-              setCreateContentDialogOpen(open);
-              if (!open) {
-                resetCreateContentDialogState();
-              }
-            }
-          }}
-          onBackOrCancel={() => {
-            if (createContentDialogStep === "intent") {
-              setCreateContentDialogStep("mode");
-              setCreationIntentError("");
-              return;
-            }
-            setCreateContentDialogOpen(false);
-            resetCreateContentDialogState();
-          }}
-          onGoToIntentStep={handleGoToIntentStep}
-          onCreateContent={() => {
-            void handleCreateContent();
-          }}
-        />
-      </WorkbenchCreateContentDialogBoundary>
     </div>
   );
 }

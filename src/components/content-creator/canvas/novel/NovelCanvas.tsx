@@ -20,7 +20,6 @@ import { NotionEditor } from "@/components/content-creator/canvas/document/edito
 import { toast } from "sonner";
 import type { NovelCanvasState, Chapter } from "./types";
 import { countWords } from "./types";
-import { CanvasBreadcrumbHeader } from "../shared/CanvasBreadcrumbHeader";
 import {
   ackCanvasImageInsertRequest,
   emitCanvasImageInsertAck,
@@ -275,7 +274,6 @@ export const NovelCanvas: React.FC<NovelCanvasProps> = memo(
     onStateChange,
     projectId,
     contentId,
-    onBackHome,
     onClose,
     useExternalToolbar = false,
     chapterListCollapsed,
@@ -512,8 +510,6 @@ export const NovelCanvas: React.FC<NovelCanvasProps> = memo(
 
     return (
       <Container>
-        <CanvasBreadcrumbHeader label="小说" onBackHome={onBackHome} />
-
         <InnerContainer>
           {!useExternalToolbar && (
             <Header>

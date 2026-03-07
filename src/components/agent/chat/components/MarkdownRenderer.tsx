@@ -358,9 +358,6 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(
                 console.error("[MarkdownRenderer] 图片加载失败:", img.alt);
                 (e.target as HTMLImageElement).style.display = "none";
               }}
-              onLoad={() => {
-                console.log("[MarkdownRenderer] 图片加载成功:", img.alt);
-              }}
             />
             <span
               style={{
@@ -415,24 +412,11 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(
                     : codeChildren || "",
                 ).replace(/\n$/, "");
 
-                // 调试：输出检测到的语言
-                if (language) {
-                  console.log(
-                    "[MarkdownRenderer] pre 组件检测到语言:",
-                    language,
-                  );
-                }
-
                 // 如果是 a2ui 代码块，特殊处理
                 if (language === "a2ui") {
-                  console.log(
-                    "[MarkdownRenderer] a2ui 代码块内容长度:",
-                    codeContent.length,
-                  );
                   const parsed = parseA2UIJson(codeContent);
 
                   if (parsed) {
-                    console.log("[MarkdownRenderer] a2ui 解析成功，渲染表单");
                     // 解析成功，直接渲染 A2UI 组件（不包裹在 pre 中）
                     return (
                       <A2UIRenderer
@@ -442,9 +426,6 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(
                       />
                     );
                   } else {
-                    console.log(
-                      "[MarkdownRenderer] a2ui 解析失败，显示加载状态",
-                    );
                     // 解析失败（可能是流式输出中，JSON 还不完整）
                     return (
                       <A2UILoadingContainer>

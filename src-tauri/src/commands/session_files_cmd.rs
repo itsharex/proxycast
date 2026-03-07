@@ -112,6 +112,17 @@ pub fn session_files_read_file(
     storage.read_file(&session_id, &file_name)
 }
 
+/// 解析会话文件绝对路径
+#[tauri::command]
+pub fn session_files_resolve_file_path(
+    state: State<SessionFilesState>,
+    session_id: String,
+    file_name: String,
+) -> Result<String, String> {
+    let storage = state.0.lock().map_err(|e| format!("锁定失败: {e}"))?;
+    storage.resolve_file_path(&session_id, &file_name)
+}
+
 /// 删除会话文件
 #[tauri::command]
 pub fn session_files_delete_file(

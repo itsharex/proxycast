@@ -19,8 +19,10 @@ import {
   stopAsterSession,
   type AgentProcessStatus,
   type SessionInfo,
+  type SkillInfo,
   type StreamEvent,
 } from "@/lib/api/agent";
+import { skillsApi } from "@/lib/api/skills";
 import { A2UIFormAPI } from "@/lib/api/a2uiForm";
 import type { A2UIFormData } from "@/components/content-creator/a2ui/types";
 import {
@@ -675,23 +677,34 @@ export function useAgentChat(options: UseAgentChatOptions) {
 
   const createFreshSession = async (): Promise<string | null> => {
     try {
-      // TEMPORARY FIX: Disable skills integration due to API type mismatch (Backend expects []SystemMessage, Client sends String)
-      // const [claudeSkills, proxyCastSkills] = await Promise.all([
-      //     skillsApi.getAll("claude").catch(() => []),
-      //     skillsApi.getInstalledProxyCastSkills().catch(() => []),
-      // ]);
+      const [allProxycastSkills, localInstalledSkills] = await Promise.all([
+        skillsApi.getAll("proxycast").catch(() => []),
+        skillsApi.getInstalledProxyCastSkills().catch(() => []),
+      ]);
+      const detailsByName = new Map<string, SkillInfo>();
 
-      // const details: SkillInfo[] = claudeSkills.filter(s => s.installed).map(s => ({
-      //     name: s.name,
-      //     description: s.description,
-      //     path: s.directory ? `~/.claude/skills/${s.directory}/SKILL.md` : undefined,
-      // }));
+      allProxycastSkills
+        .filter((skill) => skill.installed)
+        .forEach((skill) => {
+          const skillName = (skill.directory || skill.key || skill.name || "").trim();
+          if (!skillName) return;
+          detailsByName.set(skillName, {
+            name: skillName,
+            description: skill.description || undefined,
+            path: `~/.proxycast/skills/${skillName}/SKILL.md`,
+          });
+        });
 
-      // proxyCastSkills.forEach(name => {
-      //     if (!details.find(d => d.name === name)) {
-      //         details.push({ name, path: `~/.proxycast/skills/${name}/SKILL.md` });
-      //     }
-      // });
+      localInstalledSkills.forEach((name) => {
+        const skillName = (name || "").trim();
+        if (!skillName || detailsByName.has(skillName)) return;
+        detailsByName.set(skillName, {
+          name: skillName,
+          path: `~/.proxycast/skills/${skillName}/SKILL.md`,
+        });
+      });
+
+      const details = Array.from(detailsByName.values());
 
       // Create new session with CURRENT provider/model as baseline
       // 传递 systemPrompt 用于内容创作等场景
@@ -701,7 +714,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
         resolvedWorkspaceId,
         model || undefined,
         systemPrompt, // 传递系统提示词
-        undefined, // details.length > 0 ? details : undefined
+        details.length > 0 ? details : undefined,
       );
 
       setSessionId(response.session_id);

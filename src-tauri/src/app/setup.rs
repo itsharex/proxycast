@@ -8,6 +8,7 @@ use tauri::{App, Manager};
 // use crate::agent::tools::{set_term_scrollback_tool_app_handle, set_terminal_tool_app_handle};
 use crate::agent::AsterAgentState;
 use crate::database;
+use crate::skills::ensure_default_local_skills;
 use crate::telemetry;
 use crate::tray::{TrayIconStatus, TrayManager, TrayStateSnapshot};
 use proxycast_scheduler::AgentScheduler;
@@ -78,6 +79,17 @@ pub fn setup_app(
         let conn = proxycast_core::database::lock_db(&db)?;
         database::dao::skills::SkillDao::init_default_skill_repos(&conn)
             .expect("Failed to initialize default skill repos");
+    }
+    match ensure_default_local_skills() {
+        Ok(installed) if installed.is_empty() => {
+            tracing::info!("[启动] 默认本地 Skills 已存在，跳过写入");
+        }
+        Ok(installed) => {
+            tracing::info!("[启动] 默认本地 Skills 安装完成: {}", installed.join(", "));
+        }
+        Err(error) => {
+            tracing::warn!("[启动] 安装默认本地 Skills 失败: {}", error);
+        }
     }
 
     // 初始化调度器数据库表

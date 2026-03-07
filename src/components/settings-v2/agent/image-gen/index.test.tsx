@@ -12,6 +12,22 @@ vi.mock("@/hooks/useTauri", () => ({
   saveConfig: mockSaveConfig,
 }));
 
+vi.mock("@/hooks/useApiKeyProvider", () => ({
+  useApiKeyProvider: () => ({
+    providers: [
+      {
+        id: "fal",
+        type: "fal",
+        name: "Fal",
+        enabled: true,
+        api_key_count: 1,
+        custom_models: ["fal-ai/nano-banana-pro"],
+      },
+    ],
+    loading: false,
+  }),
+}));
+
 import { ImageGenSettings } from ".";
 
 interface Mounted {
@@ -58,6 +74,16 @@ beforeEach(() => {
   vi.clearAllMocks();
 
   mockGetConfig.mockResolvedValue({
+    content_creator: {
+      enabled_themes: ["general", "video"],
+      media_defaults: {
+        image: {
+          preferredProviderId: "fal",
+          preferredModelId: "fal-ai/nano-banana-pro",
+          allowFallback: true,
+        },
+      },
+    },
     image_gen: {
       default_service: "dall_e",
       default_count: 1,
@@ -90,6 +116,7 @@ describe("ImageGenSettings", () => {
     await flushEffects();
     await flushEffects();
 
+    expect(container.textContent).toContain("全局默认图片服务");
     expect(container.textContent).toContain("默认图像生成服务");
     expect(container.textContent).toContain("默认图像数量");
   });
@@ -112,6 +139,22 @@ describe("ImageGenSettings", () => {
         }),
       }),
     );
+    expect(container.textContent).toContain("设置已保存");
+  });
+
+  it("恢复全局默认后应清空图片服务覆盖", async () => {
+    const container = renderComponent();
+    await flushEffects();
+    await flushEffects();
+
+    await act(async () => {
+      findButton(container, "恢复默认").click();
+      await flushEffects();
+    });
+
+    expect(mockSaveConfig).toHaveBeenCalledTimes(1);
+    const savedConfig = mockSaveConfig.mock.calls[0][0];
+    expect(savedConfig.content_creator.media_defaults.image).toBeUndefined();
     expect(container.textContent).toContain("设置已保存");
   });
 });

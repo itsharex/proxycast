@@ -157,6 +157,26 @@ describe("BaseComposer", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
+  it("输入法合成阶段按 Enter 不应触发发送", () => {
+    const { container, onSend } = renderHarness({ initialText: "你好" });
+    const textarea = getTextarea(container);
+
+    const imeEnterEvent = new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+    });
+    Object.defineProperty(imeEnterEvent, "isComposing", {
+      value: true,
+      configurable: true,
+    });
+
+    act(() => {
+      textarea.dispatchEvent(imeEnterEvent);
+    });
+
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
   it("生成中点击主按钮应触发停止", () => {
     const { container, onSend, onStop } = renderHarness({
       initialText: "hello",

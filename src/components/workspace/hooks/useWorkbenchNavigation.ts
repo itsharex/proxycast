@@ -53,10 +53,6 @@ export function useWorkbenchNavigation({
   isAgentChatWorkspace,
   hasPrimaryWorkspaceRenderer,
 }: UseWorkbenchNavigationParams) {
-  const [activeRightDrawer, setActiveRightDrawer] = useState<
-    "activity-log" | null
-  >(null);
-  const [showChatPanel, setShowChatPanel] = useState(true);
   const [workflowProgress, setWorkflowProgress] =
     useState<WorkflowProgressSnapshot | null>(null);
   const [showWorkflowRail, setShowWorkflowRail] = useState(false);
@@ -77,8 +73,6 @@ export function useWorkbenchNavigation({
 
       setWorkspaceMode(mode);
       setActiveWorkspaceView(view);
-      setShowChatPanel(true);
-      setActiveRightDrawer(null);
       setLeftSidebarCollapsed(mode === "workspace");
     },
     [defaultWorkspaceView, navigationItems, setLeftSidebarCollapsed],
@@ -95,8 +89,6 @@ export function useWorkbenchNavigation({
 
   const handleBackToProjectManagement = useCallback(() => {
     setWorkspaceMode("project-management");
-    setShowChatPanel(true);
-    setActiveRightDrawer(null);
     setLeftSidebarCollapsed(false);
   }, [setLeftSidebarCollapsed]);
 
@@ -104,21 +96,14 @@ export function useWorkbenchNavigation({
     (view: ThemeWorkspaceView) => {
       setWorkspaceMode("workspace");
       setActiveWorkspaceView(view);
-      setActiveRightDrawer(null);
       setLeftSidebarCollapsed(true);
-      if (view === "create") {
-        setShowChatPanel(true);
-      }
     },
     [setLeftSidebarCollapsed],
   );
 
   const handleSwitchWorkspaceView = useCallback((view: ThemeWorkspaceView) => {
     setActiveWorkspaceView(view);
-    if (view === "create") {
-      setShowChatPanel(true);
-    } else {
-      setActiveRightDrawer(null);
+    if (view !== "create") {
       setShowWorkflowRail(false);
     }
   }, []);
@@ -168,10 +153,6 @@ export function useWorkbenchNavigation({
   );
 
   return {
-    activeRightDrawer,
-    setActiveRightDrawer,
-    showChatPanel,
-    setShowChatPanel,
     workflowProgress,
     setWorkflowProgress,
     showWorkflowRail,

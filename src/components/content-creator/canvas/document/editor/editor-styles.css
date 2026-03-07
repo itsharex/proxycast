@@ -6,10 +6,10 @@
 
 .notion-editor-wrapper .ProseMirror {
   min-height: 100%;
-  padding: 16px 24px;
+  padding: 20px 28px;
   outline: none;
   font-size: 15px;
-  line-height: 1.75;
+  line-height: 1.8;
   color: hsl(var(--foreground));
 }
 
@@ -26,38 +26,41 @@
 .notion-editor-wrapper .ProseMirror h1 {
   font-size: 1.875rem;
   font-weight: 700;
-  margin-top: 1.5rem;
-  margin-bottom: 0.5rem;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.3;
 }
 
 .notion-editor-wrapper .ProseMirror h2 {
   font-size: 1.5rem;
   font-weight: 600;
-  margin-top: 1.25rem;
-  margin-bottom: 0.5rem;
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.35;
 }
 
 .notion-editor-wrapper .ProseMirror h3 {
   font-size: 1.25rem;
   font-weight: 600;
-  margin-top: 1rem;
-  margin-bottom: 0.5rem;
+  margin-top: 1.5rem;
+  margin-bottom: 0.625rem;
+  line-height: 1.4;
 }
 
 /* Paragraph */
 .notion-editor-wrapper .ProseMirror p {
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.75rem;
 }
 
 /* Code block */
 .notion-editor-wrapper .ProseMirror pre {
   background: hsl(var(--muted));
   border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
+  padding: 1rem 1.25rem;
   font-family: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 0.875rem;
   overflow-x: auto;
-  margin: 0.5rem 0;
+  margin: 1rem 0;
 }
 
 .notion-editor-wrapper .ProseMirror pre code {
@@ -79,14 +82,22 @@
   border-left: 3px solid hsl(var(--border));
   padding-left: 1rem;
   color: hsl(var(--muted-foreground));
-  margin: 0.5rem 0;
+  margin: 1rem 0;
 }
 
 /* Lists */
 .notion-editor-wrapper .ProseMirror ul,
 .notion-editor-wrapper .ProseMirror ol {
-  padding-left: 1.5rem;
-  margin: 0.25rem 0;
+  padding-left: 1.75rem;
+  margin: 0.75rem 0;
+}
+
+.notion-editor-wrapper .ProseMirror li {
+  margin-bottom: 0.5rem;
+}
+
+.notion-editor-wrapper .ProseMirror li:last-child {
+  margin-bottom: 0;
 }
 
 /* Task list */
@@ -137,14 +148,14 @@
 .notion-editor-wrapper .ProseMirror hr {
   border: none;
   border-top: 1px solid hsl(var(--border));
-  margin: 1rem 0;
+  margin: 1.5rem 0;
 }
 
 /* Image */
 .notion-editor-wrapper .ProseMirror img {
   max-width: 100%;
   border-radius: 0.5rem;
-  margin: 0.5rem 0;
+  margin: 1rem 0;
 }
 
 /* Highlight */
@@ -152,4 +163,58 @@
   background-color: hsl(50 100% 70% / 0.4);
   border-radius: 0.15rem;
   padding: 0.1rem 0;
+}
+
+/* Readonly state during AI generation */
+.notion-editor-readonly .ProseMirror {
+  cursor: default;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Scanning light effect — sticky element inside scrollable wrapper */
+.notion-editor-readonly .notion-editor-scan-bar {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 0;
+  z-index: 10;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.notion-editor-readonly .notion-editor-scan-bar::after {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 40px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    hsl(var(--primary) / 0.06) 30%,
+    hsl(var(--primary) / 0.13) 50%,
+    hsl(var(--primary) / 0.06) 70%,
+    transparent 100%
+  );
+  animation: scan-sweep 2.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes scan-sweep {
+  0% {
+    transform: translateY(0vh);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(calc(100vh - 200px));
+    opacity: 0;
+  }
 }

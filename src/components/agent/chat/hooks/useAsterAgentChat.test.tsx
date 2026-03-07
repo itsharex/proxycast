@@ -16,6 +16,8 @@ const {
   mockParseStreamEvent,
   mockSafeListen,
   mockToast,
+  mockParseSkillSlashCommand,
+  mockTryExecuteSlashSkillCommand,
 } = vi.hoisted(() => ({
   mockInitAsterAgent: vi.fn(),
   mockSendAsterMessageStream: vi.fn(),
@@ -35,6 +37,8 @@ const {
     info: vi.fn(),
     warning: vi.fn(),
   },
+  mockParseSkillSlashCommand: vi.fn(() => null),
+  mockTryExecuteSlashSkillCommand: vi.fn(async () => false),
 }));
 
 vi.mock("@/lib/api/agent", () => ({
@@ -57,6 +61,11 @@ vi.mock("@/lib/dev-bridge", () => ({
 
 vi.mock("sonner", () => ({
   toast: mockToast,
+}));
+
+vi.mock("./skillCommand", () => ({
+  parseSkillSlashCommand: mockParseSkillSlashCommand,
+  tryExecuteSlashSkillCommand: mockTryExecuteSlashSkillCommand,
 }));
 
 import { useAsterAgentChat } from "./useAsterAgentChat";
@@ -147,11 +156,49 @@ beforeEach(() => {
   mockConfirmAsterAction.mockResolvedValue(undefined);
   mockSubmitAsterElicitationResponse.mockResolvedValue(undefined);
   mockSafeListen.mockResolvedValue(() => {});
+  mockParseSkillSlashCommand.mockReturnValue(null);
+  mockTryExecuteSlashSkillCommand.mockResolvedValue(false);
 });
 
 afterEach(() => {
   localStorage.clear();
   sessionStorage.clear();
+});
+
+describe("useAsterAgentChat 首页新会话", () => {
+  it("clearMessages 后重新进入同工作区不应恢复旧话题", async () => {
+    const workspaceId = "ws-home-clear";
+    const sessionId = "session-home-clear";
+    seedSession(workspaceId, sessionId);
+
+    let harness = mountHook(workspaceId);
+
+    try {
+      await flushEffects();
+      act(() => {
+        harness.getValue().clearMessages({ showToast: false });
+      });
+      await flushEffects();
+
+      expect(harness.getValue().sessionId).toBeNull();
+      expect(harness.getValue().messages).toEqual([]);
+      expect(sessionStorage.getItem(`aster_curr_sessionId_${workspaceId}`)).toBe("null");
+      expect(sessionStorage.getItem(`aster_messages_${workspaceId}`)).toBe("[]");
+      expect(localStorage.getItem(`aster_last_sessionId_${workspaceId}`)).toBe("null");
+    } finally {
+      harness.unmount();
+    }
+
+    harness = mountHook(workspaceId);
+
+    try {
+      await flushEffects();
+      expect(harness.getValue().sessionId).toBeNull();
+      expect(harness.getValue().messages).toEqual([]);
+    } finally {
+      harness.unmount();
+    }
+  });
 });
 
 describe("useAsterAgentChat.confirmAction", () => {
@@ -233,6 +280,71 @@ describe("useAsterAgentChat.confirmAction", () => {
         "req-ask-user-1",
         { answer: "选项A" },
       );
+    } finally {
+      harness.unmount();
+    }
+  });
+});
+
+describe("useAsterAgentChat slash skill 执行链路", () => {
+  it("命中 slash skill 时应走 execute_skill 分支而非 chat_stream", async () => {
+    const workspaceId = "ws-slash-skill";
+    const harness = mountHook(workspaceId);
+
+    mockParseSkillSlashCommand.mockReturnValue({
+      skillName: "social_post_with_cover",
+      userInput: "写一篇春季新品文案",
+    });
+    mockTryExecuteSlashSkillCommand.mockResolvedValue(true);
+
+    try {
+      await flushEffects();
+      await act(async () => {
+        await harness.getValue().sendMessage(
+          "/social_post_with_cover 写一篇春季新品文案",
+          [],
+          false,
+          false,
+          false,
+          "react",
+        );
+      });
+
+      expect(mockParseSkillSlashCommand).toHaveBeenCalledWith(
+        "/social_post_with_cover 写一篇春季新品文案",
+      );
+      expect(mockTryExecuteSlashSkillCommand).toHaveBeenCalledTimes(1);
+      expect(mockSendAsterMessageStream).not.toHaveBeenCalled();
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  it("slash skill 未处理时应回退到 chat_stream", async () => {
+    const workspaceId = "ws-slash-fallback";
+    const harness = mountHook(workspaceId);
+
+    mockParseSkillSlashCommand.mockReturnValue({
+      skillName: "social_post_with_cover",
+      userInput: "写一篇春季新品文案",
+    });
+    mockTryExecuteSlashSkillCommand.mockResolvedValue(false);
+
+    try {
+      await flushEffects();
+      await act(async () => {
+        await harness.getValue().sendMessage(
+          "/social_post_with_cover 写一篇春季新品文案",
+          [],
+          false,
+          false,
+          false,
+          "react",
+        );
+      });
+
+      expect(mockTryExecuteSlashSkillCommand).toHaveBeenCalledTimes(1);
+      expect(mockSendAsterMessageStream).toHaveBeenCalledTimes(1);
     } finally {
       harness.unmount();
     }
@@ -1672,6 +1784,37 @@ describe("useAsterAgentChat 兼容接口", () => {
         provider_id: providerId,
         provider_name: providerId,
         model_name: model,
+      });
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  it("triggerAIGuide 应使用工作区已选模型发送请求", async () => {
+    const workspaceId = "ws-guide-selected-model";
+    const selectedProvider = "gemini";
+    const selectedModel = "gemini-2.5-pro";
+    localStorage.setItem(
+      `agent_pref_provider_${workspaceId}`,
+      JSON.stringify(selectedProvider),
+    );
+    localStorage.setItem(
+      `agent_pref_model_${workspaceId}`,
+      JSON.stringify(selectedModel),
+    );
+
+    const harness = mountHook(workspaceId);
+
+    try {
+      await flushEffects();
+      await act(async () => {
+        await harness.getValue().triggerAIGuide("请输出一版社媒主稿");
+      });
+
+      expect(mockSendAsterMessageStream).toHaveBeenCalledTimes(1);
+      expect(mockSendAsterMessageStream.mock.calls[0]?.[5]).toMatchObject({
+        provider_id: selectedProvider,
+        model_name: selectedModel,
       });
     } finally {
       harness.unmount();

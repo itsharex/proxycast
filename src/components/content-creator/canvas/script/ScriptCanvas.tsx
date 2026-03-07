@@ -13,7 +13,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import type { ScriptCanvasState, Scene, Dialogue } from "./types";
-import { CanvasBreadcrumbHeader } from "../shared/CanvasBreadcrumbHeader";
 import {
   ackCanvasImageInsertRequest,
   emitCanvasImageInsertAck,
@@ -174,7 +173,7 @@ function appendImageMarkdown(text: string, image: InsertableImage): string {
 }
 
 export const ScriptCanvas: React.FC<ScriptCanvasProps> = memo(
-  ({ state, onStateChange, projectId, contentId, onBackHome, onClose }) => {
+  ({ state, onStateChange, projectId, contentId, onClose }) => {
     const [highlightedSceneId, setHighlightedSceneId] = React.useState<
       string | null
     >(null);
@@ -351,8 +350,6 @@ export const ScriptCanvas: React.FC<ScriptCanvasProps> = memo(
 
     return (
       <Container>
-        <CanvasBreadcrumbHeader label="剧本" onBackHome={onBackHome} />
-
         <InnerContainer>
           <Header>
             <Title>剧本</Title>

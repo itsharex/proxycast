@@ -570,6 +570,9 @@ pub struct ContentCreatorConfig {
     /// 启用的主题列表
     #[serde(default = "default_enabled_themes")]
     pub enabled_themes: Vec<String>,
+    /// 全局媒体生成默认设置
+    #[serde(default)]
+    pub media_defaults: MediaGenerationDefaultsConfig,
 }
 
 fn default_enabled_themes() -> Vec<String> {
@@ -587,8 +590,45 @@ impl Default for ContentCreatorConfig {
     fn default() -> Self {
         Self {
             enabled_themes: default_enabled_themes(),
+            media_defaults: MediaGenerationDefaultsConfig::default(),
         }
     }
+}
+
+fn default_media_generation_allow_fallback() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaGenerationPreferenceConfig {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "preferred_provider_id"
+    )]
+    pub preferred_provider_id: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "preferred_model_id"
+    )]
+    pub preferred_model_id: Option<String>,
+    #[serde(
+        default = "default_media_generation_allow_fallback",
+        alias = "allow_fallback"
+    )]
+    pub allow_fallback: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct MediaGenerationDefaultsConfig {
+    #[serde(default)]
+    pub image: MediaGenerationPreferenceConfig,
+    #[serde(default)]
+    pub video: MediaGenerationPreferenceConfig,
+    #[serde(default)]
+    pub voice: MediaGenerationPreferenceConfig,
 }
 
 // ============ 导航栏配置类型 ============

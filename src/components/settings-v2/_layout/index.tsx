@@ -5,17 +5,17 @@
  * 参考成熟产品的设置布局设计
  */
 
-import { useState, ReactNode, useEffect, useRef } from "react";
+import { useState, ReactNode, useEffect, useRef, useCallback } from "react";
 import styled from "styled-components";
 import { SettingsSidebar } from "./SettingsSidebar";
 import { SettingsTabs } from "@/types/settings";
-import { buildHomeAgentParams } from "@/lib/workspace/navigation";
 import { Page, PageParams } from "@/types/page";
+import { buildHomeAgentParams } from "@/lib/workspace/navigation";
 import { CanvasBreadcrumbHeader } from "@/components/content-creator/canvas/shared/CanvasBreadcrumbHeader";
 
 // 外观设置
-import { AppearanceSettings } from '../general/appearance';
-import { ChatAppearanceSettings } from '../general/chat-appearance';
+import { AppearanceSettings } from "../general/appearance";
+import { ChatAppearanceSettings } from "../general/chat-appearance";
 import { MemorySettings } from "../general/memory";
 // 安全与性能
 import { SecurityPerformanceSettings } from "../system/security-performance";
@@ -39,6 +39,7 @@ import { VoiceSettings } from "../agent/voice";
 import { AssistantSettings } from "../agent/assistant";
 // 图像生成设置
 import { ImageGenSettings } from "../agent/image-gen";
+import { VideoGenSettings } from "../agent/video-gen";
 // 数据统计
 import { StatsSettings } from "../account/stats";
 // 个人资料
@@ -56,6 +57,14 @@ const LayoutContainer = styled.div`
   display: flex;
   flex: 1;
   min-height: 0;
+  background: hsl(var(--background));
+`;
+
+const HeaderBar = styled.div`
+  display: flex;
+  align-items: center;
+  padding: 8px 24px;
+  border-bottom: 1px solid hsl(var(--border));
   background: hsl(var(--background));
 `;
 
@@ -81,15 +90,6 @@ const ContentContainer = styled.main`
 const ContentWrapper = styled.div<{ $wide: boolean }>`
   width: 100%;
   max-width: ${({ $wide }) => ($wide ? "none" : "800px")};
-`;
-
-const HeaderBar = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px 24px;
-  border-bottom: 1px solid hsl(var(--border));
-  background: hsl(var(--background));
 `;
 
 const PlaceholderPage = styled.div`
@@ -190,8 +190,16 @@ function renderSettingsContent(tab: SettingsTabs): ReactNode {
     case SettingsTabs.ImageGen:
       return (
         <>
-          <SettingHeader title="绘画服务" />
+          <SettingHeader title="图片服务" />
           <ImageGenSettings />
+        </>
+      );
+
+    case SettingsTabs.VideoGen:
+      return (
+        <>
+          <SettingHeader title="视频服务" />
+          <VideoGenSettings />
         </>
       );
 
@@ -325,6 +333,10 @@ export function SettingsLayoutV2({
   );
   const contentContainerRef = useRef<HTMLElement | null>(null);
 
+  const handleBackHome = useCallback(() => {
+    onNavigate?.("agent", buildHomeAgentParams());
+  }, [onNavigate]);
+
   useEffect(() => {
     if (initialTab) {
       setActiveTab(initialTab);
@@ -335,19 +347,12 @@ export function SettingsLayoutV2({
     contentContainerRef.current?.scrollTo({ top: 0, behavior: "auto" });
   }, [activeTab]);
 
-  const handleBackToHome = () => {
-    if (onNavigate) {
-      onNavigate("agent", buildHomeAgentParams());
-    }
-  };
-
   return (
     <>
-      {/* 顶部返回栏 */}
-      <HeaderBar>
-        <CanvasBreadcrumbHeader label="设置" onBackHome={handleBackToHome} />
-      </HeaderBar>
       {/* 设置内容 */}
+      <HeaderBar>
+        <CanvasBreadcrumbHeader label="设置" onBackHome={handleBackHome} />
+      </HeaderBar>
       <LayoutContainer>
         <SettingsSidebar activeTab={activeTab} onTabChange={setActiveTab} />
         <ContentContainer ref={contentContainerRef}>
