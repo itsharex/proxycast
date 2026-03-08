@@ -37,7 +37,7 @@ const {
     info: vi.fn(),
     warning: vi.fn(),
   },
-  mockParseSkillSlashCommand: vi.fn(() => null),
+  mockParseSkillSlashCommand: vi.fn((): { skillName: string; userInput: string } | null => null),
   mockTryExecuteSlashSkillCommand: vi.fn(async () => false),
 }));
 

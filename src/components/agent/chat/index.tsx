@@ -310,7 +310,7 @@ interface HandleSendObserver {
 
 interface HandleSendOptions {
   skipThemeSkillPrefix?: boolean;
-  purpose?: "content_review";
+  purpose?: "content_review" | "text_stylize";
   observer?: HandleSendObserver;
 }
 
@@ -3690,9 +3690,14 @@ export function AgentChatPage({
           return;
         }
 
-        const filePath = typeof selected === "string" ? selected : selected.path;
+        const filePath = selected;
         if (!filePath) {
           toast.error("未选择文件");
+          return;
+        }
+
+        if (!sessionId) {
+          toast.error("会话未就绪");
           return;
         }
 
@@ -3742,7 +3747,7 @@ export function AgentChatPage({
         return;
       }
 
-      const filePath = typeof selected === "string" ? selected : selected.path;
+      const filePath = selected;
       if (!filePath) {
         toast.error("未选择文件");
         return;
@@ -4581,14 +4586,16 @@ export function AgentChatPage({
         return;
       }
 
+      const fileContent = file.content ?? "";
+
       setCanvasState((prev) => {
         // 音乐主题：解析歌词并更新 sections
         if (mappedTheme === "music") {
-          const sections = parseLyrics(file.content);
+          const sections = parseLyrics(fileContent);
           if (!prev || prev.type !== "music") {
             const musicState = createInitialMusicState();
             musicState.sections = sections;
-            const titleMatch = file.content.match(/^#\s*(.+)$/m);
+            const titleMatch = fileContent.match(/^#\s*(.+)$/m);
             if (titleMatch) {
               musicState.spec.title = titleMatch[1].trim();
             }
@@ -4598,16 +4605,16 @@ export function AgentChatPage({
         }
 
         if (mappedTheme === "novel") {
-          return upsertNovelCanvasState(prev, file.content);
+          return upsertNovelCanvasState(prev, fileContent);
         }
 
         // 文档类型画布
         if (!prev || prev.type !== "document") {
-          return createInitialDocumentState(file.content);
+          return createInitialDocumentState(fileContent);
         }
         return {
           ...prev,
-          content: file.content,
+          content: fileContent,
         };
       });
       // 只打开画布，不关闭文件列表（让用户自己关闭）
@@ -5267,7 +5274,6 @@ export function AgentChatPage({
     }
 
     const shouldShowCanvasLoadingState =
-      renderCanvasTheme !== "general" &&
       ((!canvasState &&
         (shouldBootstrapCanvasOnEntry ||
           isInitialContentLoading ||

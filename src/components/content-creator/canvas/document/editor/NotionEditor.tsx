@@ -223,7 +223,7 @@ const NotionEditorCore = forwardRef<NotionEditorHandle, NotionEditorProps>(
 
       clearIdleCommitTimer();
       const nextHtml = markdownToHtml(content);
-      editor.commands.setContent(nextHtml, false);
+      editor.commands.setContent(nextHtml, { emitUpdate: false });
       lastCommittedContentRef.current = content;
       dirtyRef.current = false;
       handledExternalInsertRef.current = null;

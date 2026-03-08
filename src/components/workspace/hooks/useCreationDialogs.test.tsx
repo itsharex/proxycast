@@ -589,7 +589,7 @@ describe("useCreationDialogs", () => {
     expect(loadContents).not.toHaveBeenCalled();
     expect(onEnterWorkspace).not.toHaveBeenCalledWith("content-new", {});
 
-    resolveCreateContent?.({ id: "content-new" });
+    (resolveCreateContent as ((value: { id: string }) => void) | null)?.({ id: "content-new" });
     await flushEffects(6);
 
     expect(loadContents).toHaveBeenCalledWith("project-1");

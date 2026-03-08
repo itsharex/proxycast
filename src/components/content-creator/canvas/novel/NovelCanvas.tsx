@@ -616,7 +616,7 @@ export const NovelCanvas: React.FC<NovelCanvasProps> = memo(
                   <NotionEditor
                     key={editorKey}
                     content={currentChapter.content}
-                    onChange={handleUpdateChapter}
+                    onCommit={handleUpdateChapter}
                     onSave={handleToggleStatus}
                     onCancel={() => {}}
                     onSelectionTextChange={onSelectionTextChange}

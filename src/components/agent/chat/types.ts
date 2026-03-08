@@ -103,7 +103,7 @@ export interface Message {
   /** 上下文准备轨迹（可选） */
   contextTrace?: ContextTraceStep[];
   /** 消息用途（用于跳过特定副作用） */
-  purpose?: "content_review";
+  purpose?: "content_review" | "text_stylize";
 }
 
 export interface ChatSession {

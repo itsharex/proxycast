@@ -703,7 +703,6 @@ export const Inputbar: React.FC<InputbarProps> = ({
         isComposing?: boolean;
       };
       if (
-        e.isComposing ||
         nativeEvent.isComposing ||
         nativeEvent.key === "Process" ||
         nativeEvent.keyCode === 229

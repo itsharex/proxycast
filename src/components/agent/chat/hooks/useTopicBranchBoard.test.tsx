@@ -63,7 +63,7 @@ function Probe({
 
 describe("useTopicBranchBoard", () => {
   it("当前话题应自动为进行中", async () => {
-    let snapshot: ReturnType<typeof useTopicBranchBoard> | null = null;
+    let snapshot = null as ReturnType<typeof useTopicBranchBoard> | null;
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -82,12 +82,12 @@ describe("useTopicBranchBoard", () => {
       );
     });
 
-    const current = snapshot?.branchItems.find((item) => item.id === "topic-a");
+    const current = snapshot?.branchItems.find((item: { id: string }) => item.id === "topic-a");
     expect(current?.status).toBe("in_progress");
   });
 
   it("应允许手动设置分支状态", async () => {
-    let snapshot: ReturnType<typeof useTopicBranchBoard> | null = null;
+    let snapshot = null as ReturnType<typeof useTopicBranchBoard> | null;
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -110,7 +110,7 @@ describe("useTopicBranchBoard", () => {
       snapshot?.setTopicStatus("topic-b", "merged");
     });
 
-    const merged = snapshot?.branchItems.find((item) => item.id === "topic-b");
+    const merged = snapshot?.branchItems.find((item: { id: string }) => item.id === "topic-b");
     expect(merged?.status).toBe("merged");
   });
 
@@ -123,7 +123,7 @@ describe("useTopicBranchBoard", () => {
       }),
     );
 
-    let snapshot: ReturnType<typeof useTopicBranchBoard> | null = null;
+    let snapshot = null as ReturnType<typeof useTopicBranchBoard> | null;
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -142,14 +142,14 @@ describe("useTopicBranchBoard", () => {
       );
     });
 
-    const current = snapshot?.branchItems.find((item) => item.id === "topic-a");
-    const merged = snapshot?.branchItems.find((item) => item.id === "topic-b");
+    const current = snapshot?.branchItems.find((item: { id: string }) => item.id === "topic-a");
+    const merged = snapshot?.branchItems.find((item: { id: string }) => item.id === "topic-b");
     expect(current?.status).toBe("in_progress");
     expect(merged?.status).toBe("merged");
   });
 
   it("外部托管模式应回调状态变更", async () => {
-    let snapshot: ReturnType<typeof useTopicBranchBoard> | null = null;
+    let snapshot = null as ReturnType<typeof useTopicBranchBoard> | null;
     let controlledMap: Record<string, "in_progress" | "pending" | "merged" | "candidate"> = {
       "topic-a": "in_progress",
       "topic-b": "candidate",

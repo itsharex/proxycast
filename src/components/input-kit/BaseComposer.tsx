@@ -92,8 +92,7 @@ export const BaseComposer: React.FC<BaseComposerProps> = ({
         isComposing?: boolean;
       };
       return Boolean(
-        event.isComposing ||
-          nativeEvent.isComposing ||
+        nativeEvent.isComposing ||
           nativeEvent.key === "Process" ||
           nativeEvent.keyCode === 229,
       );

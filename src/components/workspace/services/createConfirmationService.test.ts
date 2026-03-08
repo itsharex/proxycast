@@ -64,7 +64,7 @@ describe("createConfirmationService", () => {
     }
     expect(result.decision.type).toBe("continue_history");
     expect(result.decision.initialUserPrompt).toContain("大纲");
-    expect(result.decision.preferredContentId).toBe("content-2");
+    expect((result.decision as Extract<typeof result.decision, { type: "continue_history" }>).preferredContentId).toBe("content-2");
   });
 
   it("resolveCreateConfirmationDecision 新建时应返回 create_new", () => {
