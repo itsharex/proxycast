@@ -36,17 +36,6 @@ impl ContentType {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
-        match s {
-            "episode" => ContentType::Episode,
-            "chapter" => ContentType::Chapter,
-            "post" => ContentType::Post,
-            "document" => ContentType::Document,
-            "content" => ContentType::Content,
-            _ => ContentType::Document,
-        }
-    }
-
     /// 获取内容类型的显示名称
     pub fn display_name(&self) -> &'static str {
         match self {
@@ -55,6 +44,21 @@ impl ContentType {
             ContentType::Post => "帖子",
             ContentType::Document => "文档",
             ContentType::Content => "内容",
+        }
+    }
+}
+
+impl std::str::FromStr for ContentType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "episode" => Ok(ContentType::Episode),
+            "chapter" => Ok(ContentType::Chapter),
+            "post" => Ok(ContentType::Post),
+            "document" => Ok(ContentType::Document),
+            "content" => Ok(ContentType::Content),
+            _ => Ok(ContentType::Document),
         }
     }
 }
@@ -72,6 +76,7 @@ pub enum ContentStatus {
     Published,
 }
 
+#[allow(dead_code)]
 impl ContentStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -80,13 +85,17 @@ impl ContentStatus {
             ContentStatus::Published => "published",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
+impl std::str::FromStr for ContentStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "draft" => ContentStatus::Draft,
-            "completed" => ContentStatus::Completed,
-            "published" => ContentStatus::Published,
-            _ => ContentStatus::Draft,
+            "draft" => Ok(ContentStatus::Draft),
+            "completed" => Ok(ContentStatus::Completed),
+            "published" => Ok(ContentStatus::Published),
+            _ => Ok(ContentStatus::Draft),
         }
     }
 }

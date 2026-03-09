@@ -37,7 +37,7 @@ pub enum ProviderType {
 
 impl ProviderType {
     /// 从字符串解析 provider 类型
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "claude" | "anthropic" => Self::Claude,
             "claude_oauth" => Self::ClaudeOauth,
@@ -65,7 +65,7 @@ impl ProviderType {
         }
 
         // 对于其他 Provider，尝试直接解析
-        let provider_type = Self::from_str(provider);
+        let provider_type = Self::parse(provider);
 
         // 如果能被识别，直接返回
         if !matches!(provider_type, Self::OpenAI) || provider.eq_ignore_ascii_case("openai") {

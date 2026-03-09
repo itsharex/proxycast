@@ -27,6 +27,7 @@ impl WorkflowService {
     /// 创建新工作流
     pub async fn create_workflow(
         &self,
+        content_id: String,
         theme: ThemeType,
         mode: CreationMode,
     ) -> Result<WorkflowState> {
@@ -38,6 +39,7 @@ impl WorkflowService {
 
         let workflow = WorkflowState {
             id: workflow_id.clone(),
+            content_id,
             theme,
             mode,
             steps,
@@ -58,6 +60,15 @@ impl WorkflowService {
     pub async fn get_workflow(&self, workflow_id: &str) -> Option<WorkflowState> {
         let workflows = self.workflows.read().await;
         workflows.get(workflow_id).cloned()
+    }
+
+    /// 根据 content_id 获取工作流
+    pub async fn get_workflow_by_content(&self, content_id: &str) -> Option<WorkflowState> {
+        let workflows = self.workflows.read().await;
+        workflows
+            .values()
+            .find(|w| w.content_id == content_id)
+            .cloned()
     }
 
     /// 更新工作流

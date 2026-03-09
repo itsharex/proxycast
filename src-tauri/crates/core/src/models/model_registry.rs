@@ -147,6 +147,7 @@ impl std::str::FromStr for ModelTier {
 
 /// 模型数据来源
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ModelSource {
     /// 从内嵌资源加载（构建时打包）
@@ -154,17 +155,12 @@ pub enum ModelSource {
     /// 从 models.dev API 获取（已弃用）
     ModelsDev,
     /// 本地硬编码（国内模型等）
+    #[default]
     Local,
     /// 用户自定义
     Custom,
     /// 从 Provider API 获取
     Api,
-}
-
-impl Default for ModelSource {
-    fn default() -> Self {
-        Self::Local
-    }
 }
 
 impl std::fmt::Display for ModelSource {

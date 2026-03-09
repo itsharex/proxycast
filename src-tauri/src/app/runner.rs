@@ -79,6 +79,8 @@ pub fn run() {
         recording_service,
         mcp_manager: mcp_manager_state,
         heartbeat_service: heartbeat_service_state,
+        workflow_service,
+        progress_store,
         shared_stats,
         shared_tokens,
         shared_logger,
@@ -89,6 +91,10 @@ pub fn run() {
     let logs_clone = logs.clone();
     let db_clone = db.clone();
     let pool_service_clone = provider_pool_service_state.0.clone();
+    let api_key_provider_service_clone = api_key_provider_service_state.0.clone();
+    let connect_state_clone = connect_state.0.clone();
+    let model_registry_clone = model_registry_state.clone();
+    let skill_service_clone = skill_service_state.0.clone();
     let token_cache_clone = token_cache_service_state.0.clone();
     let shared_stats_clone = shared_stats.clone();
     let shared_tokens_clone = shared_tokens.clone();
@@ -159,6 +165,8 @@ pub fn run() {
         .manage(recording_service)
         .manage(mcp_manager_state)
         .manage(heartbeat_service_state)
+        .manage(workflow_service)
+        .manage(progress_store)
         .manage(proxycast_gateway::telegram::TelegramGatewayState::default())
         .manage(proxycast_gateway::discord::DiscordGatewayState::default())
         .manage(proxycast_gateway::feishu::FeishuGatewayState::default())
@@ -264,6 +272,39 @@ pub fn run() {
                     manager.set_task_emitter(emitter).await;
                 });
                 tracing::info!("[启动] PluginManager 任务事件发射器已设置");
+            }
+
+            #[cfg(debug_assertions)]
+            {
+                let server_state = state_clone.clone();
+                let logs = logs_clone.clone();
+                let db = Some(db_clone.clone());
+                let pool_service = pool_service_clone.clone();
+                let api_key_provider_service = api_key_provider_service_clone.clone();
+                let connect_state = connect_state_clone.clone();
+                let model_registry = model_registry_clone.clone();
+                let skill_service = skill_service_clone.clone();
+                let shared_stats = shared_stats_clone.clone();
+
+                tauri::async_runtime::spawn(async move {
+                    match crate::dev_bridge::DevBridgeServer::start(
+                        server_state,
+                        logs,
+                        db,
+                        pool_service,
+                        api_key_provider_service,
+                        connect_state,
+                        model_registry,
+                        skill_service,
+                        shared_stats,
+                        None,
+                    )
+                    .await
+                    {
+                        Ok(()) => tracing::info!("[启动] Dev Bridge 已启动"),
+                        Err(error) => tracing::error!("[启动] Dev Bridge 启动失败: {}", error),
+                    }
+                });
             }
 
             // 初始化截图对话模块
@@ -1205,6 +1246,7 @@ pub fn run() {
             commands::aster_agent_cmd::aster_session_delete,
             commands::aster_agent_cmd::aster_agent_confirm,
             commands::aster_agent_cmd::aster_agent_submit_elicitation_response,
+            commands::aster_agent_cmd::social_generate_cover_image_cmd,
             commands::theme_context_cmd::aster_agent_theme_context_search,
             // Models config commands
             commands::models_cmd::get_models_config,
@@ -1478,6 +1520,13 @@ pub fn run() {
             commands::content_cmd::content_delete,
             commands::content_cmd::content_reorder,
             commands::content_cmd::content_stats,
+            // Content Workflow commands
+            commands::content_workflow_cmd::content_workflow_create,
+            commands::content_workflow_cmd::content_workflow_get,
+            commands::content_workflow_cmd::content_workflow_get_by_content,
+            commands::content_workflow_cmd::content_workflow_advance,
+            commands::content_workflow_cmd::content_workflow_retry,
+            commands::content_workflow_cmd::content_workflow_cancel,
             // Novel Orchestrator commands
             commands::novel_cmd::novel_create_project,
             commands::novel_cmd::novel_update_settings,

@@ -12,7 +12,7 @@ use axum::{
     extract::State,
     http::{HeaderValue, Method},
     response::{IntoResponse, Response},
-    routing::post,
+    routing::{get, post},
     Json, Router,
 };
 #[cfg(debug_assertions)]
@@ -24,7 +24,15 @@ use tokio::sync::RwLock;
 #[cfg(debug_assertions)]
 use tower_http::cors::CorsLayer;
 
-use proxycast_server::AppState;
+#[cfg(debug_assertions)]
+use crate::{app, database::DbConnection};
+#[cfg(debug_assertions)]
+use proxycast_infra::telemetry::StatsAggregator;
+#[cfg(debug_assertions)]
+use proxycast_services::{
+    api_key_provider_service::ApiKeyProviderService, model_registry_service::ModelRegistryService,
+    provider_pool_service::ProviderPoolService, skill_service::SkillService,
+};
 
 #[cfg(debug_assertions)]
 #[derive(Debug, Deserialize)]
@@ -39,6 +47,20 @@ pub struct InvokeRequest {
 pub struct InvokeResponse {
     pub result: Option<serde_json::Value>,
     pub error: Option<String>,
+}
+
+#[cfg(debug_assertions)]
+#[derive(Clone)]
+pub struct DevBridgeState {
+    pub server: app::AppState,
+    pub logs: app::LogState,
+    pub db: Option<DbConnection>,
+    pub pool_service: Arc<ProviderPoolService>,
+    pub api_key_provider_service: Arc<ApiKeyProviderService>,
+    pub connect_state: Arc<RwLock<Option<crate::commands::connect_cmd::ConnectState>>>,
+    pub model_registry: Arc<RwLock<Option<ModelRegistryService>>>,
+    pub skill_service: Arc<SkillService>,
+    pub shared_stats: Arc<parking_lot::RwLock<StatsAggregator>>,
 }
 
 /// 开发桥接服务器配置
@@ -73,10 +95,29 @@ impl DevBridgeServer {
     ///
     /// 服务器会在后台持续运行，直到应用退出。
     pub async fn start(
-        app_state: Arc<RwLock<AppState>>,
+        server: app::AppState,
+        logs: app::LogState,
+        db: Option<DbConnection>,
+        pool_service: Arc<ProviderPoolService>,
+        api_key_provider_service: Arc<ApiKeyProviderService>,
+        connect_state: Arc<RwLock<Option<crate::commands::connect_cmd::ConnectState>>>,
+        model_registry: Arc<RwLock<Option<ModelRegistryService>>>,
+        skill_service: Arc<SkillService>,
+        shared_stats: Arc<parking_lot::RwLock<StatsAggregator>>,
         config: Option<DevBridgeConfig>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let config = config.unwrap_or_default();
+        let bridge_state = DevBridgeState {
+            server,
+            logs,
+            db,
+            pool_service,
+            api_key_provider_service,
+            connect_state,
+            model_registry,
+            skill_service,
+            shared_stats,
+        };
 
         let allowed_origins = vec![
             HeaderValue::from_static("http://localhost:1420"),
@@ -87,7 +128,7 @@ impl DevBridgeServer {
 
         let app = Router::new()
             .route("/invoke", post(invoke_command))
-            .route("/health", post(health_check))
+            .route("/health", get(health_check).post(health_check))
             .layer(
                 // CORS 配置 - 允许本地开发前端访问
                 CorsLayer::new()
@@ -95,7 +136,7 @@ impl DevBridgeServer {
                     .allow_methods([Method::POST, Method::GET, Method::OPTIONS])
                     .allow_headers([axum::http::header::CONTENT_TYPE]),
             )
-            .with_state(app_state);
+            .with_state(bridge_state);
 
         let addr = format!("{}:{}", config.host, config.port);
         let listener = match tokio::net::TcpListener::bind(&addr).await {
@@ -111,7 +152,9 @@ impl DevBridgeServer {
         // 直接运行服务器（不使用 graceful_shutdown）
         // 服务器将持续运行直到应用退出
         tokio::spawn(async move {
-            axum::serve(listener, app).await.ok();
+            if let Err(error) = axum::serve(listener, app).await {
+                tracing::error!("[DevBridge] 运行失败: {}", error);
+            }
         });
 
         Ok(())
@@ -120,13 +163,11 @@ impl DevBridgeServer {
 
 #[cfg(debug_assertions)]
 async fn invoke_command(
-    State(state): State<Arc<RwLock<AppState>>>,
+    State(state): State<DevBridgeState>,
     Json(req): Json<InvokeRequest>,
 ) -> Response {
-    // 获取 AppState 的读锁
-    let state_ref = state.read().await;
     // 调用命令分发器
-    match dispatcher::handle_command(&state_ref, &req.cmd, req.args).await {
+    match dispatcher::handle_command(&state, &req.cmd, req.args).await {
         Ok(result) => Json(InvokeResponse {
             result: Some(result),
             error: None,

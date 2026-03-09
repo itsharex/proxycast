@@ -8,6 +8,13 @@
 2. **文件超过 20 行，分批输出** - 避免一次性输出过长内容
 3. **先读后写** - 修改文件前必须先读取现有内容
 
+## AGENTS.md 维护原则
+
+1. **根 AGENTS.md 只放仓库级规则** - 保留全局约束、高频命令、文档索引，避免塞入过长操作手册
+2. **长流程拆到独立文档** - 像 Playwright E2E、内容创作工作流这类步骤型说明，放到 `docs/aiprompts/`，根 AGENTS 只保留入口
+3. **谨慎新增子目录 AGENTS.md** - 仅当某个目录树存在长期稳定、只对该子树生效的规则时才新增；临时排障说明不要新增 AGENTS
+4. **优先索引化而不是堆叠说明** - 根 AGENTS 更适合作为目录与约定入口，详细上下文交给专门文档
+
 ## 详细文档
 
 模块级详细文档位于 `docs/aiprompts/`：
@@ -19,7 +26,6 @@
 | [credential-pool.md](docs/aiprompts/credential-pool.md) | 凭证池管理 |
 | [converter.md](docs/aiprompts/converter.md) | 协议转换 |
 | [server.md](docs/aiprompts/server.md) | HTTP 服务器 |
-| [flow-monitor.md](docs/aiprompts/flow-monitor.md) | 流量监控 |
 | [components.md](docs/aiprompts/components.md) | 组件系统 |
 | [hooks.md](docs/aiprompts/hooks.md) | React Hooks |
 | [services.md](docs/aiprompts/services.md) | 业务服务 |
@@ -29,6 +35,10 @@
 | [terminal.md](docs/aiprompts/terminal.md) | 内置终端 |
 | [plugins.md](docs/aiprompts/plugins.md) | 插件系统 |
 | [lib.md](docs/aiprompts/lib.md) | 工具库 |
+| [workspace.md](docs/aiprompts/workspace.md) | Workspace 设计文档 |
+| [content-creator.md](docs/aiprompts/content-creator.md) | 内容创作系统 |
+| [aster-integration.md](docs/aiprompts/aster-integration.md) | Aster 集成方案 |
+| [playwright-e2e.md](docs/aiprompts/playwright-e2e.md) | Playwright MCP 续测与 E2E 指南 |
 
 ## 构建命令
 
@@ -40,7 +50,10 @@ cd src-tauri && cargo build
 npm run build
 
 # 开发模式
-npm run tauri dev
+npm run tauri:dev
+
+# 浏览器 + DevBridge + Playwright MCP 调试模式
+npm run tauri:dev:headless
 ```
 
 ## 测试命令
@@ -51,6 +64,9 @@ cd src-tauri && cargo test
 
 # 运行前端测试
 npm test
+
+# 运行针对浏览器桥接的前端测试
+npm test -- src/lib/dev-bridge/safeInvoke.test.ts src/lib/tauri-mock/core.test.ts
 ```
 
 ## 代码检查
@@ -62,6 +78,11 @@ cd src-tauri && cargo clippy
 # 前端代码检查
 npm run lint
 ```
+
+## Playwright E2E 入口
+
+- 需要继续浏览器 E2E、复用现有 Playwright MCP 会话、排查 DevBridge/console 错误时，先读 `docs/aiprompts/playwright-e2e.md`
+- 如果只是仓库级规则，不要继续往本文件堆叠步骤说明
 
 ## 项目架构
 

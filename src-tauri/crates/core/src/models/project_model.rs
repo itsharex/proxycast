@@ -151,10 +151,11 @@ pub struct PersonaTemplate {
 // ============================================================================
 
 /// 素材类型
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum MaterialType {
     /// 文档（PDF、Word 等）
+    #[default]
     Document,
     /// 图片
     Image,
@@ -176,12 +177,6 @@ pub enum MaterialType {
     Layout,
 }
 
-impl Default for MaterialType {
-    fn default() -> Self {
-        Self::Document
-    }
-}
-
 #[allow(dead_code)]
 impl MaterialType {
     pub fn as_str(&self) -> &'static str {
@@ -198,23 +193,30 @@ impl MaterialType {
             MaterialType::Layout => "layout",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
+impl std::str::FromStr for MaterialType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "document" => MaterialType::Document,
-            "image" => MaterialType::Image,
-            "audio" => MaterialType::Audio,
-            "video" => MaterialType::Video,
-            "text" => MaterialType::Text,
-            "data" => MaterialType::Data,
-            "link" => MaterialType::Link,
-            "icon" => MaterialType::Icon,
-            "color" => MaterialType::Color,
-            "layout" => MaterialType::Layout,
-            _ => MaterialType::Document,
+            "document" => Ok(MaterialType::Document),
+            "image" => Ok(MaterialType::Image),
+            "audio" => Ok(MaterialType::Audio),
+            "video" => Ok(MaterialType::Video),
+            "text" => Ok(MaterialType::Text),
+            "data" => Ok(MaterialType::Data),
+            "link" => Ok(MaterialType::Link),
+            "icon" => Ok(MaterialType::Icon),
+            "color" => Ok(MaterialType::Color),
+            "layout" => Ok(MaterialType::Layout),
+            _ => Ok(MaterialType::Document),
         }
     }
+}
 
+#[allow(dead_code)]
+impl MaterialType {
     /// 判断是否为海报素材类型
     pub fn is_poster_material(&self) -> bool {
         matches!(
@@ -225,7 +227,7 @@ impl MaterialType {
 }
 
 /// 图片分类
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ImageCategory {
     /// 背景图
@@ -239,13 +241,8 @@ pub enum ImageCategory {
     /// 纹理图
     Texture,
     /// 其他
+    #[default]
     Other,
-}
-
-impl Default for ImageCategory {
-    fn default() -> Self {
-        Self::Other
-    }
 }
 
 #[allow(dead_code)]
@@ -261,17 +258,6 @@ impl ImageCategory {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "background" => ImageCategory::Background,
-            "product" => ImageCategory::Product,
-            "person" => ImageCategory::Person,
-            "decoration" => ImageCategory::Decoration,
-            "texture" => ImageCategory::Texture,
-            _ => ImageCategory::Other,
-        }
-    }
-
     pub fn display_name(&self) -> &'static str {
         match self {
             ImageCategory::Background => "背景",
@@ -284,11 +270,27 @@ impl ImageCategory {
     }
 }
 
+impl std::str::FromStr for ImageCategory {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "background" => Ok(ImageCategory::Background),
+            "product" => Ok(ImageCategory::Product),
+            "person" => Ok(ImageCategory::Person),
+            "decoration" => Ok(ImageCategory::Decoration),
+            "texture" => Ok(ImageCategory::Texture),
+            _ => Ok(ImageCategory::Other),
+        }
+    }
+}
+
 /// 布局分类
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum LayoutCategory {
     /// 大图型
+    #[default]
     HeroImage,
     /// 文字主导
     TextDominant,
@@ -300,12 +302,6 @@ pub enum LayoutCategory {
     Minimal,
     /// 拼贴型
     Collage,
-}
-
-impl Default for LayoutCategory {
-    fn default() -> Self {
-        Self::HeroImage
-    }
 }
 
 #[allow(dead_code)]
@@ -321,18 +317,6 @@ impl LayoutCategory {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "hero-image" => LayoutCategory::HeroImage,
-            "text-dominant" => LayoutCategory::TextDominant,
-            "grid" => LayoutCategory::Grid,
-            "split" => LayoutCategory::Split,
-            "minimal" => LayoutCategory::Minimal,
-            "collage" => LayoutCategory::Collage,
-            _ => LayoutCategory::HeroImage,
-        }
-    }
-
     pub fn display_name(&self) -> &'static str {
         match self {
             LayoutCategory::HeroImage => "大图型",
@@ -341,6 +325,22 @@ impl LayoutCategory {
             LayoutCategory::Split => "分割型",
             LayoutCategory::Minimal => "极简型",
             LayoutCategory::Collage => "拼贴型",
+        }
+    }
+}
+
+impl std::str::FromStr for LayoutCategory {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "hero-image" => Ok(LayoutCategory::HeroImage),
+            "text-dominant" => Ok(LayoutCategory::TextDominant),
+            "grid" => Ok(LayoutCategory::Grid),
+            "split" => Ok(LayoutCategory::Split),
+            "minimal" => Ok(LayoutCategory::Minimal),
+            "collage" => Ok(LayoutCategory::Collage),
+            _ => Ok(LayoutCategory::HeroImage),
         }
     }
 }
@@ -555,7 +555,7 @@ pub struct MaterialFilter {
 // ============================================================================
 
 /// 平台类型
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Platform {
     /// 小红书
@@ -569,13 +569,8 @@ pub enum Platform {
     /// 抖音
     Douyin,
     /// Markdown 通用格式
+    #[default]
     Markdown,
-}
-
-impl Default for Platform {
-    fn default() -> Self {
-        Self::Markdown
-    }
 }
 
 #[allow(dead_code)]
@@ -588,18 +583,6 @@ impl Platform {
             Platform::Weibo => "weibo",
             Platform::Douyin => "douyin",
             Platform::Markdown => "markdown",
-        }
-    }
-
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "xiaohongshu" => Platform::Xiaohongshu,
-            "wechat" => Platform::Wechat,
-            "zhihu" => Platform::Zhihu,
-            "weibo" => Platform::Weibo,
-            "douyin" => Platform::Douyin,
-            "markdown" => Platform::Markdown,
-            _ => Platform::Markdown,
         }
     }
 
@@ -616,22 +599,33 @@ impl Platform {
     }
 }
 
+impl std::str::FromStr for Platform {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "xiaohongshu" => Ok(Platform::Xiaohongshu),
+            "wechat" => Ok(Platform::Wechat),
+            "zhihu" => Ok(Platform::Zhihu),
+            "weibo" => Ok(Platform::Weibo),
+            "douyin" => Ok(Platform::Douyin),
+            "markdown" => Ok(Platform::Markdown),
+            _ => Ok(Platform::Markdown),
+        }
+    }
+}
+
 /// Emoji 使用程度
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum EmojiUsage {
     /// 大量使用
     Heavy,
     /// 适度使用
+    #[default]
     Moderate,
     /// 少量使用
     Minimal,
-}
-
-impl Default for EmojiUsage {
-    fn default() -> Self {
-        Self::Moderate
-    }
 }
 
 #[allow(dead_code)]
@@ -643,13 +637,17 @@ impl EmojiUsage {
             EmojiUsage::Minimal => "minimal",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
+impl std::str::FromStr for EmojiUsage {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "heavy" => EmojiUsage::Heavy,
-            "moderate" => EmojiUsage::Moderate,
-            "minimal" => EmojiUsage::Minimal,
-            _ => EmojiUsage::Moderate,
+            "heavy" => Ok(EmojiUsage::Heavy),
+            "moderate" => Ok(EmojiUsage::Moderate),
+            "minimal" => Ok(EmojiUsage::Minimal),
+            _ => Ok(EmojiUsage::Moderate),
         }
     }
 }
@@ -808,10 +806,11 @@ pub struct ProjectContext {
 // ============================================================================
 
 /// 品牌个性类型
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum BrandPersonality {
     /// 专业严谨
+    #[default]
     Professional,
     /// 亲切友好
     Friendly,
@@ -825,12 +824,6 @@ pub enum BrandPersonality {
     Bold,
     /// 优雅精致
     Elegant,
-}
-
-impl Default for BrandPersonality {
-    fn default() -> Self {
-        Self::Professional
-    }
 }
 
 #[allow(dead_code)]
@@ -847,19 +840,6 @@ impl BrandPersonality {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "professional" => BrandPersonality::Professional,
-            "friendly" => BrandPersonality::Friendly,
-            "playful" => BrandPersonality::Playful,
-            "luxurious" => BrandPersonality::Luxurious,
-            "minimalist" => BrandPersonality::Minimalist,
-            "bold" => BrandPersonality::Bold,
-            "elegant" => BrandPersonality::Elegant,
-            _ => BrandPersonality::Professional,
-        }
-    }
-
     pub fn display_name(&self) -> &'static str {
         match self {
             BrandPersonality::Professional => "专业严谨",
@@ -873,13 +853,31 @@ impl BrandPersonality {
     }
 }
 
+impl std::str::FromStr for BrandPersonality {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "professional" => Ok(BrandPersonality::Professional),
+            "friendly" => Ok(BrandPersonality::Friendly),
+            "playful" => Ok(BrandPersonality::Playful),
+            "luxurious" => Ok(BrandPersonality::Luxurious),
+            "minimalist" => Ok(BrandPersonality::Minimalist),
+            "bold" => Ok(BrandPersonality::Bold),
+            "elegant" => Ok(BrandPersonality::Elegant),
+            _ => Ok(BrandPersonality::Professional),
+        }
+    }
+}
+
 /// 设计风格类型
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum DesignStyle {
     /// 极简
     Minimal,
     /// 现代
+    #[default]
     Modern,
     /// 经典
     Classic,
@@ -891,12 +889,6 @@ pub enum DesignStyle {
     Artistic,
     /// 复古
     Retro,
-}
-
-impl Default for DesignStyle {
-    fn default() -> Self {
-        Self::Modern
-    }
 }
 
 #[allow(dead_code)]
@@ -913,19 +905,6 @@ impl DesignStyle {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "minimal" => DesignStyle::Minimal,
-            "modern" => DesignStyle::Modern,
-            "classic" => DesignStyle::Classic,
-            "playful" => DesignStyle::Playful,
-            "corporate" => DesignStyle::Corporate,
-            "artistic" => DesignStyle::Artistic,
-            "retro" => DesignStyle::Retro,
-            _ => DesignStyle::Modern,
-        }
-    }
-
     pub fn display_name(&self) -> &'static str {
         match self {
             DesignStyle::Minimal => "极简",
@@ -935,6 +914,23 @@ impl DesignStyle {
             DesignStyle::Corporate => "商务",
             DesignStyle::Artistic => "艺术",
             DesignStyle::Retro => "复古",
+        }
+    }
+}
+
+impl std::str::FromStr for DesignStyle {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "minimal" => Ok(DesignStyle::Minimal),
+            "modern" => Ok(DesignStyle::Modern),
+            "classic" => Ok(DesignStyle::Classic),
+            "playful" => Ok(DesignStyle::Playful),
+            "corporate" => Ok(DesignStyle::Corporate),
+            "artistic" => Ok(DesignStyle::Artistic),
+            "retro" => Ok(DesignStyle::Retro),
+            _ => Ok(DesignStyle::Modern),
         }
     }
 }

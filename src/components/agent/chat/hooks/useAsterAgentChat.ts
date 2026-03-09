@@ -1047,7 +1047,7 @@ const mapSessionToTopic = (session: AsterSessionInfo): Topic => {
 };
 
 export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
-  const { onWriteFile, workspaceId } = options;
+  const { systemPrompt, onWriteFile, workspaceId } = options;
 
   const getRequiredWorkspaceId = useCallback((): string => {
     const resolvedWorkspaceId = workspaceId?.trim();
@@ -2161,6 +2161,7 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
           effectiveExecutionStrategy,
           webSearch,
           autoContinue,
+          systemPrompt,
         );
       } catch (error) {
         if (requestLogId && !requestFinished) {
@@ -2191,7 +2192,7 @@ export function useAsterAgentChat(options: UseAsterAgentChatOptions) {
         if (unlisten) unlisten();
       }
     },
-    [ensureSession, executionStrategy, getRequiredWorkspaceId, onWriteFile],
+    [ensureSession, executionStrategy, getRequiredWorkspaceId, onWriteFile, systemPrompt],
   );
 
   // 停止发送

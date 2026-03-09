@@ -29,6 +29,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { StepStatus } from "@/components/content-creator/types";
 import type { TopicBranchItem, TopicBranchStatus } from "../hooks/useTopicBranchBoard";
 import type { SidebarActivityLog } from "../hooks/useThemeContextWorkspace";
+import type { Message } from "../types";
 import type { AgentRun } from "@/lib/api/executionRun";
 import {
   openFileWithDefaultApp as openSessionFileWithDefaultApp,
@@ -112,8 +113,8 @@ const SidebarDescription = styled.div`
 const SidebarTabs = styled.div`
   margin-top: 14px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
 `;
 
 const SidebarTabButton = styled.button<{ $active: boolean }>`
@@ -162,6 +163,132 @@ const SidebarBody = styled.div`
   overflow-y: auto;
   overflow-x: visible;
 `;
+
+/* ── 执行日志 Timeline 样式 ── */
+
+const ExecLogContainer = styled.div`
+  padding: 12px 0 12px 14px;
+`;
+
+const ExecLogTimeline = styled.div`
+  position: relative;
+  padding-left: 20px;
+  &::before {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: 8px;
+    bottom: 8px;
+    width: 1px;
+    background: hsl(var(--border));
+  }
+`;
+
+const ExecLogItem = styled.div`
+  position: relative;
+  margin-bottom: 14px;
+  &:last-child { margin-bottom: 0; }
+`;
+
+const ExecLogDot = styled.span<{ $type: string; $status?: string }>`
+  position: absolute;
+  left: -24px;
+  top: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid ${(p) => {
+    if (p.$status === "failed") return "hsl(var(--destructive))";
+    if (p.$status === "running") return "hsl(38 92% 50%)";
+    if (p.$type === "user") return "hsl(217 91% 60%)";
+    if (p.$type === "thinking") return "hsl(270 70% 55%)";
+    if (p.$type === "response") return "hsl(var(--muted-foreground))";
+    if (p.$type === "run") return "hsl(142 71% 45%)";
+    if (p.$type === "task") return "hsl(25 95% 53%)";
+    return "hsl(var(--primary) / 0.6)";
+  }};
+  background: ${(p) => {
+    if (p.$status === "running") return "hsl(38 92% 50% / 0.3)";
+    if (p.$status === "failed") return "hsl(var(--destructive) / 0.2)";
+    if (p.$status === "completed") return "hsl(142 71% 45% / 0.2)";
+    if (p.$type === "user") return "hsl(217 91% 60% / 0.2)";
+    if (p.$type === "run") return "hsl(142 71% 45% / 0.2)";
+    if (p.$type === "task") return "hsl(25 95% 53% / 0.2)";
+    return "transparent";
+  }};
+`;
+
+const ExecLogHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 3px;
+`;
+
+const ExecLogBadge = styled.span<{ $type: string; $status?: string }>`
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: ${(p) => {
+    if (p.$status === "failed") return "hsl(var(--destructive))";
+    if (p.$status === "running") return "hsl(38 92% 40%)";
+    if (p.$status === "completed") return "hsl(142 71% 35%)";
+    if (p.$type === "user") return "hsl(217 91% 45%)";
+    if (p.$type === "thinking") return "hsl(270 70% 50%)";
+    if (p.$type === "run") return "hsl(142 71% 35%)";
+    if (p.$type === "task") return "hsl(25 95% 53%)";
+    return "hsl(var(--muted-foreground))";
+  }};
+  background: ${(p) => {
+    if (p.$status === "failed") return "hsl(var(--destructive) / 0.1)";
+    if (p.$status === "running") return "hsl(38 92% 50% / 0.12)";
+    if (p.$status === "completed") return "hsl(142 71% 45% / 0.1)";
+    if (p.$type === "user") return "hsl(217 91% 60% / 0.1)";
+    if (p.$type === "thinking") return "hsl(270 70% 55% / 0.1)";
+    if (p.$type === "run") return "hsl(142 71% 45% / 0.1)";
+    if (p.$type === "task") return "hsl(25 95% 53% / 0.1)";
+    return "hsl(var(--muted) / 0.6)";
+  }};
+`;
+
+const ExecLogTime = styled.span`
+  margin-left: auto;
+  font-size: 10px;
+  color: hsl(var(--muted-foreground) / 0.7);
+  white-space: nowrap;
+  flex-shrink: 0;
+`;
+
+const ExecLogContent = styled.div`
+  font-size: 11.5px;
+  color: hsl(var(--foreground) / 0.8);
+  line-height: 1.55;
+  word-break: break-word;
+  white-space: pre-wrap;
+`;
+
+const ExecLogMeta = styled.div`
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: hsl(var(--muted-foreground));
+  line-height: 1.45;
+  word-break: break-word;
+  white-space: pre-wrap;
+`;
+
+const ExecLogEmpty = styled.div`
+  padding: 20px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+`;
+
+/* ── end 执行日志 ── */
 
 const SectionBadge = styled.span`
   display: inline-flex;
@@ -938,7 +1065,7 @@ const ActivityStepItem = styled.div`
   padding: 5px 6px;
 `;
 
-const RunLinkButton = styled.button`
+const _RunLinkButton = styled.button`
   border: 0;
   background: transparent;
   padding: 0;
@@ -954,7 +1081,7 @@ const RunLinkButton = styled.button`
   }
 `;
 
-const RunDetailPanel = styled.div`
+const _RunDetailPanel = styled.div`
   margin-top: 8px;
   border: 1px solid hsl(var(--border));
   border-radius: 8px;
@@ -962,14 +1089,14 @@ const RunDetailPanel = styled.div`
   padding: 8px;
 `;
 
-const RunDetailTitle = styled.div`
+const _RunDetailTitle = styled.div`
   font-size: 11px;
   font-weight: 600;
   color: hsl(var(--foreground));
   margin-bottom: 6px;
 `;
 
-const RunDetailRow = styled.div`
+const _RunDetailRow = styled.div`
   font-size: 11px;
   color: hsl(var(--muted-foreground));
   line-height: 1.45;
@@ -1002,7 +1129,7 @@ const RunDetailArtifactPath = styled.code`
   text-overflow: ellipsis;
 `;
 
-const RunDetailCode = styled.pre`
+const _RunDetailCode = styled.pre`
   margin-top: 6px;
   font-size: 10px;
   line-height: 1.4;
@@ -1052,7 +1179,7 @@ function getBranchStatusText(status: TopicBranchStatus): string {
   return "备选";
 }
 
-function formatGateLabel(
+function _formatGateLabel(
   gateKey?: SidebarActivityLog["gateKey"],
 ): string | null {
   if (!gateKey || gateKey === "idle") {
@@ -1070,7 +1197,7 @@ function formatGateLabel(
   return null;
 }
 
-function formatRunIdShort(runId?: string): string | null {
+function _formatRunIdShort(runId?: string): string | null {
   const trimmed = runId?.trim();
   if (!trimmed) {
     return null;
@@ -1081,7 +1208,7 @@ function formatRunIdShort(runId?: string): string | null {
   return `${trimmed.slice(0, 8)}…`;
 }
 
-function formatRunStatusLabel(status: AgentRun["status"]): string {
+function _formatRunStatusLabel(status: AgentRun["status"]): string {
   if (status === "queued") return "排队中";
   if (status === "running") return "运行中";
   if (status === "success") return "成功";
@@ -1215,7 +1342,7 @@ function parseRunMetadataSummary(raw: string | null): ParsedRunMetadataSummary {
   }
 }
 
-function formatStageLabelByKey(raw: string): string {
+function _formatStageLabelByKey(raw: string): string {
   if (raw === "topic_select") {
     return "选题闸门";
   }
@@ -1241,7 +1368,7 @@ async function writeClipboardText(text: string): Promise<void> {
 }
 
 type BranchMode = "topic" | "version";
-type SidebarTab = "context" | "workflow";
+type SidebarTab = "context" | "workflow" | "log";
 type ActivityStatus = SidebarActivityLog["status"];
 
 export interface ThemeWorkbenchCreationTaskEvent {
@@ -1313,7 +1440,7 @@ function resolveActivityGroupKey(log: SidebarActivityLog): {
   };
 }
 
-function resolveActivityMarker(status: ActivityStatus): string {
+function _resolveActivityMarker(status: ActivityStatus): string {
   if (status === "completed") {
     return "✓";
   }
@@ -1323,7 +1450,7 @@ function resolveActivityMarker(status: ActivityStatus): string {
   return "●";
 }
 
-function formatLogActionLabel(log: SidebarActivityLog): string {
+function _formatLogActionLabel(log: SidebarActivityLog): string {
   const normalizedSource = log.source?.trim().toLowerCase();
   if (normalizedSource === "skill") {
     return `技能：${log.name}`;
@@ -1331,7 +1458,7 @@ function formatLogActionLabel(log: SidebarActivityLog): string {
   return `动作：${log.name}`;
 }
 
-function formatArtifactPathsLabel(paths?: string[]): string {
+function _formatArtifactPathsLabel(paths?: string[]): string {
   if (!paths || paths.length === 0) {
     return "主稿内容";
   }
@@ -1441,6 +1568,8 @@ interface ThemeWorkbenchSidebarProps {
   activeRunDetail?: AgentRun | null;
   activeRunDetailLoading?: boolean;
   onRequestCollapse?: () => void;
+  /** 完整的对话消息列表，用于执行日志 tab */
+  messages?: Message[];
 }
 
 function ThemeWorkbenchSidebarComponent({
@@ -1470,12 +1599,13 @@ function ThemeWorkbenchSidebarComponent({
   contextBudget,
   activityLogs,
   creationTaskEvents = [],
-  onViewRunDetail,
+  _onViewRunDetail,
   activeRunDetail,
-  activeRunDetailLoading = false,
+  _activeRunDetailLoading = false,
   onRequestCollapse,
+  messages = [],
 }: ThemeWorkbenchSidebarProps) {
-  const [showActivityLogs, setShowActivityLogs] = useState(false);
+  const [showActivityLogs, _setShowActivityLogs] = useState(false);
   const [showCreationTasks, setShowCreationTasks] = useState(true);
   const [activeTab, setActiveTab] = useState<SidebarTab>("context");
   const [selectedSearchResultId, setSelectedSearchResultId] = useState<string | null>(null);
@@ -1490,16 +1620,16 @@ function ThemeWorkbenchSidebarComponent({
   );
   const progressPercent =
     workflowSteps.length > 0 ? (completedSteps / workflowSteps.length) * 100 : 0;
-  const runMetadataText = useMemo(
+  const _runMetadataText = useMemo(
     () => formatRunMetadata(activeRunDetail?.metadata ?? null),
     [activeRunDetail?.metadata],
   );
-  const runMetadataSummary = useMemo(
+  const _runMetadataSummary = useMemo(
     () => parseRunMetadataSummary(activeRunDetail?.metadata ?? null),
     [activeRunDetail?.metadata],
   );
   const runDetailSessionId = activeRunDetail?.session_id?.trim() || null;
-  const handleRevealArtifactInFinder = useCallback(
+  const _handleRevealArtifactInFinder = useCallback(
     async (artifactPath: string, sessionId?: string | null) => {
       const resolvedSessionId = sessionId?.trim() || runDetailSessionId;
       if (!resolvedSessionId) {
@@ -1515,7 +1645,7 @@ function ThemeWorkbenchSidebarComponent({
     },
     [runDetailSessionId],
   );
-  const handleOpenArtifactWithDefaultApp = useCallback(
+  const _handleOpenArtifactWithDefaultApp = useCallback(
     async (artifactPath: string, sessionId?: string | null) => {
       const resolvedSessionId = sessionId?.trim() || runDetailSessionId;
       if (!resolvedSessionId) {
@@ -1851,7 +1981,164 @@ function ThemeWorkbenchSidebarComponent({
       });
   }, [creationTaskEvents]);
 
-  const resolveActivityGroupSessionId = useCallback(
+  // ── 执行日志 entries（从 messages 解析）──
+  interface ExecLogEntry {
+    id: string;
+    type: "user" | "thinking" | "response" | "tool" | "run" | "task";
+    typeLabel: string;
+    content: string;
+    meta?: string;
+    timestamp: Date;
+    status?: "running" | "completed" | "failed";
+  }
+
+  function resolveToolLabel(toolName: string): string {
+    const n = toolName.trim().toLowerCase();
+    if (n === "list_skills") return "获取技能列表";
+    if (n === "load_skill") return "加载技能";
+    if (n.includes("write_file") || n.includes("create_file")) return "创建文件";
+    if (n.includes("read_file")) return "读取文件";
+    if (n.includes("search_query") || n.includes("web_search") || n === "search") return "网络检索";
+    if (n.includes("social_generate_cover") || n.includes("generate_image")) return "生成封面图";
+    if (n.includes("execute") || n.includes("bash")) return "执行命令";
+    if (n.includes("context") || n.includes("retrieve")) return "检索上下文";
+    return toolName;
+  }
+
+  function truncate(text: string, max = 300): string {
+    if (!text) return "";
+    const t = text.trim();
+    return t.length > max ? `${t.slice(0, max)}…` : t;
+  }
+
+  const execLogEntries = useMemo<ExecLogEntry[]>(() => {
+    const entries: ExecLogEntry[] = [];
+    let idx = 0;
+    for (const msg of messages) {
+      if (msg.role === "user") {
+        entries.push({
+          id: `${msg.id}-user`,
+          type: "user",
+          typeLabel: "用户请求",
+          content: truncate(msg.content, 200),
+          timestamp: msg.timestamp,
+        });
+      } else {
+        // thinking
+        if (msg.thinkingContent) {
+          entries.push({
+            id: `${msg.id}-thinking`,
+            type: "thinking",
+            typeLabel: "深度思考",
+            content: truncate(msg.thinkingContent, 200),
+            timestamp: msg.timestamp,
+          });
+        }
+        // tool calls
+        for (const tc of msg.toolCalls || []) {
+          let argsPreview = "";
+          try {
+            const parsed = JSON.parse(tc.arguments || "{}");
+            const keys = Object.keys(parsed);
+            const preview = keys.slice(0, 2).map((k) => {
+              const v = String(parsed[k] ?? "");
+              return `${k}: ${v.slice(0, 60)}${v.length > 60 ? "…" : ""}`;
+            });
+            argsPreview = preview.join(" · ");
+          } catch {
+            argsPreview = truncate(tc.arguments || "", 120);
+          }
+          const resultMeta = tc.result?.error
+            ? `❌ ${truncate(tc.result.error, 120)}`
+            : tc.result?.output
+              ? truncate(tc.result.output, 200)
+              : undefined;
+          entries.push({
+            id: `${msg.id}-tc-${tc.id}-${idx++}`,
+            type: "tool",
+            typeLabel: resolveToolLabel(tc.name),
+            content: argsPreview || tc.name,
+            meta: resultMeta,
+            timestamp: tc.startTime || msg.timestamp,
+            status: tc.status,
+          });
+        }
+        // text response
+        if (msg.content?.trim() && !msg.isThinking) {
+          entries.push({
+            id: `${msg.id}-resp`,
+            type: "response",
+            typeLabel: "AI 响应",
+            content: truncate(msg.content, 200),
+            timestamp: msg.timestamp,
+          });
+        }
+      }
+    }
+
+    // ── 来自后端编排系统的运行记录（活动日志迁移）──
+    for (const group of groupedActivityLogs) {
+      const ts = (() => {
+        // timeLabel 格式 "HH:mm" 或 "HH:mm:ss"，用今天的日期构造
+        try {
+          const parts = group.timeLabel.split(":");
+          if (parts.length >= 2) {
+            const d = new Date();
+            d.setHours(Number(parts[0]), Number(parts[1]), Number(parts[2] || 0), 0);
+            return d;
+          }
+        } catch { /* ignore */ }
+        return new Date(0);
+      })();
+      const skillLog = group.logs.find((l) => l.source === "skill");
+      const skillName = skillLog?.name || group.source || "";
+      const artifactSummary = group.artifactPaths.length > 0
+        ? `产物：${group.artifactPaths.map((p) => p.split("/").pop()).join("、")}`
+        : undefined;
+      const durationLabel = group.logs.find((l) => l.durationLabel)?.durationLabel;
+      entries.push({
+        id: `run-${group.key}`,
+        type: "run",
+        typeLabel: skillName ? `技能：${skillName}` : "编排运行",
+        content: skillName
+          ? `执行技能 ${skillName}${durationLabel ? `  ${durationLabel}` : ""}`
+          : `编排运行${durationLabel ? `  ${durationLabel}` : ""}`,
+        meta: artifactSummary,
+        timestamp: ts,
+        status: group.status,
+      });
+    }
+
+    // ── 来自任务提交的记录（创作任务迁移）──
+    for (const group of groupedCreationTaskEvents) {
+      const latestTask = group.tasks[group.tasks.length - 1];
+      const ts = latestTask?.createdAt ? new Date(latestTask.createdAt) : new Date(0);
+      entries.push({
+        id: `task-${group.key}`,
+        type: "task",
+        typeLabel: "任务提交",
+        content: group.label || group.taskType,
+        timestamp: ts,
+        status: "completed",
+      });
+    }
+
+    // 按时间升序排列
+    entries.sort((a, b) => {
+      const ta = a.timestamp instanceof Date ? a.timestamp.getTime() : 0;
+      const tb = b.timestamp instanceof Date ? b.timestamp.getTime() : 0;
+      return ta - tb;
+    });
+
+    return entries;
+  }, [messages, groupedActivityLogs, groupedCreationTaskEvents]);
+
+  const execLogBottomRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    execLogBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [execLogEntries.length]);
+
+  const _resolveActivityGroupSessionId = useCallback(
     (group: ActivityLogGroup): string | null => {
       const normalizedGroupSessionId = group.sessionId?.trim();
       if (normalizedGroupSessionId) {
@@ -1957,6 +2244,17 @@ function ThemeWorkbenchSidebarComponent({
             <span>编排工作台</span>
             <SidebarTabCount $active={activeTab === "workflow"}>
               {branchItems.length}
+            </SidebarTabCount>
+          </SidebarTabButton>
+          <SidebarTabButton
+            type="button"
+            aria-label="打开执行日志"
+            $active={activeTab === "log"}
+            onClick={() => setActiveTab("log")}
+          >
+            <span>执行日志</span>
+            <SidebarTabCount $active={activeTab === "log"}>
+              {execLogEntries.length}
             </SidebarTabCount>
           </SidebarTabButton>
         </SidebarTabs>
@@ -2151,7 +2449,7 @@ function ThemeWorkbenchSidebarComponent({
               </Section>
             )}
           </>
-        ) : (
+        ) : activeTab === "workflow" ? (
           <>
             <Section $allowOverflow>
               <DropdownMenu>
@@ -2334,266 +2632,38 @@ function ThemeWorkbenchSidebarComponent({
                 </ActivityList>
               ) : null}
             </Section>
-
-            <Section style={{ borderBottom: 'none' }}>
-              <SectionTitle>
-                <span>活动日志</span>
-                <button
-                  type="button"
-                  aria-label="切换活动日志"
-                  onClick={() => setShowActivityLogs((previous) => !previous)}
-                  style={{
-                    border: 0,
-                    background: 'transparent',
-                    color: 'hsl(var(--muted-foreground))',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {showActivityLogs ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                </button>
-              </SectionTitle>
-              {showActivityLogs ? (
-                <>
-                  <ActivityList className="custom-scrollbar">
-                    {groupedActivityLogs.length === 0 ? (
-                      <ActivityMeta>暂无日志</ActivityMeta>
-                    ) : (
-                      groupedActivityLogs.map((group) => {
-                        const artifactSessionId = resolveActivityGroupSessionId(group);
-                        return (
-                          <ActivityItem
-                            key={group.key}
-                            title={[group.runId, group.messageId, ...group.logs.flatMap((item) => item.contextIds || [])]
-                              .filter((value): value is string => Boolean(value && value.trim()))
-                              .join(', ')}
-                          >
-                            <ActivityGroupHeader>
-                              <span>{resolveActivityMarker(group.status)}</span>
-                              <span>
-                                {group.runId
-                                  ? '编排运行'
-                                  : group.messageId
-                                    ? '会话工具流'
-                                    : '未关联运行'}
-                              </span>
-                              <span style={{ marginLeft: 'auto' }}>{group.timeLabel}</span>
-                            </ActivityGroupHeader>
-                            <ActivityMeta>
-                              {formatGateLabel(group.gateKey)
-                                ? `闸门：${formatGateLabel(group.gateKey)}`
-                                : '闸门：未标注'}
-                              {group.source ? ` · 来源：${group.source}` : ''}
-                              {formatRunIdShort(group.runId)
-                                ? ' · '
-                                : formatRunIdShort(group.messageId)
-                                  ? ` · 会话：${formatRunIdShort(group.messageId)}`
-                                  : ''}
-                              {formatRunIdShort(group.runId) ? (
-                                <RunLinkButton
-                                  type="button"
-                                  disabled={!onViewRunDetail}
-                                  onClick={() => {
-                                    if (group.runId) {
-                                      onViewRunDetail?.(group.runId);
-                                    }
-                                  }}
-                                >
-                                  运行：{formatRunIdShort(group.runId)}
-                                </RunLinkButton>
-                              ) : null}
-                            </ActivityMeta>
-                            {group.artifactPaths.length > 0 ? (
-                              <RunDetailArtifacts>
-                                {group.artifactPaths.map((artifactPath) => (
-                                  <RunDetailArtifactRow key={`${group.key}-${artifactPath}`}>
-                                    <RunDetailArtifactPath>{artifactPath}</RunDetailArtifactPath>
-                                    <RunDetailActionButton
-                                      type="button"
-                                      aria-label={`复制活动产物路径-${artifactPath}`}
-                                      onClick={() => {
-                                        void writeClipboardText(artifactPath);
-                                      }}
-                                    >
-                                      复制
-                                    </RunDetailActionButton>
-                                    <RunDetailActionButton
-                                      type="button"
-                                      aria-label={`定位活动产物路径-${artifactPath}`}
-                                      disabled={!artifactSessionId}
-                                      onClick={() => {
-                                        void handleRevealArtifactInFinder(
-                                          artifactPath,
-                                          artifactSessionId,
-                                        );
-                                      }}
-                                    >
-                                      定位
-                                    </RunDetailActionButton>
-                                    <RunDetailActionButton
-                                      type="button"
-                                      aria-label={`打开活动产物路径-${artifactPath}`}
-                                      disabled={!artifactSessionId}
-                                      onClick={() => {
-                                        void handleOpenArtifactWithDefaultApp(
-                                          artifactPath,
-                                          artifactSessionId,
-                                        );
-                                      }}
-                                    >
-                                      打开
-                                    </RunDetailActionButton>
-                                  </RunDetailArtifactRow>
-                                ))}
-                              </RunDetailArtifacts>
-                            ) : null}
-                            <ActivityStepList>
-                              {group.logs.map((log) => (
-                                <ActivityStepItem key={log.id}>
-                                  <ActivityTitle>
-                                    <span>{resolveActivityMarker(log.status)}</span>
-                                    <span>{log.name}</span>
-                                    <span style={{ marginLeft: 'auto' }}>
-                                      {log.durationLabel || log.timeLabel}
-                                    </span>
-                                  </ActivityTitle>
-                                  <ActivityMeta>
-                                    {log.applyTarget ? `目标：${log.applyTarget}` : '目标：主稿内容'} ·
-                                    上下文：{log.contextIds?.length || 0} 条
-                                    {formatGateLabel(log.gateKey)
-                                      ? ` · 闸门：${formatGateLabel(log.gateKey)}`
-                                      : ''}
-                                    {log.source ? ` · 来源：${log.source}` : ''}
-                                    {log.durationLabel ? ` · 耗时：${log.durationLabel}` : ''}
-                                  </ActivityMeta>
-                                  <ActivityMeta>{formatLogActionLabel(log)}</ActivityMeta>
-                                  <ActivityMeta>
-                                    修改：{formatArtifactPathsLabel(log.artifactPaths)}
-                                  </ActivityMeta>
-                                  {log.inputSummary ? (
-                                    <ActivityMeta>输入：{log.inputSummary}</ActivityMeta>
-                                  ) : null}
-                                  {log.outputSummary ? (
-                                    <ActivityMeta>输出：{log.outputSummary}</ActivityMeta>
-                                  ) : null}
-                                </ActivityStepItem>
-                              ))}
-                            </ActivityStepList>
-                          </ActivityItem>
-                        );
-                      })
-                    )}
-                  </ActivityList>
-                  {activeRunDetailLoading ? (
-                    <RunDetailPanel>
-                      <RunDetailTitle>运行详情</RunDetailTitle>
-                      <RunDetailRow>加载中...</RunDetailRow>
-                    </RunDetailPanel>
-                  ) : activeRunDetail ? (
-                    <RunDetailPanel>
-                      <RunDetailTitle>运行详情</RunDetailTitle>
-                      <RunDetailRow>ID：{activeRunDetail.id}</RunDetailRow>
-                      <RunDetailRow>
-                        状态：{formatRunStatusLabel(activeRunDetail.status)}
-                      </RunDetailRow>
-                      <RunDetailRow>来源：{activeRunDetail.source}</RunDetailRow>
-                      <RunDetailRow>
-                        会话：{activeRunDetail.session_id || '-'}
-                      </RunDetailRow>
-                      <RunDetailRow>
-                        开始：{activeRunDetail.started_at}
-                      </RunDetailRow>
-                      <RunDetailRow>
-                        结束：{activeRunDetail.finished_at || '-'}
-                      </RunDetailRow>
-                      <RunDetailRow>
-                        耗时：{activeRunDetail.duration_ms ?? '-'}ms
-                      </RunDetailRow>
-                      <RunDetailActions>
-                        <RunDetailActionButton
-                          type="button"
-                          aria-label="复制运行ID"
-                          onClick={() => {
-                            void writeClipboardText(activeRunDetail.id);
-                          }}
-                        >
-                          复制运行ID
-                        </RunDetailActionButton>
-                        <RunDetailActionButton
-                          type="button"
-                          aria-label="复制运行元数据"
-                          disabled={runMetadataText === '-'}
-                          onClick={() => {
-                            void writeClipboardText(runMetadataText);
-                          }}
-                        >
-                          复制元数据
-                        </RunDetailActionButton>
-                      </RunDetailActions>
-                      {runMetadataSummary.workflow ? (
-                        <RunDetailRow>工作流：{runMetadataSummary.workflow}</RunDetailRow>
-                      ) : null}
-                      {runMetadataSummary.executionId ? (
-                        <RunDetailRow>执行ID：{runMetadataSummary.executionId}</RunDetailRow>
-                      ) : null}
-                      {runMetadataSummary.versionId ? (
-                        <RunDetailRow>版本ID：{runMetadataSummary.versionId}</RunDetailRow>
-                      ) : null}
-                      {runMetadataSummary.stages.length > 0 ? (
-                        <RunDetailRow>
-                          阶段：
-                          {runMetadataSummary.stages
-                            .map((stage) => formatStageLabelByKey(stage))
-                            .join(' → ')}
-                        </RunDetailRow>
-                      ) : null}
-                      {runMetadataSummary.artifactPaths.length > 0 ? (
-                        <RunDetailArtifacts>
-                          {runMetadataSummary.artifactPaths.map((artifactPath) => (
-                            <RunDetailArtifactRow key={artifactPath}>
-                              <RunDetailArtifactPath>{artifactPath}</RunDetailArtifactPath>
-                              <RunDetailActionButton
-                                type="button"
-                                aria-label={`复制产物路径-${artifactPath}`}
-                                onClick={() => {
-                                  void writeClipboardText(artifactPath);
-                                }}
-                              >
-                                复制路径
-                              </RunDetailActionButton>
-                              <RunDetailActionButton
-                                type="button"
-                                aria-label={`定位产物路径-${artifactPath}`}
-                                disabled={!runDetailSessionId}
-                                onClick={() => {
-                                  void handleRevealArtifactInFinder(artifactPath);
-                                }}
-                              >
-                                在 Finder 中定位
-                              </RunDetailActionButton>
-                              <RunDetailActionButton
-                                type="button"
-                                aria-label={`打开产物路径-${artifactPath}`}
-                                disabled={!runDetailSessionId}
-                                onClick={() => {
-                                  void handleOpenArtifactWithDefaultApp(artifactPath);
-                                }}
-                              >
-                                打开
-                              </RunDetailActionButton>
-                            </RunDetailArtifactRow>
-                          ))}
-                        </RunDetailArtifacts>
-                      ) : null}
-                      <RunDetailCode>{runMetadataText}</RunDetailCode>
-                    </RunDetailPanel>
-                  ) : null}
-                </>
-              ) : null}
-            </Section>
           </>
-        )}
+        ) : null}
+        {activeTab === "log" ? (
+          <ExecLogContainer>
+            {execLogEntries.length === 0 ? (
+              <ExecLogEmpty>暂无执行记录</ExecLogEmpty>
+            ) : (
+              <ExecLogTimeline>
+                {execLogEntries.map((entry) => (
+                  <ExecLogItem key={entry.id}>
+                    <ExecLogDot $type={entry.type} $status={entry.status} />
+                    <ExecLogHeader>
+                      <ExecLogBadge $type={entry.type} $status={entry.status}>
+                        {entry.typeLabel}
+                      </ExecLogBadge>
+                      <ExecLogTime>
+                        {entry.timestamp
+                          ? entry.timestamp instanceof Date
+                            ? entry.timestamp.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                            : new Date(entry.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                          : ""}
+                      </ExecLogTime>
+                    </ExecLogHeader>
+                    <ExecLogContent>{entry.content}</ExecLogContent>
+                    {entry.meta ? <ExecLogMeta>{entry.meta}</ExecLogMeta> : null}
+                  </ExecLogItem>
+                ))}
+                <div ref={execLogBottomRef} />
+              </ExecLogTimeline>
+            )}
+          </ExecLogContainer>
+        ) : null}
       </SidebarBody>
       {addContextDialogOpen ? (
         <ContextModalOverlay
@@ -2870,7 +2940,8 @@ function areThemeWorkbenchSidebarPropsEqual(
     previous.onViewRunDetail === next.onViewRunDetail &&
     previous.activeRunDetail === next.activeRunDetail &&
     previous.activeRunDetailLoading === next.activeRunDetailLoading &&
-    previous.onRequestCollapse === next.onRequestCollapse
+    previous.onRequestCollapse === next.onRequestCollapse &&
+    previous.messages === next.messages
   );
 }
 

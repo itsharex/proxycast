@@ -836,6 +836,7 @@ export async function sendAsterMessageStream(
   executionStrategy?: AsterExecutionStrategy,
   webSearch?: boolean,
   autoContinue?: AutoContinueRequestPayload,
+  systemPrompt?: string,
 ): Promise<void> {
   const resolvedWorkspaceId = requireWorkspaceId(workspaceId);
 
@@ -850,6 +851,7 @@ export async function sendAsterMessageStream(
       execution_strategy: executionStrategy,
       web_search: webSearch,
       auto_continue: autoContinue,
+      system_prompt: systemPrompt,
     },
   });
 }

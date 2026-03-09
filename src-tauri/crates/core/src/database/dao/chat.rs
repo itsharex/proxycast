@@ -18,21 +18,16 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 /// 对话模式
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ChatMode {
     /// AI Agent 模式，支持工具调用
     Agent,
     /// 通用对话模式，纯文本
+    #[default]
     General,
     /// 内容创作模式，支持画布输出
     Creator,
-}
-
-impl Default for ChatMode {
-    fn default() -> Self {
-        Self::General
-    }
 }
 
 impl std::fmt::Display for ChatMode {

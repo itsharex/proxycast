@@ -68,6 +68,24 @@ fn skills_root_from_home(home_dir: &Path) -> PathBuf {
     home_dir.join(".proxycast").join("skills")
 }
 
+/// 从 SKILL.md 内容中提取版本号，返回 (major, minor, patch)
+fn parse_skill_version(content: &str) -> Option<(u32, u32, u32)> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("version:") {
+            let version_str = trimmed.splitn(2, ':').nth(1)?.trim();
+            let parts: Vec<&str> = version_str.split('.').collect();
+            if parts.len() == 3 {
+                let major = parts[0].trim().parse::<u32>().ok()?;
+                let minor = parts[1].trim().parse::<u32>().ok()?;
+                let patch = parts[2].trim().parse::<u32>().ok()?;
+                return Some((major, minor, patch));
+            }
+        }
+    }
+    None
+}
+
 fn ensure_default_local_skills_in_home(home_dir: &Path) -> Result<Vec<String>, String> {
     let skills_root = skills_root_from_home(home_dir);
     fs::create_dir_all(&skills_root)
@@ -78,6 +96,20 @@ fn ensure_default_local_skills_in_home(home_dir: &Path) -> Result<Vec<String>, S
         let skill_dir = skills_root.join(skill_name);
         let skill_md_path = skill_dir.join("SKILL.md");
         if skill_md_path.exists() {
+            // 比较版本号，若内置版本更新则自动升级
+            let existing_content = fs::read_to_string(&skill_md_path).unwrap_or_default();
+            let existing_version = parse_skill_version(&existing_content);
+            let embedded_version = parse_skill_version(skill_content);
+            match (existing_version, embedded_version) {
+                (Some(ev), Some(bv)) if bv > ev => {
+                    // 内置版本更新，覆盖升级
+                    fs::write(&skill_md_path, skill_content).map_err(|e| {
+                        format!("升级默认技能失败 {}: {e}", skill_md_path.display())
+                    })?;
+                    installed.push(skill_name.to_string());
+                }
+                _ => continue, // 版本相同或无法比较，跳过
+            }
             continue;
         }
 
@@ -124,17 +156,59 @@ mod tests {
             .join(SOCIAL_POST_WITH_COVER_SKILL_NAME);
         fs::create_dir_all(&skill_dir).expect("create skill dir");
         let skill_md_path = skill_dir.join("SKILL.md");
+        // 无版本号的自定义内容不应被覆盖
         let existing_content = "custom skill content";
         fs::write(&skill_md_path, existing_content).expect("write custom skill");
 
         let installed = ensure_default_local_skills_in_home(temp.path()).expect("install");
         assert!(
             !installed.contains(&SOCIAL_POST_WITH_COVER_SKILL_NAME.to_string()),
-            "已存在的 skill 不应被重新安装"
+            "无版本信息的已存在 skill 不应被重新安装"
         );
 
         let current_content = fs::read_to_string(&skill_md_path).expect("read skill");
         assert_eq!(current_content, existing_content);
+    }
+
+    #[test]
+    fn should_upgrade_skill_when_newer_version_available() {
+        let temp = tempfile::tempdir().expect("create temp dir");
+        let skill_dir = temp
+            .path()
+            .join(".proxycast")
+            .join("skills")
+            .join(SOCIAL_POST_WITH_COVER_SKILL_NAME);
+        fs::create_dir_all(&skill_dir).expect("create skill dir");
+        let skill_md_path = skill_dir.join("SKILL.md");
+        // 旧版本内容
+        let old_content = "---\nname: social_post_with_cover\nversion: 1.0.0\n---\nold content";
+        fs::write(&skill_md_path, old_content).expect("write old skill");
+
+        let installed = ensure_default_local_skills_in_home(temp.path()).expect("install");
+        assert!(
+            installed.contains(&SOCIAL_POST_WITH_COVER_SKILL_NAME.to_string()),
+            "内置版本更新时应自动升级"
+        );
+
+        let current_content = fs::read_to_string(&skill_md_path).expect("read skill");
+        assert_ne!(current_content, old_content, "旧版本内容应被替换");
+        assert!(
+            current_content.contains("steps-json"),
+            "升级后应包含 steps-json 字段"
+        );
+    }
+
+    #[test]
+    fn should_parse_skill_version() {
+        assert_eq!(
+            parse_skill_version("---\nversion: 1.3.0\n---\n"),
+            Some((1, 3, 0))
+        );
+        assert_eq!(
+            parse_skill_version("---\nname: test\nversion: 2.10.5\n---\n"),
+            Some((2, 10, 5))
+        );
+        assert_eq!(parse_skill_version("no version here"), None);
     }
 
     #[test]

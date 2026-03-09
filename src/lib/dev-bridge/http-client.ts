@@ -6,6 +6,7 @@
  */
 
 const BRIDGE_URL = "http://127.0.0.1:3030/invoke";
+const BRIDGE_HEALTH_URL = "http://127.0.0.1:3030/health";
 
 export interface InvokeRequest {
   cmd: string;
@@ -15,6 +16,50 @@ export interface InvokeRequest {
 export interface InvokeResponse {
   result?: unknown;
   error?: string;
+}
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message || error.name || "Unknown error";
+  }
+  return String(error || "Unknown error");
+}
+
+function isBridgeCommandError(message: string): boolean {
+  return (
+    message.includes("未知命令") ||
+    message.includes("Unsupported command") ||
+    message.includes("未实现")
+  );
+}
+
+function isBridgeConnectionError(message: string): boolean {
+  return (
+    message.includes("Failed to fetch") ||
+    message.includes("fetch failed") ||
+    message.includes("NetworkError") ||
+    message.includes("ERR_CONNECTION_REFUSED") ||
+    message.includes("Load failed") ||
+    message.includes("ECONNREFUSED")
+  );
+}
+
+export function normalizeDevBridgeError(cmd: string, error: unknown): Error {
+  const message = toErrorMessage(error);
+
+  if (isBridgeCommandError(message)) {
+    return error instanceof Error ? error : new Error(message);
+  }
+
+  if (isBridgeConnectionError(message)) {
+    return new Error(
+      `[DevBridge] 浏览器模式无法连接后端桥接，命令 "${cmd}" 执行失败。请先启动 Tauri 开发后端（例如 npm run tauri:dev 或 npm run tauri:dev:headless），并确认 http://127.0.0.1:3030 可访问。原始错误: ${message}`,
+    );
+  }
+
+  return error instanceof Error
+    ? error
+    : new Error(`[DevBridge] 命令 "${cmd}" 调用失败: ${message}`);
 }
 
 /**
@@ -81,14 +126,8 @@ export async function invokeViaHttp<T = unknown>(
  */
 export async function healthCheck(): Promise<boolean> {
   try {
-    const response = await fetch(BRIDGE_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        cmd: "get_server_status",
-      } satisfies InvokeRequest),
+    const response = await fetch(BRIDGE_HEALTH_URL, {
+      method: "GET",
     });
     return response.ok;
   } catch {

@@ -31,10 +31,11 @@ pub struct ChatSession {
 /// 消息角色
 ///
 /// 标识消息的发送者类型
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum MessageRole {
     /// 用户消息
+    #[default]
     User,
     /// AI 助手消息
     Assistant,
@@ -42,19 +43,14 @@ pub enum MessageRole {
     System,
 }
 
-impl Default for MessageRole {
-    fn default() -> Self {
-        Self::User
-    }
-}
-
 /// 消息状态
 ///
 /// 标识消息的当前处理状态
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum MessageStatus {
     /// 等待发送
+    #[default]
     Pending,
     /// 流式生成中
     Streaming,
@@ -62,12 +58,6 @@ pub enum MessageStatus {
     Complete,
     /// 发生错误
     Error,
-}
-
-impl Default for MessageStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 /// 内容块

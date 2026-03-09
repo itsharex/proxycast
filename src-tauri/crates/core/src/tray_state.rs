@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 托盘图标状态枚举
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TrayIconStatus {
     /// 正常运行（绿色）- 服务器运行且凭证健康
@@ -15,13 +15,8 @@ pub enum TrayIconStatus {
     /// 错误状态（红色）- 服务器停止或所有凭证无效
     Error,
     /// 停止状态（灰色）- 服务器未启动
+    #[default]
     Stopped,
-}
-
-impl Default for TrayIconStatus {
-    fn default() -> Self {
-        Self::Stopped
-    }
 }
 
 /// 凭证健康状态

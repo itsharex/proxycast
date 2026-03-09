@@ -46,10 +46,11 @@ pub struct CredentialPoolConfig {
 // ============ ASR 语音服务配置类型 ============
 
 /// ASR Provider 类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AsrProviderType {
     /// 本地 Whisper（离线）
+    #[default]
     WhisperLocal,
     /// 讯飞语音识别
     Xunfei,
@@ -59,30 +60,20 @@ pub enum AsrProviderType {
     OpenAI,
 }
 
-impl Default for AsrProviderType {
-    fn default() -> Self {
-        Self::WhisperLocal
-    }
-}
-
 /// Whisper 模型大小
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 #[serde(rename_all = "snake_case")]
 pub enum WhisperModelSize {
     /// tiny - 最小，最快（~75MB）
     Tiny,
     /// base - 基础（~142MB）
+    #[default]
     Base,
     /// small - 小型（~466MB）
     Small,
     /// medium - 中型（~1.5GB）
     Medium,
-}
-
-impl Default for WhisperModelSize {
-    fn default() -> Self {
-        Self::Base
-    }
 }
 
 /// ASR 凭证条目
@@ -948,21 +939,16 @@ impl Default for VoiceOutputConfig {
 }
 
 /// 语音输出模式
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum VoiceOutputMode {
     /// 模拟键盘输入
+    #[default]
     Type,
     /// 复制到剪贴板
     Clipboard,
     /// 两者都做
     Both,
-}
-
-impl Default for VoiceOutputMode {
-    fn default() -> Self {
-        Self::Type
-    }
 }
 
 /// 语音处理指令

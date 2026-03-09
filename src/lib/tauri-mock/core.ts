@@ -2,9 +2,15 @@
  * Mock for @tauri-apps/api/core
  */
 
+import {
+  invokeViaHttp,
+  isDevBridgeAvailable,
+  normalizeDevBridgeError,
+} from "../dev-bridge/http-client";
+import { shouldPreferMockInBrowser } from "../dev-bridge/mockPriorityCommands";
+
 // 模拟的命令处理器
 const mockCommands = new Map<string, (...args: any[]) => any>();
-
 // 默认 mock 数据
 const defaultMocks: Record<string, any> = {
   // 配置相关
@@ -149,6 +155,7 @@ const defaultMocks: Record<string, any> = {
     return provider;
   },
   get_available_models: () => [],
+  get_hint_routes: () => [],
 
   // 服务器相关
   get_server_status: () => ({
@@ -617,6 +624,54 @@ const defaultMocks: Record<string, any> = {
     id: "mock-material-id",
   }),
 
+  list_materials: () => [],
+  project_memory_get: () => ({
+    characters: [],
+    world_building: null,
+    style_guide: null,
+    outline: [],
+  }),
+  get_conversation_memory_overview: () => ({
+    stats: { total_entries: 0, storage_used: 0, memory_count: 0 },
+    entries: [],
+  }),
+  get_conversation_memory_stats: () => ({
+    total_entries: 0,
+    storage_used: 0,
+    memory_count: 0,
+  }),
+
+  session_files_get_or_create: (args: any) => ({
+    sessionId: args?.sessionId ?? "mock-session",
+    title: "",
+    theme: null,
+    creationMode: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    fileCount: 0,
+    totalSize: 0,
+  }),
+  session_files_update_meta: (args: any) => ({
+    sessionId: args?.sessionId ?? "mock-session",
+    title: args?.title ?? "",
+    theme: args?.theme ?? null,
+    creationMode: args?.creationMode ?? null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    fileCount: 0,
+    totalSize: 0,
+  }),
+  session_files_list_files: () => [],
+  session_files_save_file: (args: any) => ({
+    name: args?.fileName ?? "mock.txt",
+    fileType: "text/plain",
+    size: typeof args?.content === "string" ? args.content.length : 0,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }),
+  session_files_read_file: () => "",
+  session_files_delete_file: () => undefined,
+
   // OAuth 凭证相关
   add_kiro_oauth_credential: () => ({ success: true }),
   add_kiro_from_json: () => ({ success: true }),
@@ -1060,6 +1115,7 @@ const defaultMocks: Record<string, any> = {
     latest_terminal: null,
     updated_at: new Date().toISOString(),
   }),
+  content_workflow_get_by_content: () => null,
   content_get_theme_workbench_document_state: () => null,
 
   // Workspace 相关
@@ -1106,6 +1162,18 @@ export async function invoke<T = any>(
   if (mockCommands.has(cmd)) {
     const handler = mockCommands.get(cmd)!;
     return handler(args);
+  }
+
+  if (isDevBridgeAvailable() && !shouldPreferMockInBrowser(cmd)) {
+    try {
+      return await invokeViaHttp<T>(cmd, args);
+    } catch (error) {
+      if (cmd in defaultMocks) {
+        console.warn(`[Mock] Bridge unavailable or unsupported, fallback to mock: ${cmd}`);
+        return defaultMocks[cmd](args);
+      }
+      throw normalizeDevBridgeError(cmd, error);
+    }
   }
 
   // 使用默认 mock

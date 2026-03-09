@@ -10,7 +10,7 @@ use crate::database::DbConnection;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-const THEME_WORKBENCH_DOCUMENT_META_KEY: &str = "theme_workbench_document_v1";
+pub(crate) const THEME_WORKBENCH_DOCUMENT_META_KEY: &str = "theme_workbench_document_v1";
 
 /// 内容列表项（用于前端展示）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,7 +103,7 @@ fn is_valid_topic_branch_status(status: &str) -> bool {
     matches!(status, "in_progress" | "pending" | "merged" | "candidate")
 }
 
-fn parse_theme_workbench_document_state(
+pub(crate) fn parse_theme_workbench_document_state(
     content_id: &str,
     metadata: Option<&serde_json::Value>,
 ) -> Option<ThemeWorkbenchDocumentState> {

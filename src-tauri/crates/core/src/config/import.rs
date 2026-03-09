@@ -131,6 +131,7 @@ impl ImportResult {
 
 /// 导入错误类型
 #[derive(Debug, Clone)]
+#[allow(clippy::enum_variant_names)]
 pub enum ImportError {
     /// 格式错误
     FormatError(String),

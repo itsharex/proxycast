@@ -20,6 +20,7 @@ use tokio::sync::mpsc;
 /// 热重载错误类型
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
+#[allow(clippy::enum_variant_names)]
 pub enum HotReloadError {
     /// 文件监控错误
     WatchError(String),
@@ -491,14 +492,12 @@ fn is_valid_bind_host(host: &str) -> bool {
     }
 
     // 允许私有网络地址
-    if let Ok(addr) = host.parse::<std::net::IpAddr>() {
-        if let std::net::IpAddr::V4(ipv4) = addr {
-            // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-            let octets = ipv4.octets();
-            return octets[0] == 10
-                || (octets[0] == 172 && (octets[1] >= 16 && octets[1] <= 31))
-                || (octets[0] == 192 && octets[1] == 168);
-        }
+    if let Ok(std::net::IpAddr::V4(ipv4)) = host.parse::<std::net::IpAddr>() {
+        // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+        let octets = ipv4.octets();
+        return octets[0] == 10
+            || (octets[0] == 172 && (octets[1] >= 16 && octets[1] <= 31))
+            || (octets[0] == 192 && octets[1] == 168);
     }
 
     false
@@ -511,13 +510,11 @@ fn is_non_local_bind(host: &str) -> bool {
     }
 
     // 私有网络地址也算非本地绑定
-    if let Ok(addr) = host.parse::<std::net::IpAddr>() {
-        if let std::net::IpAddr::V4(ipv4) = addr {
-            let octets = ipv4.octets();
-            return octets[0] == 10
-                || (octets[0] == 172 && (octets[1] >= 16 && octets[1] <= 31))
-                || (octets[0] == 192 && octets[1] == 168);
-        }
+    if let Ok(std::net::IpAddr::V4(ipv4)) = host.parse::<std::net::IpAddr>() {
+        let octets = ipv4.octets();
+        return octets[0] == 10
+            || (octets[0] == 172 && (octets[1] >= 16 && octets[1] <= 31))
+            || (octets[0] == 192 && octets[1] == 168);
     }
 
     false

@@ -7,6 +7,12 @@ import type { MessageImage } from "../../types";
 import type { Character } from "@/lib/api/memory";
 import type { Skill } from "@/lib/api/skills";
 import { TaskFileList, type TaskFile } from "../TaskFiles";
+import { A2UIRenderer } from "@/components/content-creator/a2ui";
+import {
+  A2UISubmissionNotice,
+  type A2UISubmissionNoticeData,
+} from "./components/A2UISubmissionNotice";
+import type { A2UIResponse, A2UIFormData } from "@/components/content-creator/a2ui/types";
 import {
   FolderOpen,
   ChevronUp,
@@ -39,6 +45,99 @@ const TaskFilesArea = styled.div`
   max-width: none;
   margin: 0;
 `;
+
+// A2UI Form 卡片容器（在输入框上方）
+const A2UIFormCard = styled.div`
+  position: relative;
+  margin-bottom: 10px;
+  padding: 12px;
+  background: hsl(var(--background) / 0.97);
+  border: 1px solid hsl(var(--border) / 0.95);
+  border-radius: 12px;
+  max-width: 100%;
+  max-height: min(44vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-shadow:
+    0 14px 36px hsl(var(--foreground) / 0.10),
+    0 0 0 1px hsl(var(--background) / 0.72);
+  backdrop-filter: blur(14px);
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+
+  &::after {
+    content: "";
+    position: sticky;
+    display: block;
+    left: 0;
+    right: 0;
+    bottom: -12px;
+    height: 16px;
+    margin: 0 -12px -12px;
+    pointer-events: none;
+    background: linear-gradient(
+      180deg,
+      hsl(var(--background) / 0) 0%,
+      hsl(var(--background) / 0.9) 100%
+    );
+  }
+
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 999px;
+  }
+
+  .a2ui-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .a2ui-container > * + * {
+    margin-top: 0;
+  }
+
+  .a2ui-container .text-sm,
+  .a2ui-container label,
+  .a2ui-container [class*="text-sm"] {
+    font-size: 13px;
+    line-height: 1.35;
+  }
+
+  .a2ui-container .text-xs,
+  .a2ui-container p,
+  .a2ui-container [class*="text-xs"] {
+    font-size: 12px;
+    line-height: 1.3;
+  }
+
+  .a2ui-container input,
+  .a2ui-container textarea {
+    padding: 7px 9px;
+    font-size: 12px;
+    line-height: 1.35;
+    border-color: hsl(var(--border) / 0.95);
+    background: hsl(var(--background));
+  }
+
+  .a2ui-container textarea {
+    min-height: 72px;
+  }
+
+  .a2ui-container button {
+    padding: 6px 10px;
+    font-size: 12px;
+    line-height: 1.3;
+    box-shadow: 0 1px 0 hsl(var(--background) / 0.35);
+  }
+`;
+
 
 // 按钮和面板的包装容器
 const TaskFilesWrapper = styled.div`
@@ -552,6 +651,12 @@ interface InputbarProps {
   themeWorkbenchGate?: ThemeWorkbenchGateState | null;
   workflowSteps?: ThemeWorkbenchWorkflowStep[];
   themeWorkbenchRunState?: "idle" | "auto_running" | "await_user_decision";
+  /** 待处理的 A2UI Form（显示在输入框上方） */
+  pendingA2UIForm?: A2UIResponse | null;
+  /** A2UI Form 提交回调 */
+  onA2UISubmit?: (formData: A2UIFormData) => void;
+  /** A2UI 表单已提交提示 */
+  a2uiSubmissionNotice?: A2UISubmissionNoticeData | null;
 }
 
 export const Inputbar: React.FC<InputbarProps> = ({
@@ -587,6 +692,9 @@ export const Inputbar: React.FC<InputbarProps> = ({
   themeWorkbenchGate,
   workflowSteps = [],
   themeWorkbenchRunState,
+  pendingA2UIForm,
+  onA2UISubmit,
+  a2uiSubmissionNotice,
 }) => {
   const [localActiveTools, setLocalActiveTools] = useState<
     Record<string, boolean>
@@ -598,9 +706,14 @@ export const Inputbar: React.FC<InputbarProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [themeWorkbenchQueueCollapsed, setThemeWorkbenchQueueCollapsed] =
     useState(false);
+  const [visibleA2UISubmissionNotice, setVisibleA2UISubmissionNotice] =
+    useState<A2UISubmissionNoticeData | null>(null);
+  const [isA2UISubmissionNoticeVisible, setIsA2UISubmissionNoticeVisible] =
+    useState(false);
   const { activeSkill, setActiveSkill, clearActiveSkill } = useActiveSkill();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const a2uiSubmissionNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Hint 路由
   const [showHintPopup, setShowHintPopup] = useState(false);
@@ -1056,6 +1169,53 @@ export const Inputbar: React.FC<InputbarProps> = ({
       : inputAdapter.state.isSending
     : false;
 
+  const shouldShowA2UISubmissionNotice = Boolean(
+    !pendingA2UIForm &&
+      a2uiSubmissionNotice &&
+      (!isThemeWorkbenchVariant ||
+        (!renderThemeWorkbenchGeneratingPanel &&
+          themeWorkbenchQueueItems.length === 0 &&
+          (themeWorkbenchGate?.status ?? "idle") === "idle")),
+  );
+
+  useEffect(() => {
+    return () => {
+      if (a2uiSubmissionNoticeTimerRef.current) {
+        clearTimeout(a2uiSubmissionNoticeTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (a2uiSubmissionNoticeTimerRef.current) {
+      clearTimeout(a2uiSubmissionNoticeTimerRef.current);
+      a2uiSubmissionNoticeTimerRef.current = null;
+    }
+
+    if (shouldShowA2UISubmissionNotice && a2uiSubmissionNotice) {
+      setVisibleA2UISubmissionNotice(a2uiSubmissionNotice);
+      const frameId = window.requestAnimationFrame(() => {
+        setIsA2UISubmissionNoticeVisible(true);
+      });
+      return () => {
+        window.cancelAnimationFrame(frameId);
+      };
+    }
+
+    setIsA2UISubmissionNoticeVisible(false);
+    a2uiSubmissionNoticeTimerRef.current = setTimeout(() => {
+      setVisibleA2UISubmissionNotice(null);
+      a2uiSubmissionNoticeTimerRef.current = null;
+    }, 180);
+
+    return () => {
+      if (a2uiSubmissionNoticeTimerRef.current) {
+        clearTimeout(a2uiSubmissionNoticeTimerRef.current);
+        a2uiSubmissionNoticeTimerRef.current = null;
+      }
+    };
+  }, [a2uiSubmissionNotice, shouldShowA2UISubmissionNotice]);
+
   return (
     <div
       onDragOver={handleDragOver}
@@ -1115,6 +1275,18 @@ export const Inputbar: React.FC<InputbarProps> = ({
           </TaskFilesWrapper>
         </TaskFilesArea>
       )}
+      {/* A2UI 已提交提示 / 待填写表单 */}
+      {visibleA2UISubmissionNotice ? (
+        <A2UISubmissionNotice
+          notice={visibleA2UISubmissionNotice}
+          visible={isA2UISubmissionNoticeVisible}
+        />
+      ) : null}
+      {pendingA2UIForm && onA2UISubmit ? (
+        <A2UIFormCard>
+          <A2UIRenderer response={pendingA2UIForm} onSubmit={onA2UISubmit} />
+        </A2UIFormCard>
+      ) : null}
       <input
         ref={fileInputRef}
         type="file"

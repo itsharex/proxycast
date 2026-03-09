@@ -8,6 +8,7 @@ import React, { memo } from "react";
 import styled from "styled-components";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { CoverImagePlaceholder, preprocessCoverImageUrls } from "./CoverImagePlaceholder";
 
 interface XiaohongshuRendererProps {
   content: string;
@@ -120,7 +121,8 @@ const Container = styled.div`
 /* 话题标签高亮样式 */
 const processContent = (content: string): string => {
   // 将 #话题# 格式转换为带样式的 span
-  return content.replace(/#([^#\s]+)#/g, "**#$1#**");
+  const withTags = content.replace(/#([^#\s]+)#/g, "**#$1#**");
+  return preprocessCoverImageUrls(withTags);
 };
 
 /**
@@ -132,7 +134,14 @@ export const XiaohongshuRenderer: React.FC<XiaohongshuRendererProps> = memo(
 
     return (
       <Container>
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            img({ src, alt }) {
+              return <CoverImagePlaceholder src={src} alt={alt} />;
+            },
+          }}
+        >
           {processedContent}
         </ReactMarkdown>
       </Container>

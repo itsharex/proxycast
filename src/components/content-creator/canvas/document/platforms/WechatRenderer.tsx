@@ -8,6 +8,7 @@ import React, { memo } from "react";
 import styled from "styled-components";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { CoverImagePlaceholder, preprocessCoverImageUrls } from "./CoverImagePlaceholder";
 
 interface WechatRendererProps {
   content: string;
@@ -130,9 +131,19 @@ const Container = styled.div`
  */
 export const WechatRenderer: React.FC<WechatRendererProps> = memo(
   ({ content }) => {
+    const processedContent = preprocessCoverImageUrls(content);
     return (
       <Container>
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            img({ src, alt }) {
+              return <CoverImagePlaceholder src={src} alt={alt} />;
+            },
+          }}
+        >
+          {processedContent}
+        </ReactMarkdown>
       </Container>
     );
   },

@@ -4,7 +4,7 @@
   "version": "0.70.0",
   "identifier": "com.proxycast.app",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run dev:web-bridge",
     "devUrl": "http://127.0.0.1:1420",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
@@ -58,7 +58,9 @@
     },
     "deep-link": {
       "desktop": {
-        "schemes": ["proxycast"]
+        "schemes": [
+          "proxycast"
+        ]
       }
     }
   }

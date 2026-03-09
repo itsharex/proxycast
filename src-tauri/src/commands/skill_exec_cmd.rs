@@ -286,15 +286,6 @@ fn normalize_social_markdown_contract(content: &str) -> String {
     if !normalized.contains("![封面图](") {
         normalized = format!("{normalized}\n\n![封面图]({SOCIAL_POST_FALLBACK_COVER_URL})");
     }
-
-    if !normalized.contains("## 配图说明") {
-        normalized.push_str("\n\n## 配图说明\n");
-        normalized.push_str("- 提示词：未提供\n");
-        normalized.push_str(&format!("- 尺寸：{SOCIAL_POST_DEFAULT_IMAGE_SIZE}\n"));
-        normalized.push_str("- 状态：失败\n");
-        normalized.push_str(&format!("- 备注：{SOCIAL_POST_FALLBACK_COVER_NOTE}\n"));
-    }
-
     normalized
 }
 

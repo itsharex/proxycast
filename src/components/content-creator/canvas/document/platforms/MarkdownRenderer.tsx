@@ -10,6 +10,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { CoverImagePlaceholder, preprocessCoverImageUrls } from "./CoverImagePlaceholder";
 
 interface MarkdownRendererProps {
   content: string;
@@ -180,11 +181,16 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(
       await navigator.clipboard.writeText(code);
     };
 
+    const processedContent = preprocessCoverImageUrls(content);
+
     return (
       <Container>
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
+            img({ src, alt }) {
+              return <CoverImagePlaceholder src={src} alt={alt} />;
+            },
             code({ className, children, ...props }) {
               const match = /language-(\w+)/.exec(className || "");
               const codeString = String(children).replace(/\n$/, "");
@@ -213,7 +219,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(
             },
           }}
         >
-          {content}
+          {processedContent}
         </ReactMarkdown>
       </Container>
     );

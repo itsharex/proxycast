@@ -21,6 +21,7 @@ use crate::plugin;
 use crate::telemetry;
 use proxycast_core::config::{Config, ConfigManager};
 use proxycast_services::api_key_provider_service::ApiKeyProviderService;
+use proxycast_services::content_creator::{ProgressStore, WorkflowService};
 use proxycast_services::context_memory_service::{ContextMemoryConfig, ContextMemoryService};
 use proxycast_services::provider_pool_service::ProviderPoolService;
 use proxycast_services::skill_service::SkillService;
@@ -61,6 +62,8 @@ pub struct ServiceStates {
     pub orchestrator: OrchestratorState,
     pub context_memory_service: ContextMemoryServiceState,
     pub tool_hooks_service: ToolHooksServiceState,
+    pub workflow_service: Arc<RwLock<WorkflowService>>,
+    pub progress_store: Arc<RwLock<ProgressStore>>,
 }
 
 /// 初始化所有服务状态
@@ -114,6 +117,15 @@ pub fn init_service_states() -> ServiceStates {
     let tool_hooks_service = ToolHooksService::new(context_memory_service_state.0.clone());
     let tool_hooks_service_state = ToolHooksServiceState(Arc::new(tool_hooks_service));
 
+    // Initialize WorkflowService
+    let workflow_service = WorkflowService::new();
+    let workflow_service_state = Arc::new(RwLock::new(workflow_service));
+
+    // Initialize ProgressStore
+    let db_path = database::get_db_path().expect("Failed to get database path");
+    let progress_store = ProgressStore::new(db_path).expect("Failed to initialize ProgressStore");
+    let progress_store_state = Arc::new(RwLock::new(progress_store));
+
     ServiceStates {
         skill_service: skill_service_state,
         provider_pool_service: provider_pool_service_state,
@@ -127,6 +139,8 @@ pub fn init_service_states() -> ServiceStates {
         orchestrator: orchestrator_state,
         context_memory_service: context_memory_service_state,
         tool_hooks_service: tool_hooks_service_state,
+        workflow_service: workflow_service_state,
+        progress_store: progress_store_state,
     }
 }
 

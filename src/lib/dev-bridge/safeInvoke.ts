@@ -3,7 +3,7 @@
  * @description 提供安全的 Tauri invoke 调用，支持三层 fallback：
  *   1. Tauri IPC (生产环境或 Tauri webview)
  *   2. HTTP Bridge (开发模式，浏览器 + Tauri 后端)
- *   3. Mock (纯浏览器开发)
+ *   3. Mock (仅测试/非浏览器调试场景)
  *
  * @module dev-bridge/safeInvoke
  */
@@ -11,7 +11,12 @@
 import { invoke as baseInvoke } from "@tauri-apps/api/core";
 import { listen as baseListen, emit as baseEmit } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { invokeViaHttp, isDevBridgeAvailable } from "./http-client";
+import {
+  invokeViaHttp,
+  isDevBridgeAvailable,
+  normalizeDevBridgeError,
+} from "./http-client";
+import { shouldPreferMockInBrowser } from "./mockPriorityCommands";
 
 export interface InvokeErrorBufferEntry {
   timestamp: string;
@@ -162,7 +167,8 @@ export function clearInvokeErrorBuffer(): void {
 
 /**
  * 安全的 Tauri invoke 封装
- * 支持三种模式：Tauri IPC → HTTP Bridge → Mock
+ * 支持三种模式：Tauri IPC → HTTP Bridge → Mock。
+ * 在浏览器开发模式下，HTTP Bridge 失败会直接报错，不再静默回退到 mock。
  */
 export async function safeInvoke<T = any>(
   cmd: string,
@@ -191,18 +197,35 @@ export async function safeInvoke<T = any>(
     }
   }
 
-  // 2. Dev 模式下尝试 HTTP 桥接（浏览器环境，Tauri 后端在运行）
+  // 2. 浏览器开发模式下，部分原生/非关键命令直接优先走 mock。
+  if (isDevBridgeAvailable() && shouldPreferMockInBrowser(cmd)) {
+    try {
+      return await baseInvoke(cmd, args);
+    } catch (error) {
+      recordInvokeError(cmd, args, error, "fallback-invoke");
+      throw error;
+    }
+  }
+
+  // 3. Dev 模式下尝试 HTTP 桥接（浏览器环境，Tauri 后端在运行）
   if (isDevBridgeAvailable()) {
     try {
       const result = await invokeViaHttp(cmd, args);
       return result as T;
     } catch (error) {
-      recordInvokeError(cmd, args, error, "http-bridge");
-      // 继续尝试 mock
+      const normalizedError = normalizeDevBridgeError(cmd, error);
+      recordInvokeError(cmd, args, normalizedError, "http-bridge");
+
+      try {
+        return await baseInvoke(cmd, args);
+      } catch (fallbackError) {
+        recordInvokeError(cmd, args, fallbackError, "fallback-invoke");
+        throw normalizedError;
+      }
     }
   }
 
-  // 3. Fallback 到 mock（Vite alias 会替换 @tauri-apps 导入）
+  // 4. Fallback 到 mock（Vite alias 会替换 @tauri-apps 导入）
   try {
     return await baseInvoke(cmd, args);
   } catch (error) {

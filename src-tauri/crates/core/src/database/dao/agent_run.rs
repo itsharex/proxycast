@@ -98,6 +98,7 @@ impl AgentRunDao {
     }
 
     /// 仅允许从非终态更新到终态，幂等保护：`finished_at IS NULL`
+    #[allow(clippy::too_many_arguments)]
     pub fn finish_run(
         conn: &Connection,
         id: &str,

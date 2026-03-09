@@ -361,6 +361,9 @@ pub struct AsterChatRequest {
     /// 自动续写策略（用于文稿续写等场景）
     #[serde(default, alias = "autoContinue")]
     pub auto_continue: Option<AutoContinuePayload>,
+    /// 前端传入的 System Prompt（可选，优先级低于项目上下文）
+    #[serde(default, alias = "systemPrompt")]
+    pub system_prompt: Option<String>,
 }
 
 /// 自动续写参数
@@ -3308,10 +3311,11 @@ pub async fn aster_agent_chat_stream(
         };
 
         // 2. 如果没有项目上下文，尝试从 session 读取
+        // 3. 如果 session 也没有，使用前端传入的 system_prompt
         let resolved_prompt = if project_prompt.is_some() {
             project_prompt
         } else {
-            match session {
+            let session_prompt = match session {
                 Some(session) => {
                     tracing::debug!(
                         "[AsterAgent] 找到 session，system_prompt: {:?}",
@@ -3326,6 +3330,22 @@ pub async fn aster_agent_chat_stream(
                     );
                     None
                 }
+            };
+            // fallback 到前端传入的 system_prompt
+            if session_prompt.is_some() {
+                session_prompt
+            } else if let Some(ref frontend_prompt) = request.system_prompt {
+                if !frontend_prompt.trim().is_empty() {
+                    tracing::info!(
+                        "[AsterAgent] 使用前端传入的 system_prompt, len={}",
+                        frontend_prompt.len()
+                    );
+                    Some(frontend_prompt.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
             }
         };
 
@@ -4618,4 +4638,73 @@ async fn ensure_proxycast_mcp_servers_running(
     }
 
     (success_count, fail_count)
+}
+
+/// 独立封面图生成命令：供前端直接调用，复用 social_generate_cover_image 工具的 HTTP 逻辑。
+/// 返回图片 URL 字符串，失败时返回错误信息。
+#[tauri::command]
+pub async fn social_generate_cover_image_cmd(
+    config_manager: State<'_, GlobalConfigManagerState>,
+    prompt: String,
+    size: Option<String>,
+) -> Result<String, String> {
+    if prompt.trim().is_empty() {
+        return Err("prompt 不能为空".to_string());
+    }
+    let runtime_config = config_manager.config();
+    let server_host =
+        SocialGenerateCoverImageTool::normalize_server_host(&runtime_config.server.host);
+    let size = size
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .or(runtime_config.image_gen.default_size.as_deref())
+        .unwrap_or(SOCIAL_IMAGE_DEFAULT_SIZE)
+        .to_string();
+    let endpoint = format!(
+        "http://{}:{}/v1/images/generations",
+        server_host, runtime_config.server.port
+    );
+    let request_body = serde_json::json!({
+        "prompt": prompt.trim(),
+        "model": SOCIAL_IMAGE_DEFAULT_MODEL,
+        "n": 1,
+        "size": size,
+        "response_format": "url"
+    });
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    let response = client
+        .post(&endpoint)
+        .header(
+            "Authorization",
+            format!("Bearer {}", runtime_config.server.api_key),
+        )
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| format!("调用图像接口失败: {e}"))?;
+
+    let status = response.status();
+    let response_body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("图像接口响应解析失败: {e}"))?;
+
+    if !status.is_success() {
+        let msg = response_body
+            .get("error")
+            .and_then(|v| v.get("message"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("图像生成失败");
+        return Err(msg.to_string());
+    }
+
+    let (image_url, _b64, _revised) =
+        SocialGenerateCoverImageTool::extract_first_image_payload(&response_body).map_err(|e| e)?;
+
+    image_url.ok_or_else(|| "接口返回中未找到 image_url".to_string())
 }

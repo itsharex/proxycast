@@ -10,7 +10,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import styled from "styled-components";
-import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "@/lib/dev-bridge";
 import { withI18nPatch } from "./i18n/withI18nPatch";
 import { SplashScreen } from "./components/SplashScreen";
 import { AppSidebar } from "./components/AppSidebar";
@@ -327,7 +327,7 @@ function AppContent() {
   }, [registryError]);
 
   useEffect(() => {
-    void invoke<{
+    void safeInvoke<{
       workspaceId: string;
       rootPath: string;
       created: boolean;

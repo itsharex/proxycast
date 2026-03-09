@@ -2,6 +2,8 @@
 //!
 //! 提供 Content 的 CRUD 操作。
 
+use std::str::FromStr;
+
 use super::types::{
     Content, ContentCreateRequest, ContentId, ContentListQuery, ContentStatus, ContentType,
     ContentUpdateRequest,
@@ -383,8 +385,8 @@ impl ContentManager {
             id,
             project_id,
             title,
-            content_type: ContentType::from_str(&content_type_str),
-            status: ContentStatus::from_str(&status_str),
+            content_type: ContentType::from_str(&content_type_str).unwrap_or_default(),
+            status: ContentStatus::from_str(&status_str).unwrap_or_default(),
             order,
             body,
             word_count,

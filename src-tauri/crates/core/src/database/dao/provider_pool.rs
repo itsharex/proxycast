@@ -214,6 +214,7 @@ impl ProviderPoolDao {
     }
 
     /// 更新健康状态
+    #[allow(clippy::too_many_arguments)]
     pub fn update_health_status(
         conn: &Connection,
         uuid: &str,

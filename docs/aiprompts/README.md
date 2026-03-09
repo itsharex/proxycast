@@ -27,10 +27,10 @@ AI Agent 专用文档目录，提供模块级别的详细说明。
 - `database.md` - 数据库层（SQLite）
 
 ### 功能模块
-- `flow-monitor.md` - LLM 流量监控
 - `terminal.md` - 内置终端
 - `mcp.md` - MCP 服务器管理
 - `plugins.md` - 插件系统
+- `playwright-e2e.md` - Playwright MCP 续测与 E2E 指南
 
 ### Aster 集成
 - `aster-integration.md` - **Aster 框架集成方案**
@@ -58,6 +58,9 @@ AI Agent 在处理特定模块时，应先阅读对应的 aiprompts 文档：
 
 # 处理内容创作、画布联动
 → 先读 docs/aiprompts/content-creator.md
+
+# 处理浏览器 E2E、Playwright MCP 续测
+→ 先读 docs/aiprompts/playwright-e2e.md
 ```
 
 ## 更新提醒

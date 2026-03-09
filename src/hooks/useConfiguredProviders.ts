@@ -81,10 +81,16 @@ export function useConfiguredProviders(): UseConfiguredProvidersResult {
 
   // 计算已配置的 Provider 列表
   const providers = useMemo(() => {
+    const safeOauthCredentials = Array.isArray(oauthCredentials)
+      ? oauthCredentials
+      : [];
+    const safeApiKeyProviders = Array.isArray(apiKeyProviders)
+      ? apiKeyProviders
+      : [];
     const providerMap = new Map<string, ConfiguredProvider>();
 
     // 1. 从 OAuth 凭证提取 Provider
-    oauthCredentials.forEach((overview) => {
+    safeOauthCredentials.forEach((overview) => {
       if (overview.credentials.length > 0) {
         const key = overview.provider_type;
         const firstCredential = overview.credentials[0];
@@ -105,7 +111,7 @@ export function useConfiguredProviders(): UseConfiguredProvidersResult {
     // 2. 从 API Key Provider 提取
     // 使用 provider.id 作为 key，确保每个 Provider 单独显示
     // 特殊处理：如果与 OAuth 凭证冲突，使用带后缀的 key
-    apiKeyProviders
+    safeApiKeyProviders
       .filter((p) => p.api_key_count > 0 && p.enabled)
       .forEach((provider) => {
         let key = provider.id;

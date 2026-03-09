@@ -136,12 +136,10 @@ impl StickySessionManager {
         let total = sorted_accounts.len();
 
         // 模式 A: 粘性会话处理
-        if !force_rotate && session_id.is_some() && config.mode != SchedulingMode::PerformanceFirst
-        {
-            let sid = session_id.unwrap();
-
-            // 检查会话是否已绑定账号
-            if let Some(bound_id) = self.get_bound_account(sid) {
+        if !force_rotate && config.mode != SchedulingMode::PerformanceFirst {
+            if let Some(sid) = session_id {
+                // 检查会话是否已绑定账号
+                if let Some(bound_id) = self.get_bound_account(sid) {
                 // 找到绑定的账号
                 if let Some(bound_account) =
                     sorted_accounts.iter().find(|a| a.account_id == bound_id)
@@ -169,6 +167,7 @@ impl StickySessionManager {
                 } else {
                     // 绑定的账号不存在，解绑
                     self.unbind_session(sid);
+                }
                 }
             }
         }

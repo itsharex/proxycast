@@ -450,12 +450,12 @@ impl PosterMaterialDao {
 
         // 解析元数据（可能为空）
         let metadata_material_id: Option<String> = row.get(11)?;
-        let metadata = if metadata_material_id.is_some() {
+        let metadata = if let Some(material_id) = metadata_material_id {
             let colors_json: String = row.get(16)?;
             let colors: Vec<String> = serde_json::from_str(&colors_json).unwrap_or_default();
 
             Some(PosterMaterialMetadata {
-                material_id: metadata_material_id.unwrap(),
+                material_id,
                 image_category: row.get(12)?,
                 width: row.get(13)?,
                 height: row.get(14)?,

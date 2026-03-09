@@ -236,6 +236,7 @@ pub struct WorkflowStep {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowState {
     pub id: String,
+    pub content_id: String,
     pub theme: ThemeType,
     pub mode: CreationMode,
     pub steps: Vec<WorkflowStep>,
@@ -248,6 +249,7 @@ pub struct WorkflowState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowProgress {
     pub workflow_id: String,
+    pub content_id: String,
     pub theme: ThemeType,
     pub mode: CreationMode,
     pub steps_json: String,

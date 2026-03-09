@@ -24,6 +24,7 @@ impl ProgressStore {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS workflow_progress (
                 workflow_id TEXT PRIMARY KEY,
+                content_id TEXT NOT NULL,
                 theme TEXT NOT NULL,
                 mode TEXT NOT NULL,
                 steps_json TEXT NOT NULL,
@@ -37,6 +38,11 @@ impl ProgressStore {
         // 创建索引
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_workflow_updated_at ON workflow_progress(updated_at DESC)",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_workflow_content_id ON workflow_progress(content_id)",
             [],
         )?;
 
@@ -56,11 +62,12 @@ impl ProgressStore {
         let mode_str = serde_json::to_string(&workflow.mode)?;
 
         conn.execute(
-            "INSERT OR REPLACE INTO workflow_progress 
-             (workflow_id, theme, mode, steps_json, current_step_index, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT OR REPLACE INTO workflow_progress
+             (workflow_id, content_id, theme, mode, steps_json, current_step_index, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 workflow.id,
+                workflow.content_id,
                 theme_str,
                 mode_str,
                 steps_json,
@@ -79,21 +86,23 @@ impl ProgressStore {
         let conn = self.conn.lock().await;
 
         let mut stmt = conn.prepare(
-            "SELECT workflow_id, theme, mode, steps_json, current_step_index, created_at, updated_at
+            "SELECT workflow_id, content_id, theme, mode, steps_json, current_step_index, created_at, updated_at
              FROM workflow_progress WHERE workflow_id = ?1",
         )?;
 
         let result = stmt.query_row(params![workflow_id], |row| {
             let workflow_id: String = row.get(0)?;
-            let theme_str: String = row.get(1)?;
-            let mode_str: String = row.get(2)?;
-            let steps_json: String = row.get(3)?;
-            let current_step_index: i32 = row.get(4)?;
-            let created_at: i64 = row.get(5)?;
-            let updated_at: i64 = row.get(6)?;
+            let content_id: String = row.get(1)?;
+            let theme_str: String = row.get(2)?;
+            let mode_str: String = row.get(3)?;
+            let steps_json: String = row.get(4)?;
+            let current_step_index: i32 = row.get(5)?;
+            let created_at: i64 = row.get(6)?;
+            let updated_at: i64 = row.get(7)?;
 
             Ok(WorkflowProgress {
                 workflow_id,
+                content_id,
                 theme: serde_json::from_str(&theme_str).unwrap_or_default(),
                 mode: serde_json::from_str(&mode_str).unwrap_or_default(),
                 steps_json,
@@ -108,6 +117,57 @@ impl ProgressStore {
                 let steps: Vec<WorkflowStep> = serde_json::from_str(&progress.steps_json)?;
                 Ok(Some(WorkflowState {
                     id: progress.workflow_id,
+                    content_id: progress.content_id,
+                    theme: progress.theme,
+                    mode: progress.mode,
+                    steps,
+                    current_step_index: progress.current_step_index as usize,
+                    created_at: progress.created_at,
+                    updated_at: progress.updated_at,
+                }))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// 根据 content_id 加载工作流进度
+    pub async fn load_by_content_id(&self, content_id: &str) -> Result<Option<WorkflowState>> {
+        let conn = self.conn.lock().await;
+
+        let mut stmt = conn.prepare(
+            "SELECT workflow_id, content_id, theme, mode, steps_json, current_step_index, created_at, updated_at
+             FROM workflow_progress WHERE content_id = ?1 ORDER BY updated_at DESC LIMIT 1",
+        )?;
+
+        let result = stmt.query_row(params![content_id], |row| {
+            let workflow_id: String = row.get(0)?;
+            let content_id: String = row.get(1)?;
+            let theme_str: String = row.get(2)?;
+            let mode_str: String = row.get(3)?;
+            let steps_json: String = row.get(4)?;
+            let current_step_index: i32 = row.get(5)?;
+            let created_at: i64 = row.get(6)?;
+            let updated_at: i64 = row.get(7)?;
+
+            Ok(WorkflowProgress {
+                workflow_id,
+                content_id,
+                theme: serde_json::from_str(&theme_str).unwrap_or_default(),
+                mode: serde_json::from_str(&mode_str).unwrap_or_default(),
+                steps_json,
+                current_step_index,
+                created_at,
+                updated_at,
+            })
+        });
+
+        match result {
+            Ok(progress) => {
+                let steps: Vec<WorkflowStep> = serde_json::from_str(&progress.steps_json)?;
+                Ok(Some(WorkflowState {
+                    id: progress.workflow_id,
+                    content_id: progress.content_id,
                     theme: progress.theme,
                     mode: progress.mode,
                     steps,
@@ -137,21 +197,23 @@ impl ProgressStore {
         let conn = self.conn.lock().await;
 
         let mut stmt = conn.prepare(
-            "SELECT workflow_id, theme, mode, steps_json, current_step_index, created_at, updated_at
+            "SELECT workflow_id, content_id, theme, mode, steps_json, current_step_index, created_at, updated_at
              FROM workflow_progress ORDER BY updated_at DESC LIMIT ?1",
         )?;
 
         let rows = stmt.query_map(params![limit as i32], |row| {
             let workflow_id: String = row.get(0)?;
-            let theme_str: String = row.get(1)?;
-            let mode_str: String = row.get(2)?;
-            let steps_json: String = row.get(3)?;
-            let current_step_index: i32 = row.get(4)?;
-            let created_at: i64 = row.get(5)?;
-            let updated_at: i64 = row.get(6)?;
+            let content_id: String = row.get(1)?;
+            let theme_str: String = row.get(2)?;
+            let mode_str: String = row.get(3)?;
+            let steps_json: String = row.get(4)?;
+            let current_step_index: i32 = row.get(5)?;
+            let created_at: i64 = row.get(6)?;
+            let updated_at: i64 = row.get(7)?;
 
             Ok(WorkflowProgress {
                 workflow_id,
+                content_id,
                 theme: serde_json::from_str(&theme_str).unwrap_or_default(),
                 mode: serde_json::from_str(&mode_str).unwrap_or_default(),
                 steps_json,

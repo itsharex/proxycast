@@ -55,12 +55,17 @@ import {
   type CanvasStateUnion,
 } from "@/components/content-creator/canvas/canvasUtils";
 import { createInitialDocumentState } from "@/components/content-creator/canvas/document";
+import {
+  COVER_IMAGE_REPLACED_EVENT,
+  type CoverImageReplacedDetail,
+} from "@/components/content-creator/canvas/document/platforms/CoverImagePlaceholder";
 import type {
   AutoContinueRunPayload,
   ContentReviewRunPayload,
   DocumentVersion,
   TextStylizeRunPayload,
 } from "@/components/content-creator/canvas/document/types";
+import { parseAIResponse } from "@/components/content-creator/a2ui/parser";
 import { CanvasPanel as GeneralCanvasPanel } from "@/components/general-chat/canvas";
 import {
   type CanvasState as GeneralCanvasState,
@@ -144,7 +149,6 @@ import type { A2UIFormData } from "@/components/content-creator/a2ui/types";
 import { getFileToStepMap } from "./utils/workflowMapping";
 import { normalizeProjectId } from "./utils/topicProjectResolution";
 import { resolveTopicSwitchProject } from "./utils/topicProjectSwitch";
-import { getDefaultGuidePromptByTheme } from "./utils/defaultGuidePrompt";
 import {
   loadChatToolPreferences,
   saveChatToolPreferences,
@@ -243,7 +247,9 @@ const FloatingInputbarContainer = styled.div`
   }
 `;
 
-const ThemeWorkbenchInputOverlay = styled.div`
+const ThemeWorkbenchInputOverlay = styled.div<{
+  $hasPendingA2UIForm?: boolean;
+}>`
   position: absolute;
   left: 24px;
   right: 24px;
@@ -256,7 +262,10 @@ const ThemeWorkbenchInputOverlay = styled.div`
 
   > * {
     pointer-events: auto;
-    width: min(calc(100% - 16px), 480px);
+    width: ${({ $hasPendingA2UIForm }) =>
+      $hasPendingA2UIForm
+        ? "min(calc(100% - 24px), 880px)"
+        : "min(calc(100% - 16px), 480px)"};
     max-width: 100%;
   }
 `;
@@ -686,10 +695,13 @@ function buildThemeWorkbenchLiveWorkflowSteps(
   const skillDetail = skillDetailMap[skillName] || null;
   const workflowSteps = skillDetail?.workflow_steps || [];
   if (workflowSteps.length > 0) {
+    const latestAssistantContent =
+      messages
+        .slice()
+        .reverse()
+        .find((m) => m.role === "assistant")?.content || "";
     const activeIndex =
-      extractThemeWorkbenchWorkflowMarkerIndex(
-        assistantMessage.content || "",
-      ) ?? 0;
+      extractThemeWorkbenchWorkflowMarkerIndex(latestAssistantContent) ?? 0;
     return workflowSteps.map((step, index) => ({
       id: step.id,
       title: step.name,
@@ -1314,6 +1326,32 @@ function buildThemeWorkbenchWorkflowSteps(
 
   const queueItems = backendRunState?.queue_items || [];
   if (queueItems.length > 0) {
+    if (queueItems.length === 1) {
+      const item = queueItems[0];
+      const sourceRef = item.source_ref?.trim();
+      const workflowSteps = sourceRef
+        ? (skillDetailMap[sourceRef]?.workflow_steps || [])
+        : [];
+      if (workflowSteps.length > 0) {
+        const latestAssistantContent =
+          messages
+            .slice()
+            .reverse()
+            .find((m) => m.role === "assistant")?.content || "";
+        const activeIndex =
+          extractThemeWorkbenchWorkflowMarkerIndex(latestAssistantContent) ?? 0;
+        return workflowSteps.map((step, index) => ({
+          id: `${item.run_id}-${step.id}`,
+          title: step.name,
+          status:
+            index < activeIndex
+              ? ("completed" as StepStatus)
+              : index === activeIndex
+                ? ("active" as StepStatus)
+                : ("pending" as StepStatus),
+        }));
+      }
+    }
     return queueItems.map((item) => ({
       id: item.run_id,
       title: resolveThemeWorkbenchQueueItemTitle(item, skillDetailMap),
@@ -1666,9 +1704,6 @@ export function AgentChatPage({
   // Workbench Store（用于主题工作台右侧面板状态同步）
   const pendingSkillKey = useWorkbenchStore(
     (state) => state.pendingSkillKey,
-  );
-  const setThemeSkillsRailState = useWorkbenchStore(
-    (state) => state.setThemeSkillsRailState,
   );
   const clearThemeSkillsRailState = useWorkbenchStore(
     (state) => state.clearThemeSkillsRailState,
@@ -2073,27 +2108,13 @@ export function AgentChatPage({
   }, []);
 
   // 主题工作台模式：同步 skills 状态到 store
+  // 注意：不再设置 themeSkillsRailState，避免"操作面板"覆盖默认 Skills Rail
+  // 默认 Skills Rail 已包含完整的技能分类（文字多搜索、视觉生成、音频生成等）
   useEffect(() => {
     if (!isThemeWorkbench) {
       clearThemeSkillsRailState();
-      return;
     }
-
-    if (skills.length === 0) {
-      return;
-    }
-
-    setThemeSkillsRailState({
-      skills,
-      isAutoRunning: isSending,
-    });
-  }, [
-    isThemeWorkbench,
-    skills,
-    isSending,
-    setThemeSkillsRailState,
-    clearThemeSkillsRailState,
-  ]);
+  }, [isThemeWorkbench, clearThemeSkillsRailState]);
 
   // 组件卸载时清理 store 状态
   useEffect(() => {
@@ -2267,6 +2288,68 @@ export function AgentChatPage({
       null
     );
   }, [isThemeWorkbench, messages]);
+
+  // 提取最新的 A2UI Form（从最后一条 assistant 消息的 content 解析）
+  const pendingA2UIForm = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+
+      if (msg.role === "user") {
+        return null;
+      }
+
+      if (msg.role === "assistant" && msg.content) {
+        try {
+          const parsed = parseAIResponse(msg.content, false);
+          if (parsed.hasA2UI) {
+            for (let j = parsed.parts.length - 1; j >= 0; j--) {
+              const part = parsed.parts[j];
+              if (part.type === "a2ui" && typeof part.content !== "string") {
+                return part.content;
+              }
+            }
+          }
+        } catch {
+          // 解析失败，忽略
+        }
+      }
+    }
+    return null;
+  }, [messages]);
+
+
+  const a2uiSubmissionNotice = useMemo(() => {
+    if (pendingA2UIForm) {
+      return null;
+    }
+
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.role !== "user") {
+        continue;
+      }
+
+      const content = msg.content.trim();
+      if (!content.startsWith("我的选择：")) {
+        return null;
+      }
+
+      const summary = content
+        .split("\n")
+        .slice(1)
+        .map((line) => line.replace(/^[-•]\s*/, "").trim())
+        .filter(Boolean)
+        .slice(0, 3)
+        .join(" · ");
+
+      return {
+        title: "需求已确认",
+        summary: summary || "已收到你的补充信息，正在继续推进下一步。",
+      };
+    }
+
+    return null;
+  }, [messages, pendingA2UIForm]);
 
   useEffect(() => {
     const unsubscribe = subscribeDocumentEditorFocus((focused) => {
@@ -2934,8 +3017,19 @@ export function AgentChatPage({
 
     // 从会话元数据恢复主题（类型已统一，直接使用）
     if (sessionMeta.theme && (!lockTheme || !initialTheme)) {
-      console.log("[AgentChatPage] 恢复主题:", sessionMeta.theme);
-      setActiveTheme(sessionMeta.theme);
+      // 通用对话入口（initialTheme 为空或 "general"）不应恢复为内容创作主题，
+      // 避免切换历史话题时错误激活社媒等创作模式
+      const entryIsGeneral = !initialTheme || initialTheme === "general";
+      const restoredIsCreation = isContentCreationTheme(sessionMeta.theme);
+      if (entryIsGeneral && restoredIsCreation) {
+        console.log(
+          "[AgentChatPage] 通用对话入口，跳过恢复内容创作主题:",
+          sessionMeta.theme,
+        );
+      } else {
+        console.log("[AgentChatPage] 恢复主题:", sessionMeta.theme);
+        setActiveTheme(sessionMeta.theme);
+      }
     }
 
     // 从会话元数据恢复创建模式
@@ -3021,6 +3115,7 @@ export function AgentChatPage({
     processedMessageIds.current.clear();
     restoredMetaSessionId.current = null;
     restoredFilesSessionId.current = null;
+    hasTriggeredGuide.current = false;
   }, []);
 
   const runTopicSwitch = useCallback(
@@ -4646,6 +4741,14 @@ export function AgentChatPage({
     [sendMessage],
   );
 
+  // 包装 A2UI 表单提交，适配 Inputbar 的签名
+  const handleInputbarA2UISubmit = useCallback(
+    (formData: A2UIFormData) => {
+      void handleA2UISubmit(formData, "");
+    },
+    [handleA2UISubmit],
+  );
+
   // 存储 triggerAIGuide 函数引用，避免在 useEffect 依赖中包含函数
   const triggerAIGuideRef = useRef(triggerAIGuide);
   triggerAIGuideRef.current = triggerAIGuide;
@@ -4689,34 +4792,32 @@ export function AgentChatPage({
 
       if (isThemeWorkbench) {
         hasTriggeredGuide.current = true;
-        const themeGuide = getDefaultGuidePromptByTheme(activeTheme);
-        if (themeGuide) {
-          console.log("[AgentChatPage] 主题工作台：预填引导词");
-          setInput((prev) => (prev.trim() ? prev : themeGuide));
-        }
-        // 不自动发送，让用户确认后手动发送
+        console.log("[AgentChatPage] 主题工作台：触发 AI 引导，创建后端工作流");
+        // 同步创建后端工作流（不阻塞触发）
+        void (async () => {
+          try {
+            const { contentWorkflowApi } = await import("@/lib/api/content-workflow");
+            const themeForApi = mappedTheme as import("@/lib/api/content-workflow").ThemeType;
+            const modeForApi = (creationMode as import("@/lib/api/content-workflow").CreationMode) ?? "guided";
+            await contentWorkflowApi.create(contentId!, themeForApi, modeForApi);
+            console.log("[AgentChatPage] 后端工作流创建成功");
+          } catch (e) {
+            console.warn("[AgentChatPage] 后端工作流创建失败（不影响主流程）:", e);
+          }
+        })();
+        triggerAIGuideRef.current();
         return;
       }
 
       hasTriggeredGuide.current = true;
-      const defaultGuidePrompt = getDefaultGuidePromptByTheme(activeTheme);
-      if (defaultGuidePrompt) {
-        console.log("[AgentChatPage] 自动预填主题引导词");
-        setInput((previous) => {
-          if (previous.trim()) {
-            return previous;
-          }
-          return defaultGuidePrompt;
-        });
-        return;
-      }
-
       console.log("[AgentChatPage] 自动触发 AI 创作引导");
       triggerAIGuideRef.current();
     }
   }, [
     activeTheme,
     contentId,
+    mappedTheme,
+    creationMode,
     messages.length,
     project,
     systemPrompt,
@@ -4733,6 +4834,45 @@ export function AgentChatPage({
   useEffect(() => {
     hasTriggeredGuide.current = false;
   }, [contentId]);
+
+  // 当 contentId 变化且是主题工作台时，尝试从后端恢复工作流
+  useEffect(() => {
+    if (!contentId || !isThemeWorkbench) return;
+
+    void (async () => {
+      try {
+        const { contentWorkflowApi } = await import("@/lib/api/content-workflow");
+        const workflow = await contentWorkflowApi.getByContent(contentId);
+        if (workflow) {
+          const completedCount = workflow.steps.filter(
+            (s) => s.status === "completed" || s.status === "skipped",
+          ).length;
+          console.log(
+            `[AgentChatPage] 找到已有工作流: ${workflow.id}，已完成步骤 ${completedCount}/${workflow.steps.length}`,
+          );
+        }
+      } catch (e) {
+        // 查询失败不影响主流程
+        console.debug("[AgentChatPage] 查询后端工作流失败:", e);
+      }
+    })();
+  }, [contentId, isThemeWorkbench]);
+
+  // 监听封面图重新生成成功事件，将占位 URL 替换为真实图片 URL
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { placeholder, imageUrl } = (e as CustomEvent<CoverImageReplacedDetail>).detail;
+      if (!placeholder || !imageUrl) return;
+      setCanvasState((prev) => {
+        if (!prev || prev.type !== "document") return prev;
+        const updatedContent = prev.content.split(placeholder).join(imageUrl);
+        if (updatedContent === prev.content) return prev;
+        return { ...prev, content: updatedContent };
+      });
+    };
+    window.addEventListener(COVER_IMAGE_REPLACED_EVENT, handler);
+    return () => window.removeEventListener(COVER_IMAGE_REPLACED_EVENT, handler);
+  }, []);
 
   // 主题工作台始终使用聊天布局与浮层输入，不走旧 EmptyState 输入流程
   const showChatLayout = hasMessages || isThemeWorkbench;
@@ -4793,6 +4933,7 @@ export function AgentChatPage({
         activeRunDetail={selectedThemeWorkbenchRunDetail}
         activeRunDetailLoading={themeWorkbenchRunDetailLoading}
         onRequestCollapse={themeWorkbenchSidebarCollapseHandler}
+        messages={messages}
       />
     );
   }, [
@@ -4826,6 +4967,7 @@ export function AgentChatPage({
     themeWorkbenchRunDetailLoading,
     themeWorkbenchSidebarCollapseHandler,
     themeWorkbenchWorkflowSteps,
+    messages,
   ]);
 
   const workflowProgressSignature = useMemo(() => {
@@ -4960,6 +5102,9 @@ export function AgentChatPage({
         setInput={setInput}
         variant={isThemeWorkbench ? "theme_workbench" : "default"}
         themeWorkbenchGate={isThemeWorkbench ? currentGate : null}
+        pendingA2UIForm={pendingA2UIForm || null}
+        onA2UISubmit={handleInputbarA2UISubmit}
+        a2uiSubmissionNotice={a2uiSubmissionNotice}
         workflowSteps={isThemeWorkbench ? themeWorkbenchWorkflowSteps : steps}
         themeWorkbenchRunState={themeWorkbenchRunState}
         onSend={handleSend}
@@ -5023,6 +5168,9 @@ export function AgentChatPage({
       taskFilesExpanded,
       themeWorkbenchRunState,
       themeWorkbenchWorkflowSteps,
+      handleInputbarA2UISubmit,
+      pendingA2UIForm,
+      a2uiSubmissionNotice,
     ],
   );
 
@@ -5471,7 +5619,9 @@ export function AgentChatPage({
           />
         </ThemeWorkbenchLayoutShell>
         {isThemeWorkbench && showChatLayout ? (
-          <ThemeWorkbenchInputOverlay>
+          <ThemeWorkbenchInputOverlay
+            $hasPendingA2UIForm={Boolean(pendingA2UIForm)}
+          >
             {inputbarNode}
           </ThemeWorkbenchInputOverlay>
         ) : null}
@@ -5500,6 +5650,7 @@ export function AgentChatPage({
       layoutMode,
       novelChapterListCollapsed,
       onBackToProjectManagement,
+      pendingA2UIForm,
       projectId,
       showChatLayout,
       showChatPanel,
