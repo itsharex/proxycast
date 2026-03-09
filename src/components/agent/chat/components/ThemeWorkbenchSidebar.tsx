@@ -1599,9 +1599,9 @@ function ThemeWorkbenchSidebarComponent({
   contextBudget,
   activityLogs,
   creationTaskEvents = [],
-  _onViewRunDetail,
+  onViewRunDetail,
   activeRunDetail,
-  _activeRunDetailLoading = false,
+  activeRunDetailLoading = false,
   onRequestCollapse,
   messages = [],
 }: ThemeWorkbenchSidebarProps) {

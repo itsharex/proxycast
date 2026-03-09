@@ -280,7 +280,7 @@ export async function safeInvoke<T = any>(
     (window as any).__TAURI__?.core?.invoke
   ) {
     try {
-      const result = await (window as any).__TAURI__.core.invoke(cmd, args);
+      const result = await (window as any).__TAURI__.core.invoke(cmd, args) as T;
       recordInvokeTrace(cmd, args, "tauri-ipc", "success", startedAt);
       return result;
     } catch (error) {
@@ -293,7 +293,7 @@ export async function safeInvoke<T = any>(
   // Legacy check for older Tauri versions
   if (typeof window !== "undefined" && (window as any).__TAURI__?.invoke) {
     try {
-      const result = await (window as any).__TAURI__.invoke(cmd, args);
+      const result = await (window as any).__TAURI__.invoke(cmd, args) as T;
       recordInvokeTrace(cmd, args, "tauri-legacy", "success", startedAt);
       return result;
     } catch (error) {
@@ -306,7 +306,7 @@ export async function safeInvoke<T = any>(
   // 2. 浏览器开发模式下，部分原生/非关键命令直接优先走 mock。
   if (isDevBridgeAvailable() && shouldPreferMockInBrowser(cmd)) {
     try {
-      const result = await baseInvoke(cmd, args);
+      const result = await baseInvoke(cmd, args) as T;
       recordInvokeTrace(cmd, args, "fallback-invoke", "success", startedAt);
       return result;
     } catch (error) {
@@ -342,7 +342,7 @@ export async function safeInvoke<T = any>(
       );
 
       try {
-        const result = await baseInvoke(cmd, args);
+        const result = await baseInvoke(cmd, args) as T;
         recordInvokeTrace(
           cmd,
           args,
@@ -368,7 +368,7 @@ export async function safeInvoke<T = any>(
 
   // 4. Fallback 到 mock（Vite alias 会替换 @tauri-apps 导入）
   try {
-    const result = await baseInvoke(cmd, args);
+    const result = await baseInvoke(cmd, args) as T;
     recordInvokeTrace(cmd, args, "fallback-invoke", "success", startedAt);
     return result;
   } catch (error) {
