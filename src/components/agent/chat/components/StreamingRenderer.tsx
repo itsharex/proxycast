@@ -8,15 +8,24 @@
 import React, { memo, useMemo, useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { ChevronDown, Lightbulb, FileText } from "lucide-react";
+import { useDebouncedValue } from "@/lib/artifact/hooks/useDebouncedValue";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { A2UITaskCard, A2UITaskLoadingCard } from "./A2UITaskCard";
 import { ToolCallList, ToolCallItem } from "./ToolCallDisplay";
 import { DecisionPanel } from "./DecisionPanel";
 import { parseAIResponse } from "@/components/content-creator/a2ui/parser";
-import type { A2UIFormData } from "@/components/content-creator/a2ui/types";
+import type {
+  A2UIFormData,
+  ParseResult,
+  ParsedMessageContent,
+} from "@/components/content-creator/a2ui/types";
 import { CHAT_A2UI_TASK_CARD_PRESET } from "@/components/content-creator/a2ui/taskCardPresets";
 import type { ToolCallState } from "@/lib/api/agent";
 import type { ContentPart, ActionRequired, ConfirmResponse } from "../types";
+
+const STRUCTURED_CONTENT_HINT_RE = /<a2ui|```\s*a2ui|<write_file|<document/i;
+const STRUCTURED_PARSE_CACHE_LIMIT = 64;
+const STREAMING_STRUCTURED_PARSE_DEBOUNCE_MS = 48;
 
 // ============ 思考内容组件 ============
 
@@ -64,6 +73,64 @@ const StreamingCursor: React.FC = () => (
     style={{ animationDuration: "1s" }}
   />
 );
+
+const EMPTY_PARSE_RESULT: ParseResult = {
+  parts: [],
+  hasA2UI: false,
+  hasWriteFile: false,
+  hasPending: false,
+};
+
+function hasStructuredContentHint(text: string): boolean {
+  return STRUCTURED_CONTENT_HINT_RE.test(text);
+}
+
+function createPlainTextParts(text: string): ParsedMessageContent[] {
+  const trimmed = text.trim();
+  return trimmed ? [{ type: "text", content: trimmed }] : [];
+}
+
+function parseStructuredContent(
+  text: string,
+  isStreaming: boolean,
+): ParseResult {
+  if (!text.trim()) {
+    return EMPTY_PARSE_RESULT;
+  }
+
+  if (!hasStructuredContentHint(text)) {
+    return {
+      parts: createPlainTextParts(text),
+      hasA2UI: false,
+      hasWriteFile: false,
+      hasPending: false,
+    };
+  }
+
+  return parseAIResponse(text, isStreaming);
+}
+
+function getCachedStructuredParse(
+  cacheRef: React.MutableRefObject<Map<string, ParseResult>>,
+  text: string,
+  isStreaming: boolean,
+): ParseResult {
+  const key = `${isStreaming ? "stream" : "static"}:${text}`;
+  const cached = cacheRef.current.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const parsed = parseStructuredContent(text, isStreaming);
+  if (cacheRef.current.size >= STRUCTURED_PARSE_CACHE_LIMIT) {
+    const oldestKey = cacheRef.current.keys().next().value;
+    if (oldestKey) {
+      cacheRef.current.delete(oldestKey);
+    }
+  }
+  cacheRef.current.set(key, parsed);
+  return parsed;
+}
 
 // ============ 流式文本组件（逐字符动画） ============
 
@@ -113,6 +180,7 @@ const StreamingText: React.FC<StreamingTextProps> = memo(
     const displayIndexRef = useRef(0);
     const animationRef = useRef<number | null>(null);
     const prevTextRef = useRef("");
+    const parseCacheRef = useRef<Map<string, ParseResult>>(new Map());
 
     useEffect(() => {
       // 如果不是流式输出，直接显示完整文本
@@ -198,12 +266,27 @@ const StreamingText: React.FC<StreamingTextProps> = memo(
 
     const shouldShowCursor =
       isStreaming && showCursor && displayIndexRef.current < text.length;
+    const containsStructuredContent = useMemo(
+      () => hasStructuredContentHint(displayText),
+      [displayText],
+    );
+    const debouncedStructuredText = useDebouncedValue(
+      displayText,
+      isStreaming && containsStructuredContent
+        ? STREAMING_STRUCTURED_PARSE_DEBOUNCE_MS
+        : 0,
+    );
+    const parsedSourceText =
+      isStreaming && containsStructuredContent
+        ? debouncedStructuredText
+        : displayText;
 
     // 使用 parseAIResponse 解析内容，以正确处理 a2ui 代码块
     // 这比依赖 MarkdownRenderer 的 pre 组件更可靠
     const parsedContent = useMemo(
-      () => parseAIResponse(displayText, isStreaming),
-      [displayText, isStreaming],
+      () =>
+        getCachedStructuredParse(parseCacheRef, parsedSourceText, isStreaming),
+      [parsedSourceText, isStreaming],
     );
 
     // 渲染解析后的内容
@@ -390,16 +473,38 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
   }) => {
     // 判断是否使用交错显示模式
     const useInterleavedMode = contentParts && contentParts.length > 0;
+    const parseCacheRef = useRef<Map<string, ParseResult>>(new Map());
 
     // 解析思考内容（仅在非交错模式下使用）
     const { visibleText, thinkingText } = useMemo(
       () => parseThinkingContent(content),
       [content],
     );
+    const containsStructuredContent = useMemo(
+      () => hasStructuredContentHint(visibleText),
+      [visibleText],
+    );
+    const debouncedVisibleText = useDebouncedValue(
+      visibleText,
+      isStreaming && containsStructuredContent
+        ? STREAMING_STRUCTURED_PARSE_DEBOUNCE_MS
+        : 0,
+    );
+    const parsedVisibleText =
+      isStreaming && containsStructuredContent
+        ? debouncedVisibleText
+        : visibleText;
 
     // 解析 A2UI 和 write_file 内容
     const parsedContent = useMemo(() => {
-      const result = parseAIResponse(visibleText, isStreaming);
+      if (useInterleavedMode) {
+        return EMPTY_PARSE_RESULT;
+      }
+      const result = getCachedStructuredParse(
+        parseCacheRef,
+        parsedVisibleText,
+        isStreaming,
+      );
       // 添加调试日志
       if (result.hasWriteFile) {
         console.log(
@@ -410,7 +515,7 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
         );
       }
       return result;
-    }, [visibleText, isStreaming]);
+    }, [parsedVisibleText, isStreaming, useInterleavedMode]);
 
     // 处理文件写入 - 使用 ref 来追踪已处理的内容
     const processedWriteFilesRef = useRef<Set<string>>(new Set());
@@ -475,7 +580,11 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
               if (!partText) return null;
 
               // 解析 write_file 标签
-              const partParsed = parseAIResponse(partText, isStreaming);
+              const partParsed = getCachedStructuredParse(
+                parseCacheRef,
+                partText,
+                isStreaming,
+              );
               const isLastPart = index === contentParts.length - 1;
 
               // 添加调试日志

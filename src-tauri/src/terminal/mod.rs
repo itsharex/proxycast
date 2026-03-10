@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 
 use proxycast_terminal::emitter::TerminalEventEmit;
 
@@ -23,9 +23,7 @@ impl TerminalEventEmit for TauriEmitter {
     }
 
     fn app_data_dir(&self) -> Result<PathBuf, String> {
-        self.0
-            .path()
-            .app_data_dir()
+        proxycast_core::app_paths::preferred_data_dir()
             .map_err(|e| format!("获取应用数据目录失败: {e}"))
     }
 }

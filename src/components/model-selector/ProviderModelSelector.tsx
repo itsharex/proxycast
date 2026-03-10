@@ -22,6 +22,7 @@ import {
 import { useProviderModels } from "@/hooks/useProviderModels";
 import { getProviderLabel } from "@/lib/constants/providerMappings";
 import type { EnhancedModelMetadata } from "@/lib/types/modelRegistry";
+import { getProviderModelCompatibilityIssue } from "@/components/agent/chat/utils/providerModelCompatibility";
 
 // ============================================================================
 // 类型定义
@@ -187,6 +188,24 @@ export const ProviderModelSelector: React.FC<ProviderModelSelectorProps> = ({
     error: modelsError,
   } = useProviderModels(selectedProvider, { returnFullMetadata: true });
 
+  const compatibleModels = useMemo(
+    () =>
+      filteredModels.filter(
+        (model) =>
+          !getProviderModelCompatibilityIssue({
+            providerType: selectedProvider?.key || "",
+            configuredProviderType: selectedProvider?.type,
+            model: model.id,
+          }),
+      ),
+    [filteredModels, selectedProvider?.key, selectedProvider?.type],
+  );
+
+  const incompatibleModelCount = useMemo(
+    () => filteredModels.length - compatibleModels.length,
+    [compatibleModels.length, filteredModels.length],
+  );
+
   // 默认选中第一个 Provider
   useEffect(() => {
     if (!selectedProviderId && configuredProviders.length > 0) {
@@ -279,19 +298,26 @@ export const ProviderModelSelector: React.FC<ProviderModelSelectorProps> = ({
               <AlertCircle className="h-8 w-8 mb-2" />
               <p className="text-sm">{modelsError}</p>
             </div>
-          ) : filteredModels.length === 0 ? (
+          ) : compatibleModels.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
               <p className="text-sm">暂无模型数据</p>
             </div>
           ) : (
-            filteredModels.map((model) => (
+            <>
+              {incompatibleModelCount > 0 ? (
+                <div className="px-1 py-1 text-xs text-amber-600">
+                  已隐藏 {incompatibleModelCount} 个当前登录态不兼容的模型
+                </div>
+              ) : null}
+              {compatibleModels.map((model) => (
               <ModelItem
                 key={model.id}
                 model={model}
                 isSelected={selectedModelId === model.id}
                 onClick={() => handleSelectModel(model)}
               />
-            ))
+              ))}
+            </>
           )}
         </div>
       </div>

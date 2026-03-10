@@ -6,6 +6,7 @@ pub mod migration_v4;
 pub mod schema;
 pub mod system_providers;
 
+use crate::app_paths;
 use rusqlite::Connection;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -26,10 +27,7 @@ pub fn lock_db(db: &DbConnection) -> Result<std::sync::MutexGuard<'_, Connection
 
 /// 获取数据库文件路径
 pub fn get_db_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "无法获取主目录".to_string())?;
-    let db_dir = home.join(".proxycast");
-    std::fs::create_dir_all(&db_dir).map_err(|e| format!("无法创建数据库目录 {db_dir:?}: {e}"))?;
-    Ok(db_dir.join("proxycast.db"))
+    app_paths::resolve_database_path()
 }
 
 /// 初始化数据库连接

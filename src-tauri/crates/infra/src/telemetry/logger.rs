@@ -100,15 +100,8 @@ pub struct RequestLogger {
 impl RequestLogger {
     /// 创建新的日志记录器
     pub fn new(config: LogRotationConfig) -> Result<Self, LoggerError> {
-        let log_dir = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".proxycast")
-            .join("request_logs");
-
-        // 创建日志目录
-        fs::create_dir_all(&log_dir).map_err(|e| {
-            LoggerError::DirectoryCreation(format!("无法创建日志目录 {log_dir:?}: {e}"))
-        })?;
+        let log_dir = proxycast_core::app_paths::resolve_request_logs_dir()
+            .map_err(LoggerError::DirectoryCreation)?;
 
         let logger = Self {
             logs: RwLock::new(VecDeque::with_capacity(config.max_memory_logs)),

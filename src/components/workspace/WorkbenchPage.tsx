@@ -141,6 +141,9 @@ export function WorkbenchPage({
   const shouldHideVideoSidebarInWorkspace =
     themeModule.capabilities.workspaceKind === "video-canvas" &&
     workspaceMode === "workspace";
+  const shouldHideVideoRightRailInWorkspace =
+    themeModule.capabilities.workspaceKind === "video-canvas" &&
+    workspaceMode === "workspace";
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -229,24 +232,26 @@ export function WorkbenchPage({
           />
         }
         rightRail={
-          <WorkbenchRightRail
-            shouldRender={shouldRenderWorkspaceRightRail}
-            isCreateWorkspaceView={isCreateWorkspaceView}
-            projectId={selectedProjectId}
-            theme={theme}
-            creationMode={selectedContentCreationMode}
-            creationType={selectedContentCreationType}
-            initialStyleGuideDialogOpen={pendingStyleGuideDialogOpen}
-            onInitialStyleGuideDialogConsumed={() =>
-              setPendingStyleGuideDialogOpen(false)
-            }
-            initialStyleGuideSourceEntryId={pendingStyleGuideSourceEntryId}
-            onInitialStyleGuideSourceEntryConsumed={() =>
-              setPendingStyleGuideSourceEntryId(null)
-            }
-            onBackToCreateView={() => handleSwitchWorkspaceView("create")}
-            onCreateContentFromPrompt={handleCreateContentFromWorkspacePrompt}
-          />
+          shouldHideVideoRightRailInWorkspace ? null : (
+            <WorkbenchRightRail
+              shouldRender={shouldRenderWorkspaceRightRail}
+              isCreateWorkspaceView={isCreateWorkspaceView}
+              projectId={selectedProjectId}
+              theme={theme}
+              creationMode={selectedContentCreationMode}
+              creationType={selectedContentCreationType}
+              initialStyleGuideDialogOpen={pendingStyleGuideDialogOpen}
+              onInitialStyleGuideDialogConsumed={() =>
+                setPendingStyleGuideDialogOpen(false)
+              }
+              initialStyleGuideSourceEntryId={pendingStyleGuideSourceEntryId}
+              onInitialStyleGuideSourceEntryConsumed={() =>
+                setPendingStyleGuideSourceEntryId(null)
+              }
+              onBackToCreateView={() => handleSwitchWorkspaceView("create")}
+              onCreateContentFromPrompt={handleCreateContentFromWorkspacePrompt}
+            />
+          )
         }
       />
 

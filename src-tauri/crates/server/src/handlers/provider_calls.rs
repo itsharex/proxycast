@@ -1329,9 +1329,8 @@ pub async fn call_provider_openai(
                         Ok(resp) => {
                             let resp_str = serde_json::to_string_pretty(&resp).unwrap_or_default();
                             if is_proxycast_debug_enabled() {
-                                let debug_dir = dirs::home_dir()
-                                    .map(|h| h.join(".proxycast/logs"))
-                                    .unwrap_or_else(|| std::path::PathBuf::from("/tmp"));
+                                let debug_dir = proxycast_core::app_paths::resolve_logs_dir()
+                                    .unwrap_or_else(|_| std::env::temp_dir().join("proxycast").join("logs"));
                                 let _ = std::fs::create_dir_all(&debug_dir);
                                 let debug_file = debug_dir.join("antigravity_image_response.json");
                                 let _ = std::fs::write(&debug_file, &resp_str);
@@ -1354,9 +1353,8 @@ pub async fn call_provider_openai(
 
                             let openai_str = serde_json::to_string_pretty(&openai_response).unwrap_or_default();
                             if is_proxycast_debug_enabled() {
-                                let debug_dir = dirs::home_dir()
-                                    .map(|h| h.join(".proxycast/logs"))
-                                    .unwrap_or_else(|| std::path::PathBuf::from("/tmp"));
+                                let debug_dir = proxycast_core::app_paths::resolve_logs_dir()
+                                    .unwrap_or_else(|_| std::env::temp_dir().join("proxycast").join("logs"));
                                 let _ = std::fs::create_dir_all(&debug_dir);
                                 let openai_debug_file =
                                     debug_dir.join("antigravity_image_openai_response.json");
@@ -2887,9 +2885,9 @@ fn parse_antigravity_accumulated_response(data: &str, model: &str) -> Result<Str
     );
 
     let debug_enabled = is_proxycast_debug_enabled();
-    let debug_file = dirs::home_dir()
-        .map(|h| h.join(".proxycast/logs/antigravity_stream_raw.txt"))
-        .unwrap_or_else(|| std::path::PathBuf::from("/tmp/antigravity_stream_raw.txt"));
+    let debug_file = proxycast_core::app_paths::resolve_logs_dir()
+        .map(|dir| dir.join("antigravity_stream_raw.txt"))
+        .unwrap_or_else(|_| std::env::temp_dir().join("antigravity_stream_raw.txt"));
 
     if debug_enabled {
         if let Some(debug_dir) = debug_file.parent() {

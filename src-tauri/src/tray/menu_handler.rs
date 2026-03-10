@@ -236,13 +236,13 @@ fn handle_open_log_dir<R: Runtime>(app: &AppHandle<R>) {
     info!("[托盘] 用户请求打开日志目录");
 
     // 获取日志目录路径
-    let log_dir = if let Ok(data_dir) = app.path().app_data_dir() {
-        data_dir.join("logs")
-    } else if let Some(home) = dirs::home_dir() {
-        home.join(".proxycast").join("logs")
-    } else {
-        error!("[托盘] 无法确定日志目录路径");
-        return;
+    let _ = app;
+    let log_dir = match proxycast_core::app_paths::resolve_logs_dir() {
+        Ok(dir) => dir,
+        Err(error) => {
+            error!("[托盘] 无法确定日志目录路径: {}", error);
+            return;
+        }
     };
 
     // 确保目录存在

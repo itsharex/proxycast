@@ -18,6 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useConfiguredProviders } from "@/hooks/useConfiguredProviders";
 import { useProviderModels } from "@/hooks/useProviderModels";
 import { isAliasProvider } from "@/lib/constants/providerMappings";
+import { filterProviderModelsByCompatibility } from "@/components/agent/chat/utils/providerModelCompatibility";
 
 // ============================================================================
 // 常量
@@ -229,6 +230,20 @@ export const TerminalAIModeSelector: React.FC<TerminalAIModeSelectorProps> = ({
     return hookModels;
   }, [selectedProvider, hookModels]);
 
+  const compatibilityResult = useMemo(() => {
+    if (!selectedProvider) {
+      return { compatibleModels: [], incompatibleModels: [] };
+    }
+
+    return filterProviderModelsByCompatibility(
+      {
+        providerType: selectedProvider.key,
+        configuredProviderType: selectedProvider.type,
+      },
+      currentModels,
+    );
+  }, [currentModels, selectedProvider]);
+
   // 自动选择第一个模型
   useEffect(() => {
     // 等待模型加载完成
@@ -240,10 +255,19 @@ export const TerminalAIModeSelector: React.FC<TerminalAIModeSelectorProps> = ({
       return;
     }
 
-    if (currentModels.length > 0 && !currentModels.includes(modelId)) {
-      onModelChange(currentModels[0]);
+    if (
+      compatibilityResult.compatibleModels.length > 0 &&
+      !compatibilityResult.compatibleModels.includes(modelId)
+    ) {
+      onModelChange(compatibilityResult.compatibleModels[0]);
     }
-  }, [currentModels, modelId, onModelChange, selectedProvider, modelsLoading]);
+  }, [
+    compatibilityResult.compatibleModels,
+    modelId,
+    onModelChange,
+    selectedProvider,
+    modelsLoading,
+  ]);
 
   // 初始化 Provider
   useEffect(() => {
@@ -308,12 +332,17 @@ export const TerminalAIModeSelector: React.FC<TerminalAIModeSelectorProps> = ({
             <div className="text-xs font-semibold text-zinc-400 px-2 py-1 mb-1">
               Models
             </div>
+            {compatibilityResult.incompatibleModels.length > 0 ? (
+              <div className="px-2 pb-1 text-[11px] text-amber-400">
+                已隐藏 {compatibilityResult.incompatibleModels.length} 个当前登录态不兼容的模型
+              </div>
+            ) : null}
             <ScrollArea className="flex-1">
               <div className="space-y-0.5 p-1">
-                {currentModels.length === 0 ? (
+                {compatibilityResult.compatibleModels.length === 0 ? (
                   <div className="text-xs text-zinc-500 p-2">暂无可用模型</div>
                 ) : (
-                  currentModels.map((m) => (
+                  compatibilityResult.compatibleModels.map((m) => (
                     <button
                       key={m}
                       onClick={() => {

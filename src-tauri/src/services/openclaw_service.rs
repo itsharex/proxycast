@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::{HashSet, VecDeque};
 use std::ffi::OsString;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::OnceLock;
@@ -28,6 +30,8 @@ const NODE_MIN_VERSION: (u64, u64, u64) = (22, 0, 0);
 const OPENCLAW_PROGRESS_LOG_LIMIT: usize = 400;
 const OPENCLAW_INSTALLER_USER_AGENT: &str = "ProxyCast-OpenClaw";
 const OPENCLAW_TEMP_CARGO_CHECK_DIR: &str = "/tmp/proxycast-cargo-check";
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1518,9 +1522,8 @@ fn openclaw_proxycast_config_path() -> PathBuf {
 }
 
 fn openclaw_installer_download_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
+    let _ = app;
+    let app_data_dir = proxycast_core::app_paths::preferred_data_dir()
         .map_err(|e| format!("无法获取应用数据目录: {e}"))?;
     let dir = app_data_dir.join("downloads").join("openclaw-installers");
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建 OpenClaw 下载目录失败: {e}"))?;
@@ -2200,6 +2203,8 @@ fn prepend_path(dir: &Path) -> Option<OsString> {
 }
 
 fn apply_binary_runtime_path(command: &mut Command, binary_path: &str) {
+    apply_windows_no_window(command);
+
     let Some(bin_dir) = Path::new(binary_path).parent() else {
         return;
     };
@@ -2208,9 +2213,18 @@ fn apply_binary_runtime_path(command: &mut Command, binary_path: &str) {
     }
 }
 
+fn apply_windows_no_window(_command: &mut Command) {
+    #[cfg(target_os = "windows")]
+    {
+        _command.creation_flags(CREATE_NO_WINDOW);
+    }
+}
+
 async fn find_command_in_shell(command_name: &str) -> Result<Option<String>, String> {
     if cfg!(target_os = "windows") {
-        let output = Command::new("cmd")
+        let mut command = Command::new("cmd");
+        apply_windows_no_window(&mut command);
+        let output = command
             .arg("/C")
             .arg("where")
             .arg(command_name)
@@ -2384,7 +2398,9 @@ fn sibling_node_path(command_path: &Path) -> Option<PathBuf> {
 }
 
 async fn read_binary_semver(path: &Path) -> Option<(u64, u64, u64)> {
-    let output = Command::new(path)
+    let mut command = Command::new(path);
+    apply_windows_no_window(&mut command);
+    let output = command
         .arg("--version")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -2493,6 +2509,8 @@ fn spawn_shell_command(command_line: &str) -> Result<Child, String> {
         cmd.arg("-lc").arg(command_line);
         cmd
     };
+
+    apply_windows_no_window(&mut command);
 
     command
         .env("NO_COLOR", "1")

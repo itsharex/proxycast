@@ -1,4 +1,5 @@
 //! 日志管理模块
+use crate::app_paths;
 use crate::config::LoggingConfig;
 use chrono::{Duration, Local, Utc};
 use regex::Regex;
@@ -44,10 +45,12 @@ pub struct LogStore {
 
 impl Default for LogStore {
     fn default() -> Self {
-        let log_dir = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".proxycast")
-            .join("logs");
+        let log_dir = app_paths::resolve_logs_dir().unwrap_or_else(|_| {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".proxycast")
+                .join("logs")
+        });
         let _ = fs::create_dir_all(&log_dir);
         let log_file = log_dir.join("proxycast.log");
         let config = LogStoreConfig::default();

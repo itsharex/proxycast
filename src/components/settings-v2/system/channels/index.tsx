@@ -46,6 +46,7 @@ import {
   telegramChannelProbe,
 } from "@/hooks/useTauri";
 import { useConfiguredProviders } from "@/hooks/useConfiguredProviders";
+import { filterProviderModelsByCompatibility, getProviderModelCompatibilityIssue } from "@/components/agent/chat/utils/providerModelCompatibility";
 import { ChannelLogTailPanel } from "./ChannelLogTailPanel";
 
 // ============================================================================
@@ -108,6 +109,25 @@ function DefaultModelSelect({
 }) {
   const { providers, loading: providersLoading } = useConfiguredProviders();
 
+  // 已保存的值如果不兼容，自动回退到 "未指定"
+  useEffect(() => {
+    if (!value || providersLoading) return;
+    const slashIdx = value.indexOf("/");
+    if (slashIdx < 0) return;
+    const providerKey = value.slice(0, slashIdx);
+    const modelName = value.slice(slashIdx + 1);
+    const provider = providers.find((p) => p.key === providerKey);
+    if (!provider) return;
+    const issue = getProviderModelCompatibilityIssue({
+      providerType: provider.type,
+      configuredProviderType: provider.type,
+      model: modelName,
+    });
+    if (issue) {
+      onChange(undefined);
+    }
+  }, [value, providers, providersLoading, onChange]);
+
   return (
     <div>
       <label className="block text-sm font-medium mb-1.5">默认模型</label>
@@ -118,15 +138,23 @@ function DefaultModelSelect({
       >
         <option value="">未指定（使用全局默认）</option>
         {providersLoading && <option disabled>加载中...</option>}
-        {providers.map((p) => (
-          <optgroup key={p.key} label={p.label}>
-            {p.customModels?.map((m) => (
-              <option key={`${p.key}/${m}`} value={`${p.key}/${m}`}>
-                {m}
-              </option>
-            ))}
-          </optgroup>
-        ))}
+        {providers.map((p) => {
+          const models = p.customModels ?? [];
+          const { compatibleModels } = filterProviderModelsByCompatibility(
+            { providerType: p.type, configuredProviderType: p.type },
+            models,
+          );
+          if (compatibleModels.length === 0) return null;
+          return (
+            <optgroup key={p.key} label={p.label}>
+              {compatibleModels.map((m) => (
+                <option key={`${p.key}/${m}`} value={`${p.key}/${m}`}>
+                  {m}
+                </option>
+              ))}
+            </optgroup>
+          );
+        })}
       </select>
       <p className="text-xs text-muted-foreground mt-1">
         为此渠道指定默认使用的 AI 模型

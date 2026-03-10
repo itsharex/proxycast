@@ -19,6 +19,7 @@ import { ProviderIcon } from "@/icons/providers";
 import { useConfiguredProviders } from "@/hooks/useConfiguredProviders";
 import { useProviderModels } from "@/hooks/useProviderModels";
 import { filterModelsByTheme } from "@/components/agent/chat/utils/modelThemePolicy";
+import { getProviderModelCompatibilityIssue } from "@/components/agent/chat/utils/providerModelCompatibility";
 
 const THEME_LABEL_MAP: Record<string, string> = {
   general: "通用对话",
@@ -80,9 +81,34 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     return filterModelsByTheme(activeTheme, providerModels);
   }, [activeTheme, providerModels]);
 
-  const currentModels = useMemo(() => {
-    return filteredResult.models.map((item) => item.id);
-  }, [filteredResult.models]);
+  const modelOptions = useMemo(
+    () =>
+      filteredResult.models.map((item) => {
+        const compatibilityIssue = getProviderModelCompatibilityIssue({
+          providerType,
+          configuredProviderType: selectedProvider?.type,
+          model: item.id,
+        });
+        return {
+          id: item.id,
+          compatibilityIssue,
+        };
+      }),
+    [filteredResult.models, providerType, selectedProvider?.type],
+  );
+
+  const currentModels = useMemo(
+    () =>
+      modelOptions
+        .filter((item) => !item.compatibilityIssue)
+        .map((item) => item.id),
+    [modelOptions],
+  );
+
+  const incompatibleModelCount = useMemo(
+    () => modelOptions.filter((item) => item.compatibilityIssue).length,
+    [modelOptions],
+  );
 
   useEffect(() => {
     if (hasInitialized.current) return;
@@ -309,27 +335,39 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                   {activeThemeLabel} 未匹配到主题模型，已展示全部模型
                 </div>
               )}
+              {incompatibleModelCount > 0 && (
+                <div className="text-[11px] text-amber-600 px-2 pb-1">
+                  已隐藏 {incompatibleModelCount} 个当前登录态不兼容的模型
+                </div>
+              )}
 
               <ScrollArea className="flex-1">
                 <div className="space-y-1 p-1">
-                  {currentModels.length === 0 ? (
+                  {modelOptions.length === 0 ? (
                     <div className="text-xs text-muted-foreground p-2">
                       暂无可用模型
                     </div>
                   ) : (
-                    currentModels.map((currentModelItem) => (
+                    modelOptions.map((currentModelItem) => (
                       <button
-                        key={currentModelItem}
+                        key={currentModelItem.id}
+                        disabled={Boolean(currentModelItem.compatibilityIssue)}
                         onClick={() => {
-                          setModel(currentModelItem);
+                          if (currentModelItem.compatibilityIssue) {
+                            return;
+                          }
+                          setModel(currentModelItem.id);
                           setOpen(false);
                         }}
                         className={cn(
                           "flex items-center justify-between w-full px-2 py-1.5 text-sm rounded-md transition-colors text-left group",
-                          model === currentModelItem
+                          currentModelItem.compatibilityIssue
+                            ? "cursor-not-allowed opacity-60 text-muted-foreground"
+                            : model === currentModelItem.id
                             ? "bg-accent text-accent-foreground"
                             : "hover:bg-muted text-muted-foreground hover:text-foreground",
                         )}
+                        title={currentModelItem.compatibilityIssue?.message}
                       >
                         <span className="flex items-center gap-2 min-w-0">
                           {selectedProvider && (
@@ -339,11 +377,20 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                               size={15}
                             />
                           )}
-                          <span className="truncate">{currentModelItem}</span>
+                          <span className="min-w-0 flex flex-col">
+                            <span className="truncate">{currentModelItem.id}</span>
+                            {currentModelItem.compatibilityIssue ? (
+                              <span className="truncate text-[11px] text-amber-600">
+                                {currentModelItem.compatibilityIssue.message}
+                              </span>
+                            ) : null}
+                          </span>
                         </span>
-                        {model === currentModelItem && (
+                        {currentModelItem.compatibilityIssue ? (
+                          <AlertCircle size={14} className="text-amber-500" />
+                        ) : model === currentModelItem.id ? (
                           <Check size={14} className="text-primary" />
-                        )}
+                        ) : null}
                       </button>
                     ))
                   )}

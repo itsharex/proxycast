@@ -11,10 +11,13 @@ import { Copy, Check } from "lucide-react";
 import { parseA2UIJson } from "@/components/content-creator/a2ui/parser";
 import type { A2UIFormData } from "@/components/content-creator/a2ui/types";
 import { CHAT_A2UI_TASK_CARD_PRESET } from "@/components/content-creator/a2ui/taskCardPresets";
+import { useDebouncedValue } from "@/lib/artifact/hooks/useDebouncedValue";
 import { ArtifactPlaceholder } from "./ArtifactPlaceholder";
 import { A2UITaskCard, A2UITaskLoadingCard } from "./A2UITaskCard";
 
 const STREAMING_LIGHT_RENDER_THRESHOLD = 2_000;
+const STREAMING_LIGHT_RENDER_DEBOUNCE_MS = 48;
+const STREAMING_STANDARD_RENDER_DEBOUNCE_MS = 24;
 
 // Custom styles for markdown content to match Cherry Studio
 const MarkdownContainer = styled.div`
@@ -249,6 +252,13 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(
     const [copied, setCopied] = React.useState<string | null>(null);
     const useLightweightStreamingRender =
       isStreaming && content.length >= STREAMING_LIGHT_RENDER_THRESHOLD;
+    const debouncedStreamingContent = useDebouncedValue(
+      content,
+      useLightweightStreamingRender
+        ? STREAMING_LIGHT_RENDER_DEBOUNCE_MS
+        : STREAMING_STANDARD_RENDER_DEBOUNCE_MS,
+    );
+    const renderContent = isStreaming ? debouncedStreamingContent : content;
 
     const remarkPlugins = React.useMemo(
       () =>
@@ -272,12 +282,12 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(
       // 匹配 markdown 图片语法中的 base64 data URL
       const base64ImageRegex =
         /!\[([^\]]*)\]\((data:image\/[^;]+;base64,[^)]+)\)/g;
-      let result = content;
+      let result = renderContent;
       const images: { alt: string; src: string; placeholder: string }[] = [];
 
       let match;
       let index = 0;
-      while ((match = base64ImageRegex.exec(content)) !== null) {
+      while ((match = base64ImageRegex.exec(renderContent)) !== null) {
         const placeholder = `__BASE64_IMAGE_${index}__`;
         images.push({
           alt: match[1] || "Generated Image",
@@ -289,7 +299,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(
       }
 
       return { text: result, images };
-    }, [content]);
+    }, [renderContent]);
 
     // 渲染 base64 图片
     const renderBase64Images = () => {

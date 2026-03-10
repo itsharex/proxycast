@@ -17,6 +17,7 @@ import {
 import { useProviderModels } from "@/hooks/useProviderModels";
 import { useGeneralChatStore } from "../store/useGeneralChatStore";
 import type { ProviderConfig } from "../types";
+import { filterProviderModelsByCompatibility } from "@/components/agent/chat/utils/providerModelCompatibility";
 
 // ============================================================================
 // 类型定义
@@ -115,6 +116,19 @@ export function useProvider(): UseProviderResult {
     error: modelsError,
   } = useProviderModels(selectedProvider);
 
+  const compatibleModelIds = useMemo(() => {
+    if (!selectedProvider) {
+      return availableModelIds;
+    }
+    return filterProviderModelsByCompatibility(
+      {
+        providerType: selectedProvider.key,
+        configuredProviderType: selectedProvider.type,
+      },
+      availableModelIds,
+    ).compatibleModels;
+  }, [availableModelIds, selectedProvider]);
+
   // 计算加载状态
   // 注意：只有在加载 Provider 列表时才显示加载状态
   // 模型加载是次要的，不应该阻塞整个界面
@@ -178,23 +192,23 @@ export function useProvider(): UseProviderResult {
     // 如果没有选中的模型，且有可用的模型，自动选择第一个
     if (
       !selectedModelId &&
-      availableModelIds.length > 0 &&
+      compatibleModelIds.length > 0 &&
       !modelInitializedRef.current
     ) {
       modelInitializedRef.current = true;
-      setSelectedModel(availableModelIds[0]);
+      setSelectedModel(compatibleModelIds[0]);
       return;
     }
 
     // 如果选中的模型不在列表中，重新选择
-    if (selectedModelId && !availableModelIds.includes(selectedModelId)) {
-      if (availableModelIds.length > 0) {
-        setSelectedModel(availableModelIds[0]);
+    if (selectedModelId && !compatibleModelIds.includes(selectedModelId)) {
+      if (compatibleModelIds.length > 0) {
+        setSelectedModel(compatibleModelIds[0]);
       } else {
         setSelectedModel(null);
       }
     }
-  }, [modelsLoading, availableModelIds, selectedModelId, setSelectedModel]);
+  }, [modelsLoading, compatibleModelIds, selectedModelId, setSelectedModel]);
 
   // ========== 操作方法 ==========
 
@@ -218,11 +232,11 @@ export function useProvider(): UseProviderResult {
    */
   const selectModel = useCallback(
     (modelId: string) => {
-      if (availableModelIds.includes(modelId)) {
+      if (compatibleModelIds.includes(modelId)) {
         setSelectedModel(modelId);
       }
     },
-    [availableModelIds, setSelectedModel],
+    [compatibleModelIds, setSelectedModel],
   );
 
   /**
@@ -278,7 +292,7 @@ export function useProvider(): UseProviderResult {
     providers,
     selectedProvider,
     selectedModelId,
-    availableModelIds,
+    availableModelIds: compatibleModelIds,
     isLoading,
     error,
     hasAvailableProvider,

@@ -6,7 +6,7 @@ use crate::models::app_type::AppType;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tauri_plugin_autostart::ManagerExt;
 
 #[cfg(target_os = "windows")]
@@ -1119,9 +1119,8 @@ fn get_download_directory(app_handle: &AppHandle) -> Result<PathBuf, String> {
     }
 
     // 回退到应用数据目录
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
+    let _ = app_handle;
+    let app_data_dir = proxycast_core::app_paths::preferred_data_dir()
         .map_err(|e| format!("无法获取应用数据目录: {e}"))?;
 
     let download_dir = app_data_dir.join("downloads");

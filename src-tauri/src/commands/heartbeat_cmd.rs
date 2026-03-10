@@ -12,12 +12,12 @@ use crate::services::heartbeat_service::{
     CycleResult, HeartbeatServiceState, HeartbeatStatus, HeartbeatTaskPreview,
 };
 use crate::AppState;
+use proxycast_core::app_paths;
 use proxycast_core::config::{DeliveryConfig, HeartbeatSecurityConfig, TaskSchedule};
 use proxycast_core::database::dao::heartbeat::HeartbeatExecution;
 use proxycast_websocket::handlers::{RpcHandler, RpcHandlerState};
 use proxycast_websocket::protocol::{CronHealthResult, GatewayRpcRequest, RpcMethod};
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
 use uuid::Uuid;
 
 // ========== 配置响应类型 ==========
@@ -135,9 +135,7 @@ pub async fn update_heartbeat_config(
         // 处理启停逻辑
         if config.enabled && !was_enabled {
             service.set_app_handle(app.clone());
-            let app_data_dir = app
-                .path()
-                .app_data_dir()
+            let app_data_dir = app_paths::preferred_data_dir()
                 .map_err(|e| format!("无法获取应用数据目录: {e}"))?;
             let self_ref = hb_state.0.clone();
             service.start(app_data_dir, self_ref).await?;
@@ -162,12 +160,10 @@ pub async fn get_heartbeat_status(
 #[tauri::command]
 pub async fn get_heartbeat_tasks(
     hb_state: tauri::State<'_, HeartbeatServiceState>,
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
 ) -> Result<Vec<HeartbeatTaskPreview>, String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("无法获取应用数据目录: {e}"))?;
+    let app_data_dir =
+        app_paths::preferred_data_dir().map_err(|e| format!("无法获取应用数据目录: {e}"))?;
     let service = hb_state.0.read().await;
     service.preview_tasks(&app_data_dir)
 }
@@ -303,11 +299,12 @@ pub async fn get_task_templates() -> Result<Vec<TaskTemplate>, String> {
 }
 
 #[tauri::command]
-pub async fn apply_task_template(template_id: String, app: tauri::AppHandle) -> Result<(), String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("无法获取应用数据目录: {e}"))?;
+pub async fn apply_task_template(
+    template_id: String,
+    _app: tauri::AppHandle,
+) -> Result<(), String> {
+    let app_data_dir =
+        app_paths::preferred_data_dir().map_err(|e| format!("无法获取应用数据目录: {e}"))?;
 
     let template = TaskTemplateRegistry::get_template_by_id(&template_id)
         .ok_or_else(|| format!("模板不存在: {}", template_id))?;
@@ -320,17 +317,15 @@ pub async fn apply_task_template(template_id: String, app: tauri::AppHandle) -> 
 #[tauri::command]
 pub async fn add_heartbeat_task(
     hb_state: tauri::State<'_, HeartbeatServiceState>,
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     description: String,
     priority: Option<u8>,
     timeout_secs: Option<u64>,
     once: Option<bool>,
     model: Option<String>,
 ) -> Result<(), String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("无法获取应用数据目录: {e}"))?;
+    let app_data_dir =
+        app_paths::preferred_data_dir().map_err(|e| format!("无法获取应用数据目录: {e}"))?;
     let service = hb_state.0.read().await;
     service.add_task(
         &app_data_dir,
@@ -345,13 +340,11 @@ pub async fn add_heartbeat_task(
 #[tauri::command]
 pub async fn delete_heartbeat_task(
     hb_state: tauri::State<'_, HeartbeatServiceState>,
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     index: usize,
 ) -> Result<(), String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("无法获取应用数据目录: {e}"))?;
+    let app_data_dir =
+        app_paths::preferred_data_dir().map_err(|e| format!("无法获取应用数据目录: {e}"))?;
     let service = hb_state.0.read().await;
     service.delete_task(&app_data_dir, index)
 }
@@ -359,7 +352,7 @@ pub async fn delete_heartbeat_task(
 #[tauri::command]
 pub async fn update_heartbeat_task(
     hb_state: tauri::State<'_, HeartbeatServiceState>,
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     index: usize,
     description: String,
     priority: Option<u8>,
@@ -367,10 +360,8 @@ pub async fn update_heartbeat_task(
     once: Option<bool>,
     model: Option<String>,
 ) -> Result<(), String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("无法获取应用数据目录: {e}"))?;
+    let app_data_dir =
+        app_paths::preferred_data_dir().map_err(|e| format!("无法获取应用数据目录: {e}"))?;
     let service = hb_state.0.read().await;
     service.update_task(
         &app_data_dir,
@@ -388,7 +379,7 @@ pub async fn update_heartbeat_task(
 #[tauri::command]
 pub async fn generate_content_creator_tasks(
     state: tauri::State<'_, AppState>,
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
 ) -> Result<usize, String> {
     use crate::services::heartbeat_service::templates::ContentCreatorTaskGenerator;
 
@@ -401,10 +392,8 @@ pub async fn generate_content_creator_tasks(
     let count = tasks.len();
 
     if count > 0 {
-        let app_data_dir = app
-            .path()
-            .app_data_dir()
-            .map_err(|e| format!("无法获取应用数据目录: {e}"))?;
+        let app_data_dir =
+            app_paths::preferred_data_dir().map_err(|e| format!("无法获取应用数据目录: {e}"))?;
         ContentCreatorTaskGenerator::append_to_heartbeat(tasks, &app_data_dir)?;
     }
 
@@ -418,10 +407,8 @@ pub async fn trigger_heartbeat_now(
     hb_state: tauri::State<'_, HeartbeatServiceState>,
     app: tauri::AppHandle,
 ) -> Result<CycleResult, String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("无法获取应用数据目录: {e}"))?;
+    let app_data_dir =
+        app_paths::preferred_data_dir().map_err(|e| format!("无法获取应用数据目录: {e}"))?;
 
     let result = {
         let service = hb_state.0.read().await;

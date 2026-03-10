@@ -6,13 +6,13 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import type {
   Project,
   CreateProjectRequest,
   ProjectUpdate,
   ProjectFilter,
 } from "@/types/project";
+import { safeInvoke } from "@/lib/dev-bridge";
 import { recordWorkspaceRepair } from "@/lib/workspaceHealthTelemetry";
 
 interface WorkspaceEnsureResult {
@@ -73,12 +73,12 @@ export function useProjects(): UseProjectsReturn {
       setError(null);
 
       const [list, defaultProj] = await Promise.all([
-        invoke<Project[]>("workspace_list"),
-        invoke<Project | null>("workspace_get_default"),
+        safeInvoke<Project[]>("workspace_list"),
+        safeInvoke<Project | null>("workspace_get_default"),
       ]);
 
       if (defaultProj?.id) {
-        const ensureResult = await invoke<WorkspaceEnsureResult>(
+        const ensureResult = await safeInvoke<WorkspaceEnsureResult>(
           "workspace_ensure_ready",
           { id: defaultProj.id },
         );
@@ -139,11 +139,11 @@ export function useProjects(): UseProjectsReturn {
   /** 创建项目 */
   const create = useCallback(
     async (request: CreateProjectRequest): Promise<Project> => {
-      const rootPath = await invoke<string>("workspace_resolve_project_path", {
+      const rootPath = await safeInvoke<string>("workspace_resolve_project_path", {
         name: request.name,
       });
 
-      const project = await invoke<Project>("workspace_create", {
+      const project = await safeInvoke<Project>("workspace_create", {
         request: {
           name: request.name,
           rootPath,
@@ -159,7 +159,7 @@ export function useProjects(): UseProjectsReturn {
   /** 更新项目 */
   const update = useCallback(
     async (id: string, updateData: ProjectUpdate): Promise<Project> => {
-      const project = await invoke<Project>("workspace_update", {
+      const project = await safeInvoke<Project>("workspace_update", {
         id,
         request: updateData,
       });
@@ -172,7 +172,7 @@ export function useProjects(): UseProjectsReturn {
   /** 删除项目 */
   const remove = useCallback(
     async (id: string): Promise<boolean> => {
-      const result = await invoke<boolean>("workspace_delete", { id });
+      const result = await safeInvoke<boolean>("workspace_delete", { id });
       await refresh();
       return result;
     },
@@ -181,7 +181,7 @@ export function useProjects(): UseProjectsReturn {
 
   /** 获取或创建默认项目 */
   const getOrCreateDefault = useCallback(async (): Promise<Project> => {
-    const project = await invoke<Project>("get_or_create_default_project");
+    const project = await safeInvoke<Project>("get_or_create_default_project");
     await refresh();
     return project;
   }, [refresh]);

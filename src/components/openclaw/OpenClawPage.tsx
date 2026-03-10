@@ -269,9 +269,14 @@ function resolveOpenClawSubpage(
 interface OpenClawPageProps {
   pageParams?: OpenClawPageParams;
   onNavigate?: (page: Page, params?: PageParams) => void;
+  isActive?: boolean;
 }
 
-export function OpenClawPage({ pageParams, onNavigate }: OpenClawPageProps) {
+export function OpenClawPage({
+  pageParams,
+  onNavigate,
+  isActive = false,
+}: OpenClawPageProps) {
   const {
     providers,
     loading: providersLoading,
@@ -562,8 +567,12 @@ export function OpenClawPage({ pageParams, onNavigate }: OpenClawPageProps) {
   }, [refreshDashboardWindowState, refreshGatewayRuntime]);
 
   useEffect(() => {
+    if (!isActive) {
+      return;
+    }
+
     void refreshAll();
-  }, [refreshAll]);
+  }, [isActive, refreshAll]);
 
   useEffect(() => {
     if (!statusResolved || requestedSubpage || operationState.running) {
@@ -587,6 +596,10 @@ export function OpenClawPage({ pageParams, onNavigate }: OpenClawPageProps) {
   ]);
 
   useEffect(() => {
+    if (!isActive) {
+      return;
+    }
+
     if (gatewayStatus !== "running" && gatewayStatus !== "starting") {
       return;
     }
@@ -598,13 +611,23 @@ export function OpenClawPage({ pageParams, onNavigate }: OpenClawPageProps) {
     }, 5000);
 
     return () => window.clearInterval(timer);
-  }, [gatewayStatus, refreshGatewayRuntime]);
+  }, [gatewayStatus, isActive, refreshGatewayRuntime]);
 
   useEffect(() => {
+    if (!isActive) {
+      return;
+    }
+
     if (currentSubpage === "dashboard" && gatewayRunning && !dashboardUrl) {
       void refreshDashboardUrl({ silent: true, showLoading: true });
     }
-  }, [currentSubpage, dashboardUrl, gatewayRunning, refreshDashboardUrl]);
+  }, [
+    currentSubpage,
+    dashboardUrl,
+    gatewayRunning,
+    isActive,
+    refreshDashboardUrl,
+  ]);
 
   const syncProviderConfig = useCallback(
     async ({ showSuccessToast = true, trackLoading = true } = {}) => {

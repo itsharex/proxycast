@@ -18,6 +18,7 @@
 //! - `session_files`: 会话文件存储
 
 pub mod app_bootstrap;
+pub mod app_paths;
 pub mod app_utils;
 pub mod data;
 pub mod logger;

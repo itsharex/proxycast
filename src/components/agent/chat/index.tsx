@@ -108,17 +108,19 @@ import type { Page, PageParams } from "@/types/page";
 import { SettingsTabs } from "@/types/settings";
 import { skillsApi, type Skill } from "@/lib/api/skills";
 import { buildHomeAgentParams } from "@/lib/workspace/navigation";
+import { useConfiguredProviders } from "@/hooks/useConfiguredProviders";
 import { LatestRunStatusBadge } from "@/components/execution/LatestRunStatusBadge";
 import {
   executionRunGet,
   executionRunGetThemeWorkbenchState,
   type AgentRun,
   type ThemeWorkbenchRunTodoItem,
+  type ThemeWorkbenchRunTerminalItem,
   type ThemeWorkbenchRunState as BackendThemeWorkbenchRunState,
 } from "@/lib/api/executionRun";
 import { setActiveContentTarget } from "@/lib/activeContentTarget";
 import { recordWorkspaceRepair } from "@/lib/workspaceHealthTelemetry";
-import { useConfiguredProviders } from "@/hooks/useConfiguredProviders";
+import { resolveProviderModelCompatibility } from "./utils/providerModelCompatibility";
 import { useProviderModels } from "@/hooks/useProviderModels";
 import {
   isReasoningModel,
@@ -812,7 +814,7 @@ function resolveThemeWorkbenchQueueItemTitle(
   item: ThemeWorkbenchRunTodoItem,
   skillDetailMap: Record<string, SkillDetailInfo | null>,
 ): string {
-  const sourceRef = item.source_ref?.trim();
+  const sourceRef = resolveThemeWorkbenchSkillSourceRef(item);
   if (sourceRef) {
     return resolveThemeWorkbenchPrimaryTaskTitle(
       sourceRef,
@@ -822,6 +824,19 @@ function resolveThemeWorkbenchQueueItemTitle(
   return item.title?.trim() || "执行任务";
 }
 const THEME_WORKBENCH_ACTIVE_RUN_MAX_AGE_MS = 45 * 1000;
+
+function resolveThemeWorkbenchSkillSourceRef(
+  item:
+    | ThemeWorkbenchRunTodoItem
+    | ThemeWorkbenchRunTerminalItem
+    | { source?: string | null; source_ref?: string | null },
+): string | null {
+  if ((item.source || "").trim() !== "skill") {
+    return null;
+  }
+  const sourceRef = item.source_ref?.trim();
+  return sourceRef || null;
+}
 
 interface PersistedThemeWorkbenchDocument {
   versions: DocumentVersion[];
@@ -1361,7 +1376,7 @@ function buildThemeWorkbenchWorkflowSteps(
   if (queueItems.length > 0) {
     if (queueItems.length === 1) {
       const item = queueItems[0];
-      const sourceRef = item.source_ref?.trim();
+      const sourceRef = resolveThemeWorkbenchSkillSourceRef(item);
       const workflowSteps = sourceRef
         ? skillDetailMap[sourceRef]?.workflow_steps || []
         : [];
@@ -2582,13 +2597,14 @@ export function AgentChatPage({
       }
     });
     (themeWorkbenchBackendRunState?.queue_items || []).forEach((item) => {
-      const sourceRef = item.source_ref?.trim();
+      const sourceRef = resolveThemeWorkbenchSkillSourceRef(item);
       if (sourceRef) {
         requiredSkillNames.add(sourceRef);
       }
     });
-    const terminalSourceRef =
-      themeWorkbenchBackendRunState?.latest_terminal?.source_ref?.trim();
+    const terminalSourceRef = resolveThemeWorkbenchSkillSourceRef(
+      themeWorkbenchBackendRunState?.latest_terminal || {},
+    );
     if (terminalSourceRef) {
       requiredSkillNames.add(terminalSourceRef);
     }
@@ -2597,7 +2613,7 @@ export function AgentChatPage({
   }, [
     isThemeWorkbench,
     messages,
-    themeWorkbenchBackendRunState?.latest_terminal?.source_ref,
+    themeWorkbenchBackendRunState?.latest_terminal,
     themeWorkbenchBackendRunState?.queue_items,
   ]);
 
@@ -3625,6 +3641,21 @@ export function AgentChatPage({
           }
         }
 
+        const compatibilityResult = resolveProviderModelCompatibility({
+          providerType,
+          configuredProviderType: selectedProvider?.type,
+          model: effectiveModel,
+        });
+        if (compatibilityResult.changed) {
+          effectiveModel = compatibilityResult.model;
+          if (model !== compatibilityResult.model) {
+            setModel(compatibilityResult.model);
+          }
+          if (compatibilityResult.reason) {
+            toast.warning(compatibilityResult.reason);
+          }
+        }
+
         if (autoContinuePayload) {
           await sendMessage(
             text,
@@ -3672,6 +3703,7 @@ export function AgentChatPage({
       providerModels,
       providerType,
       runtimeStyleMessagePrompt,
+      selectedProvider?.type,
       sendMessage,
       sessionId,
       setModel,
@@ -4026,6 +4058,11 @@ export function AgentChatPage({
     const toastId = initialSessionName
       ? "openclaw-agent-handoff"
       : "agent-new-chat";
+    const canCreateFreshSession = Boolean(projectId?.trim());
+
+    if (!canCreateFreshSession) {
+      return;
+    }
 
     void (async () => {
       const newSessionId = await createFreshSession(initialSessionName);
@@ -4048,6 +4085,7 @@ export function AgentChatPage({
     externalProjectId,
     initialTheme,
     initialCreationMode,
+    projectId,
   ]);
 
   const handleBackHome = useCallback(() => {

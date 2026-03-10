@@ -12,7 +12,7 @@ use std::fs;
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use zip::write::FileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -522,9 +522,7 @@ pub async fn export_support_bundle(
         get_log_storage_diagnostics_from_path(log_file_path.clone(), in_memory_log_count);
     let persisted_log_tail = read_persisted_logs_tail_from_path(log_file_path, 200)?;
 
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
+    let app_data_dir = proxycast_core::app_paths::preferred_data_dir()
         .ok()
         .or_else(guess_proxycast_app_data_dir);
     let config_path = guess_proxycast_config_path();
@@ -564,7 +562,7 @@ pub async fn export_support_bundle(
 }
 
 fn guess_proxycast_app_data_dir() -> Option<PathBuf> {
-    dirs::data_dir().map(|dir| dir.join("proxycast"))
+    proxycast_core::app_paths::preferred_data_dir().ok()
 }
 
 fn guess_proxycast_config_path() -> Option<PathBuf> {

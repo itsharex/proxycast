@@ -1972,6 +1972,44 @@ describe("AgentChatPage 自动引导", () => {
       "exec-map-1",
     );
   });
+
+  it("主题工作台不应把聊天命令 source_ref 当成 Skill 详情去加载", async () => {
+    mockIsContentCreationTheme.mockReturnValue(true);
+    mockUseThemeContextWorkspace.mockReturnValue(
+      createMockThemeContextWorkspaceState({
+        enabled: true,
+      }),
+    );
+    mockExecutionRunGetThemeWorkbenchState.mockResolvedValue({
+      run_state: "auto_running",
+      current_gate_key: "write_mode",
+      queue_items: [
+        {
+          run_id: "run-chat-command",
+          title: "执行主题工作台编排",
+          gate_key: "write_mode",
+          status: "running",
+          source: "chat",
+          source_ref: "aster_agent_chat_stream",
+          started_at: "2026-03-06T04:00:00.000Z",
+        },
+      ],
+      latest_terminal: null,
+      updated_at: "2026-03-06T04:00:02.000Z",
+    });
+
+    renderPage({
+      projectId: "project-theme-chat-command",
+      contentId: "content-theme-chat-command",
+      theme: "social-media",
+      lockTheme: true,
+    });
+    await flushEffects(12);
+
+    expect(mockSkillExecutionGetDetail).not.toHaveBeenCalledWith(
+      "aster_agent_chat_stream",
+    );
+  });
 });
 
 describe("AgentChatPage 视频主题工作台", () => {

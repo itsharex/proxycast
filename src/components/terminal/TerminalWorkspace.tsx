@@ -16,7 +16,7 @@
  * - AI 面板可控制活动终端
  */
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import styled from "styled-components";
 import { TerminalPanel } from "./TerminalPanel";
 import {
@@ -210,12 +210,17 @@ const CloseIcon = () => (
 interface TerminalWorkspaceProps {
   /** 页面导航回调 */
   onNavigate: (page: Page) => void;
+  /** 当前页面是否已激活 */
+  isActive: boolean;
 }
 
 /**
  * 终端工作区组件
  */
-export function TerminalWorkspace({ onNavigate }: TerminalWorkspaceProps) {
+export function TerminalWorkspace({
+  onNavigate,
+  isActive,
+}: TerminalWorkspaceProps) {
   // 面板状态管理 - 初始包含主终端
   const [panels, setPanels] = useState<SidePanel[]>([
     { id: "main-terminal", type: "terminal", title: "Terminal" },
@@ -223,6 +228,7 @@ export function TerminalWorkspace({ onNavigate }: TerminalWorkspaceProps) {
 
   // AI 面板状态
   const [showAIPanel, setShowAIPanel] = useState(false);
+  const [hasActivated, setHasActivated] = useState(isActive);
 
   // 活动终端面板 ID（用于 AI 控制）
   const [activeTerminalPanelId, setActiveTerminalPanelId] =
@@ -233,6 +239,12 @@ export function TerminalWorkspace({ onNavigate }: TerminalWorkspaceProps) {
 
   // 连接编辑器模态窗口状态
   const [isConnectionsEditorOpen, setIsConnectionsEditorOpen] = useState(false);
+
+  useEffect(() => {
+    if (isActive) {
+      setHasActivated(true);
+    }
+  }, [isActive]);
 
   // 获取活动终端的会话 ID
   const getActiveTerminalSessionId = useCallback((): string | null => {
@@ -346,6 +358,14 @@ export function TerminalWorkspace({ onNavigate }: TerminalWorkspaceProps) {
   const renderPanelContent = (panel: SidePanel) => {
     switch (panel.type) {
       case "terminal":
+        if (!hasActivated) {
+          return (
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              终端将在首次打开该页面时初始化
+            </div>
+          );
+        }
+
         return (
           <TerminalPanel
             panelId={panel.id}

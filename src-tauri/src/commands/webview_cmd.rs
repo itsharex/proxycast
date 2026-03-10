@@ -1698,17 +1698,15 @@ fn resolve_profile_data_dir_from_base(base_dir: &Path, profile_key: &str) -> Pat
 }
 
 fn resolve_profile_data_dir(app: &AppHandle, profile_key: &str) -> Result<PathBuf, String> {
-    let base_dir = app
-        .path()
-        .app_data_dir()
+    let _ = app;
+    let base_dir = proxycast_core::app_paths::preferred_data_dir()
         .map_err(|e| format!("获取应用数据目录失败: {e}"))?;
     Ok(resolve_profile_data_dir_from_base(&base_dir, profile_key))
 }
 
 fn resolve_chrome_profile_data_dir(app: &AppHandle, profile_key: &str) -> Result<PathBuf, String> {
-    let base_dir = app
-        .path()
-        .app_data_dir()
+    let _ = app;
+    let base_dir = proxycast_core::app_paths::preferred_data_dir()
         .map_err(|e| format!("获取应用数据目录失败: {e}"))?;
     Ok(base_dir
         .join("chrome_profiles")

@@ -57,6 +57,7 @@ afterEach(() => {
     });
     mounted.container.remove();
   }
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
@@ -73,6 +74,28 @@ function render(content: string, isStreaming = false): HTMLDivElement {
 
   mountedRoots.push({ container, root });
   return container;
+}
+
+function renderHarness(content: string, isStreaming = false) {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  const rerender = (nextContent: string, nextIsStreaming = isStreaming) => {
+    act(() => {
+      root.render(
+        <MarkdownRenderer
+          content={nextContent}
+          isStreaming={nextIsStreaming}
+        />,
+      );
+    });
+  };
+
+  rerender(content, isStreaming);
+
+  mountedRoots.push({ container, root });
+  return { container, rerender };
 }
 
 describe("MarkdownRenderer", () => {
@@ -104,5 +127,22 @@ describe("MarkdownRenderer", () => {
 
     expect(container.querySelector(".rendered-html")).toBeNull();
     expect(container.textContent).toContain("结尾文本");
+  });
+
+  it("流式结束后应立即恢复完整 raw html 渲染", () => {
+    vi.useFakeTimers();
+    const content = [
+      "A".repeat(2_200),
+      "",
+      '<div class="rendered-html">原始 HTML</div>',
+      "",
+      "结尾文本",
+    ].join("\n");
+
+    const { container, rerender } = renderHarness(content, true);
+    expect(container.querySelector(".rendered-html")).toBeNull();
+
+    rerender(content, false);
+    expect(container.querySelector(".rendered-html")).not.toBeNull();
   });
 });

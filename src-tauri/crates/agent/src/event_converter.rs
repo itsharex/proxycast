@@ -14,6 +14,9 @@ const TOOL_RESULT_MAX_TEXT_PARTS: usize = 256;
 const TOOL_RESULT_MAX_OUTPUT_CHARS: usize = 16_000;
 const TOOL_RESULT_MAX_IMAGES: usize = 12;
 const TOOL_RESULT_TRUNCATED_NOTICE: &str = "\n\n[event_converter] 工具输出已截断";
+const TOOL_RESULT_DIAG_WARN_JSON_BYTES: usize = 64 * 1024;
+const TOOL_RESULT_DIAG_WARN_OUTPUT_CHARS: usize = 8_000;
+const TOOL_RESULT_DIAG_WARN_IMAGE_COUNT: usize = 4;
 
 fn enhance_execution_error_text(raw: &str) -> String {
     if !raw.contains("Execution error: No such file or directory (os error 2)") {
@@ -221,6 +224,45 @@ fn maybe_filter_web_content(raw: &str) -> String {
 struct ExtractedToolResult {
     output: String,
     images: Vec<TauriToolImage>,
+    diagnostics: ToolResultDiagnostics,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ToolResultDiagnostics {
+    raw_json_bytes: Option<usize>,
+    output_chars: usize,
+    image_count: usize,
+    text_truncated: bool,
+    images_truncated: bool,
+}
+
+fn log_tool_result_diagnostics(tool_id: &str, diagnostics: &ToolResultDiagnostics) {
+    let raw_json_bytes = diagnostics.raw_json_bytes.unwrap_or(0);
+    let should_warn = diagnostics.text_truncated
+        || diagnostics.images_truncated
+        || raw_json_bytes >= TOOL_RESULT_DIAG_WARN_JSON_BYTES
+        || diagnostics.output_chars >= TOOL_RESULT_DIAG_WARN_OUTPUT_CHARS
+        || diagnostics.image_count >= TOOL_RESULT_DIAG_WARN_IMAGE_COUNT;
+
+    if should_warn {
+        tracing::warn!(
+            "[AsterAgent][Diag] tool_end payload summary: tool_id={}, raw_json_bytes={}, output_chars={}, image_count={}, text_truncated={}, images_truncated={}",
+            tool_id,
+            raw_json_bytes,
+            diagnostics.output_chars,
+            diagnostics.image_count,
+            diagnostics.text_truncated,
+            diagnostics.images_truncated
+        );
+    } else {
+        tracing::debug!(
+            "[AsterAgent][Diag] tool_end payload summary: tool_id={}, raw_json_bytes={}, output_chars={}, image_count={}",
+            tool_id,
+            raw_json_bytes,
+            diagnostics.output_chars,
+            diagnostics.image_count
+        );
+    }
 }
 
 fn parse_mime_type_from_data_url(data_url: &str) -> Option<String> {
@@ -387,6 +429,8 @@ fn extract_tool_result_data<T: serde::Serialize>(result: &T) -> ExtractedToolRes
     let output = extract_tool_result_text(result);
     let mut images = Vec::new();
     let mut seen_sources = std::collections::HashSet::new();
+    let mut raw_json_bytes = None;
+    let mut images_truncated = false;
 
     for data_url in extract_data_urls_from_text(&output) {
         push_tool_image_if_new(
@@ -397,10 +441,25 @@ fn extract_tool_result_data<T: serde::Serialize>(result: &T) -> ExtractedToolRes
     }
 
     if let Ok(json) = serde_json::to_value(result) {
-        let _ = collect_tool_result_images(&json, &mut images, &mut seen_sources);
+        raw_json_bytes = serde_json::to_vec(&json).ok().map(|bytes| bytes.len());
+        images_truncated = collect_tool_result_images(&json, &mut images, &mut seen_sources);
     }
 
-    ExtractedToolResult { output, images }
+    let output_chars = output.chars().count();
+    let image_count = images.len();
+    let text_truncated = output.contains(TOOL_RESULT_TRUNCATED_NOTICE);
+
+    ExtractedToolResult {
+        output,
+        images,
+        diagnostics: ToolResultDiagnostics {
+            raw_json_bytes,
+            output_chars,
+            image_count,
+            text_truncated,
+            images_truncated,
+        },
+    }
 }
 
 /// Tauri Agent 事件
@@ -629,6 +688,7 @@ fn convert_message(message: Message) -> Vec<TauriAgentEvent> {
                 let (success, output, error, images) = match &tool_response.tool_result {
                     Ok(result) => {
                         let extracted = extract_tool_result_data(result);
+                        log_tool_result_diagnostics(&tool_response.id, &extracted.diagnostics);
                         (
                             true,
                             extracted.output,
@@ -1022,5 +1082,24 @@ mod tests {
 
         let extracted = extract_tool_result_data(&payload);
         assert_eq!(extracted.images.len(), TOOL_RESULT_MAX_IMAGES);
+        assert!(extracted.diagnostics.images_truncated);
+    }
+
+    #[test]
+    fn test_extract_tool_result_data_should_record_diagnostics() {
+        let payload = serde_json::json!({
+            "content": [
+                {
+                    "type": "text",
+                    "text": "hello"
+                }
+            ]
+        });
+
+        let extracted = extract_tool_result_data(&payload);
+        assert_eq!(extracted.diagnostics.output_chars, 5);
+        assert_eq!(extracted.diagnostics.image_count, 0);
+        assert_eq!(extracted.diagnostics.text_truncated, false);
+        assert!(extracted.diagnostics.raw_json_bytes.is_some());
     }
 }

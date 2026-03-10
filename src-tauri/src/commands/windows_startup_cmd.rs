@@ -10,6 +10,8 @@ use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 use std::io::Write;
 #[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
 use std::path::Path;
 #[cfg(target_os = "windows")]
 use std::process::Command;
@@ -17,6 +19,9 @@ use std::process::Command;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 #[cfg(target_os = "windows")]
 use winreg::{enums::*, RegKey};
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct WindowsStartupCheck {
@@ -129,7 +134,7 @@ pub fn collect_windows_startup_diagnostics(app: &AppHandle) -> WindowsStartupDia
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
 
-        let app_data_dir: Option<PathBuf> = app.path().app_data_dir().ok();
+        let app_data_dir: Option<PathBuf> = proxycast_core::app_paths::preferred_data_dir().ok();
         let home_dir = dirs::home_dir();
         let legacy_proxycast_dir = home_dir.clone().map(|home| home.join(".proxycast"));
         let db_path = crate::database::get_db_path().ok();
@@ -171,23 +176,27 @@ pub fn collect_windows_startup_diagnostics(app: &AppHandle) -> WindowsStartupDia
         }
 
         match &legacy_proxycast_dir {
-            Some(path) => match ensure_dir_writable(path) {
+            Some(path) if path.exists() => match ensure_existing_dir_writable(path) {
                 Ok(()) => checks.push(ok_check(
                     "legacy_proxycast_dir",
-                    format!("用户目录数据根可写: {}", path.display()),
+                    format!("检测到旧版数据目录且可访问: {}", path.display()),
                 )),
                 Err(error) => {
-                    errors.push(format!("用户目录数据根不可写: {}", path.display()));
-                    checks.push(error_check(
+                    warnings.push(format!("旧版数据目录不可访问: {}", path.display()));
+                    checks.push(warn_check(
                         "legacy_proxycast_dir",
-                        format!("用户目录数据根不可写: {}", path.display()),
+                        format!("旧版数据目录不可访问: {}", path.display()),
                         Some(error),
                     ));
                 }
             },
+            Some(path) => checks.push(ok_check(
+                "legacy_proxycast_dir",
+                format!("未检测到旧版数据目录: {}", path.display()),
+            )),
             None => {
-                errors.push("无法解析用户 Home 目录".to_string());
-                checks.push(error_check(
+                warnings.push("无法解析用户 Home 目录".to_string());
+                checks.push(warn_check(
                     "legacy_proxycast_dir",
                     "无法解析用户 Home 目录".to_string(),
                     None,
@@ -440,6 +449,25 @@ fn ensure_dir_writable(path: &Path) -> Result<(), String> {
 }
 
 #[cfg(target_os = "windows")]
+fn ensure_existing_dir_writable(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let probe = path.join("proxycast-write-test.tmp");
+    let mut file = std::fs::File::create(&probe)
+        .map_err(|e| format!("创建测试文件失败 {}: {e}", probe.display()))?;
+    file.write_all(b"proxycast")
+        .map_err(|e| format!("写入测试文件失败 {}: {e}", probe.display()))?;
+    file.sync_all()
+        .map_err(|e| format!("刷新测试文件失败 {}: {e}", probe.display()))?;
+    std::fs::remove_file(&probe)
+        .map_err(|e| format!("删除测试文件失败 {}: {e}", probe.display()))?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
 fn check_database_file(path: &Path) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         ensure_dir_writable(parent)?;
@@ -447,9 +475,14 @@ fn check_database_file(path: &Path) -> Result<(), String> {
 
     let conn = rusqlite::Connection::open(path)
         .map_err(|e| format!("打开数据库失败 {}: {e}", path.display()))?;
-    conn.execute("PRAGMA user_version", [])
+    conn.query_row("PRAGMA user_version", [], |_| Ok(()))
         .map_err(|e| format!("执行数据库探测失败 {}: {e}", path.display()))?;
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn apply_windows_no_window(command: &mut Command) {
+    command.creation_flags(CREATE_NO_WINDOW);
 }
 
 #[cfg(target_os = "windows")]
@@ -579,7 +612,9 @@ fn detect_shell_availability() -> Option<String> {
         }
     }
 
-    let pwsh_check = Command::new("pwsh").args(["-v"]).output();
+    let mut pwsh_check = Command::new("pwsh");
+    apply_windows_no_window(&mut pwsh_check);
+    let pwsh_check = pwsh_check.args(["-v"]).output();
     if pwsh_check
         .map(|output| output.status.success())
         .unwrap_or(false)

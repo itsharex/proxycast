@@ -564,7 +564,10 @@ function AppContent() {
             flexDirection: "column",
           }}
         >
-          <TerminalWorkspace onNavigate={handleNavigate} />
+          <TerminalWorkspace
+            onNavigate={handleNavigate}
+            isActive={currentPage === "terminal"}
+          />
         </div>
 
         <FullscreenWrapper $isActive={currentPage === "sysinfo"}>
@@ -637,6 +640,7 @@ function AppContent() {
           <OpenClawPage
             onNavigate={handleNavigate}
             pageParams={pageParams as OpenClawPageParams}
+            isActive={currentPage === "openclaw"}
           />
         </div>
 

@@ -11,10 +11,11 @@ use proxycast_agent::tools::heartbeat_tool::{
     HeartbeatCycleResult, HeartbeatExecutionRecord, HeartbeatService, HeartbeatStatus,
     HeartbeatTaskPreview, HeartbeatToolError,
 };
+use proxycast_core::app_paths;
 use proxycast_core::database::dao::heartbeat::HeartbeatExecution;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 /// Heartbeat Service 适配器
 ///
@@ -35,9 +36,7 @@ impl HeartbeatServiceAdapter {
 
     /// 获取应用数据目录
     fn app_data_dir(&self) -> Result<PathBuf, HeartbeatToolError> {
-        self.app_handle
-            .path()
-            .app_data_dir()
+        app_paths::preferred_data_dir()
             .map_err(|e| HeartbeatToolError::IoError(format!("获取应用数据目录失败: {}", e)))
     }
 

@@ -44,6 +44,7 @@ import {
   isValidSessionId,
   resolveRestorableSessionId,
 } from "../utils/sessionRecovery";
+import { createStreamDiagnosticsReporter } from "../utils/streamDiagnostics";
 
 /** 话题（会话）信息 */
 export interface Topic {
@@ -269,6 +270,9 @@ interface UseAgentChatOptions {
 
 export function useAgentChat(options: UseAgentChatOptions) {
   const { systemPrompt, onWriteFile, workspaceId } = options;
+  const streamDiagnosticsRef = useRef(
+    createStreamDiagnosticsReporter("useAgentChat"),
+  );
 
   const getRequiredWorkspaceId = (): string => {
     const resolvedWorkspaceId = workspaceId?.trim();
@@ -686,7 +690,12 @@ export function useAgentChat(options: UseAgentChatOptions) {
       allProxycastSkills
         .filter((skill) => skill.installed)
         .forEach((skill) => {
-          const skillName = (skill.directory || skill.key || skill.name || "").trim();
+          const skillName = (
+            skill.directory ||
+            skill.key ||
+            skill.name ||
+            ""
+          ).trim();
           if (!skillName) return;
           detailsByName.set(skillName, {
             name: skillName,
@@ -984,13 +993,21 @@ export function useAgentChat(options: UseAgentChatOptions) {
       console.log(
         `[AgentChat] 设置事件监听器: ${eventName}, sessionId: ${activeSessionId}`,
       );
+      streamDiagnosticsRef.current.start({
+        sessionId: activeSessionId,
+        eventName,
+        assistantMessageId: assistantMsgId,
+        source: "sendMessage",
+      });
       unlisten = await safeListen<StreamEvent>(eventName, (event) => {
         console.log("[AgentChat] 收到事件:", eventName, event.payload);
         const data = parseStreamEvent(event.payload);
         if (!data) {
           console.warn("[AgentChat] 解析事件失败:", event.payload);
+          streamDiagnosticsRef.current.recordInvalidEvent(event.payload);
           return;
         }
+        streamDiagnosticsRef.current.record(data);
         console.log("[AgentChat] 解析后数据:", data);
 
         switch (data.type) {
@@ -1085,6 +1102,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
             unlistenRef.current = null;
             currentAssistantMsgIdRef.current = null;
             currentStreamingSessionIdRef.current = null;
+            streamDiagnosticsRef.current.markDone();
             if (unlisten) {
               unlisten();
               unlisten = null;
@@ -1133,6 +1151,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
             unlistenRef.current = null;
             currentAssistantMsgIdRef.current = null;
             currentStreamingSessionIdRef.current = null;
+            streamDiagnosticsRef.current.markError(data.message);
             if (unlisten) {
               unlisten();
               unlisten = null;
@@ -1354,6 +1373,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
       );
     } catch (error) {
       console.error("[AgentChat] Send failed:", error);
+      streamDiagnosticsRef.current.markError(String(error));
       toast.error(`发送失败: ${error}`, {
         id: `send-error-${Date.now()}`,
         duration: 8000,
@@ -1505,7 +1525,8 @@ export function useAgentChat(options: UseAgentChatOptions) {
         })
         // 过滤仅包含工具协议的空白 assistant 消息，避免历史里出现无意义气泡
         .filter(
-          (msg) => !(msg.role === "assistant" && msg.content.trim().length === 0),
+          (msg) =>
+            !(msg.role === "assistant" && msg.content.trim().length === 0),
         );
 
       if (restoreRequestVersion !== sessionResetVersionRef.current) {
@@ -1773,6 +1794,12 @@ export function useAgentChat(options: UseAgentChatOptions) {
       console.log(
         `[AgentChat] triggerAIGuide 设置事件监听器: ${eventName}, sessionId: ${activeSessionId}`,
       );
+      streamDiagnosticsRef.current.start({
+        sessionId: activeSessionId,
+        eventName,
+        assistantMessageId: assistantMsgId,
+        source: "triggerAIGuide",
+      });
       unlisten = await safeListen<StreamEvent>(eventName, (event) => {
         console.log(
           "[AgentChat] triggerAIGuide 收到事件:",
@@ -1785,8 +1812,10 @@ export function useAgentChat(options: UseAgentChatOptions) {
             "[AgentChat] triggerAIGuide 解析事件失败:",
             event.payload,
           );
+          streamDiagnosticsRef.current.recordInvalidEvent(event.payload);
           return;
         }
+        streamDiagnosticsRef.current.record(data);
 
         switch (data.type) {
           case "text_delta":
@@ -1858,6 +1887,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
             unlistenRef.current = null;
             currentAssistantMsgIdRef.current = null;
             currentStreamingSessionIdRef.current = null;
+            streamDiagnosticsRef.current.markDone();
             if (unlisten) {
               unlisten();
               unlisten = null;
@@ -1888,6 +1918,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
             unlistenRef.current = null;
             currentAssistantMsgIdRef.current = null;
             currentStreamingSessionIdRef.current = null;
+            streamDiagnosticsRef.current.markError(data.message);
             if (unlisten) {
               unlisten();
               unlisten = null;
@@ -2051,6 +2082,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
       );
     } catch (error) {
       console.error("[AgentChat] triggerAIGuide failed:", error);
+      streamDiagnosticsRef.current.markError(String(error));
       toast.error(`启动引导失败: ${error}`, {
         id: `guide-error-${Date.now()}`,
         duration: 8000,

@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { useConfiguredProviders } from "@/hooks/useConfiguredProviders";
 import { useProviderModels } from "@/hooks/useProviderModels";
 import { getProviderLabel } from "@/lib/constants/providerMappings";
+import { getProviderModelCompatibilityIssue } from "@/components/agent/chat/utils/providerModelCompatibility";
 
 export interface PolishModelSelectorProps {
   /** 当前选中的模型 ID */
@@ -63,6 +64,19 @@ export const PolishModelSelector: React.FC<PolishModelSelectorProps> = ({
   const { models: currentModels, loading: modelsLoading } = useProviderModels(
     selectedProvider,
     { returnFullMetadata: true },
+  );
+
+  const compatibleModels = useMemo(
+    () =>
+      currentModels.filter(
+        (model) =>
+          !getProviderModelCompatibilityIssue({
+            providerType: selectedProvider?.key || "",
+            configuredProviderType: selectedProvider?.type,
+            model: model.id,
+          }),
+      ),
+    [currentModels, selectedProvider?.key, selectedProvider?.type],
   );
 
   // 点击外部关闭
@@ -200,12 +214,12 @@ export const PolishModelSelector: React.FC<PolishModelSelectorProps> = ({
                   <div className="flex items-center justify-center h-full">
                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                   </div>
-                ) : currentModels.length === 0 ? (
+                ) : compatibleModels.length === 0 ? (
                   <div className="flex items-center justify-center h-full text-xs text-muted-foreground">
                     暂无可用模型
                   </div>
                 ) : (
-                  currentModels.map((model) => {
+                  compatibleModels.map((model) => {
                     const isSelected = value === model.id;
                     // 简化模型名称显示
                     const displayName =

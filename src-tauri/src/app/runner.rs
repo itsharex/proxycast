@@ -757,7 +757,7 @@ pub fn run() {
                             service.set_app_handle(app_handle.clone());
 
                             if service.get_config().enabled {
-                                let app_data_dir = match app_handle.path().app_data_dir() {
+                                let app_data_dir = match proxycast_core::app_paths::preferred_data_dir() {
                                     Ok(dir) => dir,
                                     Err(e) => {
                                         tracing::error!("[启动] 无法获取应用数据目录: {}", e);

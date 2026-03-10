@@ -21,6 +21,9 @@ const WEB_SEARCH_REQUIRED_TOOLS_ENV: &str = "PROXYCAST_WEB_SEARCH_REQUIRED_TOOLS
 const WEB_SEARCH_ALLOWED_TOOLS_ENV: &str = "PROXYCAST_WEB_SEARCH_ALLOWED_TOOLS";
 const WEB_SEARCH_DISALLOWED_TOOLS_ENV: &str = "PROXYCAST_WEB_SEARCH_DISALLOWED_TOOLS";
 const WEB_SEARCH_PREFLIGHT_ENABLED_ENV: &str = "PROXYCAST_WEB_SEARCH_PREFLIGHT_ENABLED";
+const STREAM_EVENT_DIAG_WARN_TEXT_DELTA_CHARS: usize = 2_000;
+const STREAM_EVENT_DIAG_WARN_TOOL_OUTPUT_CHARS: usize = 8_000;
+const STREAM_EVENT_DIAG_WARN_CONTEXT_STEPS: usize = 24;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestToolPolicy {
@@ -186,6 +189,68 @@ impl PreflightToolExecution {
 pub struct ReplyAttemptError {
     pub message: String,
     pub emitted_any: bool,
+}
+
+#[derive(Debug, Default)]
+struct StreamEventDiagnostics {
+    text_delta_count: usize,
+    tool_start_count: usize,
+    tool_end_count: usize,
+    error_count: usize,
+    context_trace_events: usize,
+    max_text_delta_chars: usize,
+    max_tool_output_chars: usize,
+    max_context_trace_steps: usize,
+}
+
+fn update_stream_event_diagnostics(
+    diagnostics: &mut StreamEventDiagnostics,
+    event: &TauriAgentEvent,
+) {
+    match event {
+        TauriAgentEvent::TextDelta { text } => {
+            diagnostics.text_delta_count += 1;
+            let char_count = text.chars().count();
+            diagnostics.max_text_delta_chars = diagnostics.max_text_delta_chars.max(char_count);
+            if char_count >= STREAM_EVENT_DIAG_WARN_TEXT_DELTA_CHARS {
+                tracing::warn!(
+                    "[AsterAgent][Diag] large text_delta observed: chars={}",
+                    char_count
+                );
+            }
+        }
+        TauriAgentEvent::ToolStart { .. } => {
+            diagnostics.tool_start_count += 1;
+        }
+        TauriAgentEvent::ToolEnd { tool_id, result } => {
+            diagnostics.tool_end_count += 1;
+            let output_chars = result.output.chars().count();
+            diagnostics.max_tool_output_chars = diagnostics.max_tool_output_chars.max(output_chars);
+            if output_chars >= STREAM_EVENT_DIAG_WARN_TOOL_OUTPUT_CHARS {
+                tracing::warn!(
+                    "[AsterAgent][Diag] large tool_end output observed: tool_id={}, output_chars={}, success={}",
+                    tool_id,
+                    output_chars,
+                    result.success
+                );
+            }
+        }
+        TauriAgentEvent::ContextTrace { steps } => {
+            diagnostics.context_trace_events += 1;
+            diagnostics.max_context_trace_steps =
+                diagnostics.max_context_trace_steps.max(steps.len());
+            if steps.len() >= STREAM_EVENT_DIAG_WARN_CONTEXT_STEPS {
+                tracing::warn!(
+                    "[AsterAgent][Diag] large context_trace observed: steps={}",
+                    steps.len()
+                );
+            }
+        }
+        TauriAgentEvent::Error { .. } => {
+            diagnostics.error_count += 1;
+        }
+        _ => {}
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -541,6 +606,7 @@ where
     let mut emitted_any = false;
     let mut text_chunks: Vec<String> = Vec::new();
     let mut event_errors: Vec<String> = Vec::new();
+    let mut diagnostics = StreamEventDiagnostics::default();
 
     while let Some(event_result) = stream.next().await {
         match event_result {
@@ -580,6 +646,7 @@ where
                         }
                         _ => {}
                     }
+                    update_stream_event_diagnostics(&mut diagnostics, &tauri_event);
                     on_event(&tauri_event);
                 }
                 if let Some(message) = inline_provider_error {
@@ -606,6 +673,18 @@ where
             emitted_any,
         });
     }
+
+    tracing::info!(
+        "[AsterAgent][Diag] stream summary: text_deltas={}, tool_starts={}, tool_ends={}, context_traces={}, errors={}, max_text_delta_chars={}, max_tool_output_chars={}, max_context_trace_steps={}",
+        diagnostics.text_delta_count,
+        diagnostics.tool_start_count,
+        diagnostics.tool_end_count,
+        diagnostics.context_trace_events,
+        diagnostics.error_count,
+        diagnostics.max_text_delta_chars,
+        diagnostics.max_tool_output_chars,
+        diagnostics.max_context_trace_steps
+    );
 
     Ok(StreamReplyExecution {
         text_output: text_chunks.join(""),

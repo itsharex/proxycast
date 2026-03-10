@@ -1006,10 +1006,8 @@ impl KiroProvider {
             .unwrap_or(false);
         if debug_enabled {
             if let Ok(json_str) = serde_json::to_string_pretty(&cw_request) {
-                let debug_dir = dirs::home_dir()
-                    .unwrap_or_default()
-                    .join(".proxycast")
-                    .join("logs");
+                let debug_dir = proxycast_core::app_paths::resolve_logs_dir()
+                    .unwrap_or_else(|_| std::env::temp_dir().join("proxycast").join("logs"));
                 let uuid_prefix = uuid::Uuid::new_v4()
                     .to_string()
                     .split('-')
