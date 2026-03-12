@@ -4,7 +4,6 @@
 
 use proxycast_core::general_chat::{ChatMessage, MessageRole};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 /// AI 摘要请求
 #[derive(Debug, Clone, Serialize, Deserialize)]

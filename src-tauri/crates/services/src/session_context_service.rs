@@ -2,13 +2,15 @@
 //!
 //! 提供会话上下文的持久化、恢复和智能管理功能，解决 AI 对话中的上下文丢失问题
 
-use crate::general_chat::{ChatMessage, MessageRole};
-use proxycast_core::database::dao::general_chat::GeneralChatDao;
+use crate::ai_summary_service::AISummaryService;
+use proxycast_core::database::dao::chat::{ChatDao, ChatMessage as UnifiedChatMessage, ChatMode};
+use proxycast_core::database::load_pending_general_session_messages;
+use proxycast_core::general_chat::{ChatMessage, MessageRole};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// 会话上下文摘要
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +63,8 @@ pub struct SessionContextService {
     config: ContextWindowConfig,
     /// 会话摘要缓存
     summary_cache: Arc<Mutex<HashMap<String, SessionSummary>>>,
+    /// AI 摘要服务（可选）
+    ai_summary_service: Option<Arc<AISummaryService>>,
 }
 
 impl SessionContextService {
@@ -70,18 +74,34 @@ impl SessionContextService {
             db_connection,
             config,
             summary_cache: Arc::new(Mutex::new(HashMap::new())),
+            ai_summary_service: None,
+        }
+    }
+
+    /// 创建带 AI 摘要服务的会话上下文服务
+    pub fn new_with_ai_summary(
+        db_connection: Arc<Mutex<Connection>>,
+        config: ContextWindowConfig,
+        ai_summary_service: Arc<AISummaryService>,
+    ) -> Self {
+        Self {
+            db_connection,
+            config,
+            summary_cache: Arc::new(Mutex::new(HashMap::new())),
+            ai_summary_service: Some(ai_summary_service),
         }
     }
 
     /// 获取会话的有效上下文
     ///
     /// 返回适合发送给 AI 的消息列表，包括摘要和最近的消息
-    pub fn get_effective_context(&self, session_id: &str) -> Result<Vec<ChatMessage>, String> {
+    pub async fn get_effective_context(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<ChatMessage>, String> {
         let conn = self.db_connection.lock().map_err(|e| e.to_string())?;
 
-        // 获取所有消息
-        let all_messages = GeneralChatDao::get_messages(&conn, session_id, None, None)
-            .map_err(|e| format!("获取消息失败: {e}"))?;
+        let all_messages = Self::load_session_messages(&conn, session_id)?;
 
         if all_messages.is_empty() {
             return Ok(vec![]);
@@ -97,10 +117,11 @@ impl SessionContextService {
 
         // 需要应用上下文管理
         self.apply_context_window_management(session_id, all_messages)
+            .await
     }
 
     /// 应用上下文窗口管理
-    fn apply_context_window_management(
+    async fn apply_context_window_management(
         &self,
         session_id: &str,
         all_messages: Vec<ChatMessage>,
@@ -110,7 +131,7 @@ impl SessionContextService {
         // 如果启用智能摘要且消息数量超过阈值
         if self.config.enable_smart_summary && all_messages.len() > self.config.summary_threshold {
             // 尝试获取或创建摘要
-            if let Ok(summary) = self.get_or_create_summary(session_id, &all_messages) {
+            if let Ok(summary) = self.get_or_create_summary(session_id, &all_messages).await {
                 // 添加摘要作为系统消息
                 let summary_message = ChatMessage {
                     id: format!("summary-{session_id}"),
@@ -156,6 +177,148 @@ impl SessionContextService {
         Ok(result)
     }
 
+    fn load_session_messages(
+        conn: &Connection,
+        session_id: &str,
+    ) -> Result<Vec<ChatMessage>, String> {
+        let session =
+            ChatDao::get_session(conn, session_id).map_err(|e| format!("获取统一会话失败: {e}"))?;
+
+        if let Some(session) = session {
+            if session.mode != ChatMode::General {
+                debug!(
+                    "会话 {} 不是 general 模式，跳过上下文加载: {:?}",
+                    session_id, session.mode
+                );
+                return Ok(vec![]);
+            }
+
+            let unified_messages = ChatDao::get_messages(conn, session_id, None)
+                .map_err(|e| format!("获取统一消息失败: {e}"))?;
+
+            return Ok(unified_messages
+                .into_iter()
+                .map(Self::convert_unified_message)
+                .collect());
+        }
+
+        debug!(
+            "会话 {} 未命中 unified chat，回退待迁移 general 历史表",
+            session_id
+        );
+
+        Self::load_pending_general_messages(conn, session_id)
+    }
+
+    fn load_pending_general_messages(
+        conn: &Connection,
+        session_id: &str,
+    ) -> Result<Vec<ChatMessage>, String> {
+        let messages = load_pending_general_session_messages(conn, session_id)
+            .map_err(|e| format!("查询待迁移 general 消息失败: {e}"))?;
+
+        Ok(messages
+            .into_iter()
+            .map(|message| ChatMessage {
+                id: message.id,
+                session_id: message.session_id,
+                role: Self::convert_legacy_role(&message.role),
+                content: message.content,
+                blocks: None,
+                status: "complete".to_string(),
+                created_at: message.created_at,
+                metadata: None,
+            })
+            .collect())
+    }
+
+    fn convert_unified_message(message: UnifiedChatMessage) -> ChatMessage {
+        ChatMessage {
+            id: message.id.to_string(),
+            session_id: message.session_id,
+            role: Self::convert_unified_role(&message.role),
+            content: Self::extract_unified_text_content(&message.content),
+            blocks: None,
+            status: "complete".to_string(),
+            created_at: Self::parse_unified_timestamp(&message.created_at),
+            metadata: message.metadata,
+        }
+    }
+
+    fn convert_unified_role(role: &str) -> MessageRole {
+        match role {
+            "assistant" => MessageRole::Assistant,
+            "system" => MessageRole::System,
+            _ => MessageRole::User,
+        }
+    }
+
+    fn convert_legacy_role(role: &str) -> MessageRole {
+        match role {
+            "assistant" => MessageRole::Assistant,
+            "system" => MessageRole::System,
+            _ => MessageRole::User,
+        }
+    }
+
+    fn extract_unified_text_content(content: &serde_json::Value) -> String {
+        match content {
+            serde_json::Value::Null => String::new(),
+            serde_json::Value::String(text) => text.clone(),
+            serde_json::Value::Array(items) => {
+                let parts: Vec<String> = items
+                    .iter()
+                    .filter_map(Self::extract_unified_text_fragment)
+                    .filter(|text| !text.trim().is_empty())
+                    .collect();
+
+                if parts.is_empty() {
+                    content.to_string()
+                } else {
+                    parts.join("\n")
+                }
+            }
+            serde_json::Value::Object(_) => {
+                Self::extract_unified_text_fragment(content).unwrap_or_else(|| content.to_string())
+            }
+            _ => content.to_string(),
+        }
+    }
+
+    fn extract_unified_text_fragment(value: &serde_json::Value) -> Option<String> {
+        match value {
+            serde_json::Value::Null => None,
+            serde_json::Value::String(text) => Some(text.clone()),
+            serde_json::Value::Array(items) => {
+                let parts: Vec<String> = items
+                    .iter()
+                    .filter_map(Self::extract_unified_text_fragment)
+                    .filter(|text| !text.trim().is_empty())
+                    .collect();
+
+                if parts.is_empty() {
+                    None
+                } else {
+                    Some(parts.join("\n"))
+                }
+            }
+            serde_json::Value::Object(map) => map
+                .get("text")
+                .and_then(|value| value.as_str())
+                .or_else(|| map.get("content").and_then(|value| value.as_str()))
+                .or_else(|| map.get("value").and_then(|value| value.as_str()))
+                .map(ToString::to_string),
+            _ => None,
+        }
+    }
+
+    fn parse_unified_timestamp(timestamp: &str) -> i64 {
+        chrono::DateTime::parse_from_rfc3339(timestamp)
+            .map(|value| value.timestamp_millis())
+            .or_else(|_| timestamp.parse::<i64>())
+            .unwrap_or_default()
+    }
+
     /// 选择最近的消息，确保不超过配置限制
     fn select_recent_messages(
         &self,
@@ -185,7 +348,7 @@ impl SessionContextService {
     }
 
     /// 获取或创建会话摘要
-    fn get_or_create_summary(
+    async fn get_or_create_summary(
         &self,
         session_id: &str,
         messages: &[ChatMessage],
@@ -199,7 +362,7 @@ impl SessionContextService {
         }
 
         // 创建新摘要
-        let summary = self.create_summary(session_id, messages)?;
+        let summary = self.create_summary(session_id, messages).await?;
 
         // 缓存摘要
         {
@@ -210,8 +373,8 @@ impl SessionContextService {
         Ok(summary)
     }
 
-    /// 创建会话摘要
-    fn create_summary(
+    /// 创建会话摘要（优先使用 AI，失败时降级到本地）
+    async fn create_summary(
         &self,
         session_id: &str,
         messages: &[ChatMessage],
@@ -223,6 +386,39 @@ impl SessionContextService {
         // 计算要摘要的消息数量（前 N 条消息）
         let summary_count = (messages.len() * 2 / 3).min(self.config.summary_threshold);
         let messages_to_summarize = &messages[..summary_count];
+
+        // 尝试使用 AI 摘要
+        if let Some(ai_service) = &self.ai_summary_service {
+            match ai_service.generate_summary(messages_to_summarize).await {
+                Ok(ai_summary) => {
+                    info!("AI 摘要生成成功，会话: {}", session_id);
+                    let last_message = messages_to_summarize.last().unwrap();
+                    return Ok(SessionSummary {
+                        session_id: session_id.to_string(),
+                        summary: ai_summary.summary,
+                        key_topics: ai_summary.key_topics,
+                        decisions: ai_summary.decisions,
+                        created_at: chrono::Utc::now().timestamp_millis(),
+                        message_count: summary_count as i32,
+                        last_message_id: last_message.id.clone(),
+                    });
+                }
+                Err(e) => {
+                    warn!("AI 摘要生成失败，降级到本地摘要: {}", e);
+                }
+            }
+        }
+
+        // 降级到本地关键词提取
+        self.create_summary_local(session_id, messages_to_summarize)
+    }
+
+    /// 本地关键词提取摘要（保留作为降级方案）
+    fn create_summary_local(
+        &self,
+        session_id: &str,
+        messages_to_summarize: &[ChatMessage],
+    ) -> Result<SessionSummary, String> {
 
         // 提取关键信息
         let mut key_topics = Vec::new();
@@ -252,7 +448,7 @@ impl SessionContextService {
         let summary_content = if content_parts.len() > 10 {
             format!(
                 "本会话包含 {} 条消息，主要讨论了以下内容：\n{}",
-                summary_count,
+                messages_to_summarize.len(),
                 content_parts
                     .join("\n")
                     .chars()
@@ -271,7 +467,7 @@ impl SessionContextService {
             key_topics,
             decisions,
             created_at: chrono::Utc::now().timestamp_millis(),
-            message_count: summary_count as i32,
+            message_count: messages_to_summarize.len() as i32,
             last_message_id: last_message.id.clone(),
         })
     }
@@ -340,11 +536,8 @@ impl SessionContextService {
     pub fn get_session_stats(&self, session_id: &str) -> Result<SessionStats, String> {
         let conn = self.db_connection.lock().map_err(|e| e.to_string())?;
 
-        let message_count = GeneralChatDao::get_message_count(&conn, session_id)
-            .map_err(|e| format!("获取消息数量失败: {e}"))? as usize;
-
-        let messages = GeneralChatDao::get_messages(&conn, session_id, None, None)
-            .map_err(|e| format!("获取消息失败: {e}"))?;
+        let messages = Self::load_session_messages(&conn, session_id)?;
+        let message_count = messages.len();
 
         let total_characters: usize = messages.iter().map(|m| m.content.len()).sum();
         let user_messages = messages
@@ -378,15 +571,14 @@ impl SessionContextService {
     }
 
     /// 预热会话上下文（提前创建摘要）
-    pub fn preheat_session_context(&self, session_id: &str) -> Result<(), String> {
+    pub async fn preheat_session_context(&self, session_id: &str) -> Result<(), String> {
         let conn = self.db_connection.lock().map_err(|e| e.to_string())?;
 
-        let messages = GeneralChatDao::get_messages(&conn, session_id, None, None)
-            .map_err(|e| format!("获取消息失败: {e}"))?;
+        let messages = Self::load_session_messages(&conn, session_id)?;
 
         if messages.len() > self.config.summary_threshold {
             debug!("为会话 {} 预热上下文", session_id);
-            self.get_or_create_summary(session_id, &messages)?;
+            self.get_or_create_summary(session_id, &messages).await?;
             info!("会话 {} 上下文预热完成", session_id);
         }
 
@@ -410,11 +602,53 @@ pub struct SessionStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::general_chat::ChatSession;
+    use proxycast_core::database::dao::chat::{
+        ChatDao, ChatMessage as UnifiedChatMessage, ChatMode, ChatSession as UnifiedChatSession,
+    };
+    use proxycast_core::general_chat::ChatSession;
     use rusqlite::Connection;
 
     fn setup_test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
+
+        conn.execute(
+            "CREATE TABLE agent_sessions (
+                id TEXT PRIMARY KEY,
+                model TEXT NOT NULL,
+                system_prompt TEXT,
+                title TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                working_dir TEXT,
+                execution_strategy TEXT NOT NULL DEFAULT 'react'
+            )",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "CREATE TABLE agent_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content_json TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                tool_calls_json TEXT,
+                tool_call_id TEXT,
+                FOREIGN KEY (session_id) REFERENCES agent_sessions(id) ON DELETE CASCADE
+            )",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "CREATE TABLE settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
 
         // 创建会话表
         conn.execute(
@@ -477,8 +711,86 @@ mod tests {
         messages
     }
 
-    #[test]
-    fn test_context_service_creation() {
+    fn create_unified_general_session(session_id: &str) -> UnifiedChatSession {
+        let now = chrono::Utc::now().to_rfc3339();
+        UnifiedChatSession {
+            id: session_id.to_string(),
+            mode: ChatMode::General,
+            title: Some("测试会话".to_string()),
+            system_prompt: None,
+            model: None,
+            provider_type: None,
+            credential_uuid: None,
+            metadata: None,
+            created_at: now.clone(),
+            updated_at: now,
+        }
+    }
+
+    fn create_unified_messages(session_id: &str, count: usize) -> Vec<UnifiedChatMessage> {
+        let base_time = chrono::Utc::now();
+
+        (0..count)
+            .map(|index| {
+                let role = if index % 2 == 0 { "user" } else { "assistant" };
+                let content = format!("这是第 {} 条消息，包含一些测试内容", index + 1);
+
+                UnifiedChatMessage {
+                    id: 0,
+                    session_id: session_id.to_string(),
+                    role: role.to_string(),
+                    content: serde_json::json!([{ "type": "text", "text": content }]),
+                    tool_calls: None,
+                    tool_call_id: None,
+                    metadata: None,
+                    created_at: (base_time + chrono::Duration::milliseconds(index as i64))
+                        .to_rfc3339(),
+                }
+            })
+            .collect()
+    }
+
+    fn insert_legacy_session(conn: &Connection, session: &ChatSession) {
+        conn.execute(
+            "INSERT INTO general_chat_sessions (id, name, created_at, updated_at, metadata)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                session.id,
+                session.name,
+                session.created_at,
+                session.updated_at,
+                Option::<String>::None,
+            ],
+        )
+        .unwrap();
+    }
+
+    fn insert_legacy_message(conn: &Connection, message: &ChatMessage) {
+        let role = match message.role {
+            MessageRole::User => "user",
+            MessageRole::Assistant => "assistant",
+            MessageRole::System => "system",
+        };
+
+        conn.execute(
+            "INSERT INTO general_chat_messages (id, session_id, role, content, blocks, status, created_at, metadata)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                message.id,
+                message.session_id,
+                role,
+                message.content,
+                Option::<String>::None,
+                message.status,
+                message.created_at,
+                Option::<String>::None,
+            ],
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_context_service_creation() {
         let conn = Arc::new(Mutex::new(setup_test_db()));
         let config = ContextWindowConfig::default();
         let service = SessionContextService::new(conn, config);
@@ -486,8 +798,8 @@ mod tests {
         assert!(service.summary_cache.lock().unwrap().is_empty());
     }
 
-    #[test]
-    fn test_get_effective_context_small_session() {
+    #[tokio::test]
+    async fn test_get_effective_context_small_session() {
         let conn = Arc::new(Mutex::new(setup_test_db()));
         let config = ContextWindowConfig {
             max_messages: 50,
@@ -497,28 +809,19 @@ mod tests {
         };
         let service = SessionContextService::new(conn.clone(), config);
 
-        // 创建会话
-        let session = ChatSession {
-            id: "test-session".to_string(),
-            name: "测试会话".to_string(),
-            created_at: chrono::Utc::now().timestamp_millis(),
-            updated_at: chrono::Utc::now().timestamp_millis(),
-            metadata: None,
-        };
-
         {
             let conn_guard = conn.lock().unwrap();
-            GeneralChatDao::create_session(&conn_guard, &session).unwrap();
+            ChatDao::create_session(&conn_guard, &create_unified_general_session("test-session"))
+                .unwrap();
 
-            // 添加少量消息
-            let messages = create_test_messages("test-session", 5);
+            let messages = create_unified_messages("test-session", 5);
             for msg in &messages {
-                GeneralChatDao::add_message(&conn_guard, msg).unwrap();
+                ChatDao::add_message(&conn_guard, msg).unwrap();
             }
         }
 
         // 获取有效上下文
-        let context = service.get_effective_context("test-session").unwrap();
+        let context = service.get_effective_context("test-session").await.unwrap();
         assert_eq!(context.len(), 5);
     }
 
@@ -528,22 +831,14 @@ mod tests {
         let config = ContextWindowConfig::default();
         let service = SessionContextService::new(conn.clone(), config);
 
-        // 创建会话和消息
-        let session = ChatSession {
-            id: "test-session".to_string(),
-            name: "测试会话".to_string(),
-            created_at: chrono::Utc::now().timestamp_millis(),
-            updated_at: chrono::Utc::now().timestamp_millis(),
-            metadata: None,
-        };
-
         {
             let conn_guard = conn.lock().unwrap();
-            GeneralChatDao::create_session(&conn_guard, &session).unwrap();
+            ChatDao::create_session(&conn_guard, &create_unified_general_session("test-session"))
+                .unwrap();
 
-            let messages = create_test_messages("test-session", 10);
+            let messages = create_unified_messages("test-session", 10);
             for msg in &messages {
-                GeneralChatDao::add_message(&conn_guard, msg).unwrap();
+                ChatDao::add_message(&conn_guard, msg).unwrap();
             }
         }
 
@@ -583,5 +878,92 @@ mod tests {
         // 清理特定会话
         service.clear_summary_cache(Some("session-1")).unwrap();
         assert_eq!(service.summary_cache.lock().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_get_effective_context_falls_back_to_legacy_messages() {
+        let conn = Arc::new(Mutex::new(setup_test_db()));
+        let service = SessionContextService::new(conn.clone(), ContextWindowConfig::default());
+
+        let legacy_session = ChatSession {
+            id: "legacy-session".to_string(),
+            name: "旧会话".to_string(),
+            created_at: chrono::Utc::now().timestamp_millis(),
+            updated_at: chrono::Utc::now().timestamp_millis(),
+            metadata: None,
+        };
+
+        {
+            let conn_guard = conn.lock().unwrap();
+            insert_legacy_session(&conn_guard, &legacy_session);
+            for message in create_test_messages("legacy-session", 3) {
+                insert_legacy_message(&conn_guard, &message);
+            }
+        }
+
+        let context = service.get_effective_context("legacy-session").await.unwrap();
+        assert_eq!(context.len(), 3);
+        assert_eq!(context[0].content, "这是第 1 条消息，包含一些测试内容");
+    }
+
+    #[tokio::test]
+    async fn test_get_effective_context_skips_legacy_fallback_after_general_migration_completed() {
+        let conn = Arc::new(Mutex::new(setup_test_db()));
+        let service = SessionContextService::new(conn.clone(), ContextWindowConfig::default());
+
+        let legacy_session = ChatSession {
+            id: "legacy-session".to_string(),
+            name: "旧会话".to_string(),
+            created_at: chrono::Utc::now().timestamp_millis(),
+            updated_at: chrono::Utc::now().timestamp_millis(),
+            metadata: None,
+        };
+
+        {
+            let conn_guard = conn.lock().unwrap();
+            conn_guard
+                .execute(
+                    "INSERT INTO settings (key, value) VALUES (?1, ?2)",
+                    rusqlite::params!["migrated_general_chat_to_unified", "true"],
+                )
+                .unwrap();
+            insert_legacy_session(&conn_guard, &legacy_session);
+            for message in create_test_messages("legacy-session", 3) {
+                insert_legacy_message(&conn_guard, &message);
+            }
+        }
+
+        let context = service.get_effective_context("legacy-session").await.unwrap();
+        assert!(context.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_non_general_unified_session_returns_empty_context() {
+        let conn = Arc::new(Mutex::new(setup_test_db()));
+        let service = SessionContextService::new(conn.clone(), ContextWindowConfig::default());
+
+        {
+            let conn_guard = conn.lock().unwrap();
+            let now = chrono::Utc::now().to_rfc3339();
+            ChatDao::create_session(
+                &conn_guard,
+                &UnifiedChatSession {
+                    id: "agent-session".to_string(),
+                    mode: ChatMode::Agent,
+                    title: Some("Agent 会话".to_string()),
+                    system_prompt: None,
+                    model: Some("claude-sonnet-4".to_string()),
+                    provider_type: None,
+                    credential_uuid: None,
+                    metadata: None,
+                    created_at: now.clone(),
+                    updated_at: now,
+                },
+            )
+            .unwrap();
+        }
+
+        let context = service.get_effective_context("agent-session").await.unwrap();
+        assert!(context.is_empty());
     }
 }
