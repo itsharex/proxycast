@@ -2,6 +2,9 @@
  * Mock for @tauri-apps/api/core
  */
 
+import type { AutomationJobRecord } from "../api/automation";
+import type { AgentRun } from "../api/executionRun";
+
 import {
   invokeViaHttp,
   isDevBridgeAvailable,
@@ -226,7 +229,7 @@ function buildMockBrowserSessionLaunchResponse(request: any) {
   });
 }
 
-const mockAutomationJobs = [
+const mockAutomationJobs: AutomationJobRecord[] = [
   {
     id: "automation-job-daily-brief",
     name: "每日线索巡检",
@@ -318,7 +321,7 @@ const mockAutomationJobs = [
   },
 ];
 
-const mockAutomationRuns = [
+const mockAutomationRuns: AgentRun[] = [
   {
     id: "automation-run-1",
     source: "automation",

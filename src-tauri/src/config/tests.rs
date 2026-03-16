@@ -5,8 +5,8 @@
 use proptest::prelude::*;
 use proxycast_core::config::{
     collapse_tilde, contains_tilde, expand_tilde, Config, ConfigManager, CustomProviderConfig,
-    HotReloadManager, LoggingConfig, ProviderConfig, ProvidersConfig, ReloadResult,
-    RetrySettings, RoutingConfig, ServerConfig, YamlService,
+    HotReloadManager, LoggingConfig, ProviderConfig, ProvidersConfig, ReloadResult, RetrySettings,
+    RoutingConfig, ServerConfig, YamlService,
 };
 use std::io::Write;
 use tempfile::NamedTempFile;
