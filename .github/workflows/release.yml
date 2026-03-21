@@ -82,6 +82,25 @@ jobs:
           cache-all-crates: true
           save-if: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
 
+      - name: Resolve updater release mode
+        id: updater_mode
+        shell: bash
+        run: |
+          if [ -n "${LIME_UPDATER_PUBLIC_KEY}" ] && [ -n "${TAURI_SIGNING_PRIVATE_KEY_RAW}" ] && [ -n "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "LIME_ENABLE_UPDATER_ARTIFACTS=true" >> "$GITHUB_ENV"
+            echo "Updater artifacts enabled"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "LIME_ENABLE_UPDATER_ARTIFACTS=false" >> "$GITHUB_ENV"
+            echo "LIME_UPDATER_PUBLIC_KEY=" >> "$GITHUB_ENV"
+            echo "TAURI_SIGNING_PRIVATE_KEY_RAW=" >> "$GITHUB_ENV"
+            echo "TAURI_SIGNING_PRIVATE_KEY=" >> "$GITHUB_ENV"
+            echo "TAURI_SIGNING_PRIVATE_KEY_PATH=" >> "$GITHUB_ENV"
+            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=" >> "$GITHUB_ENV"
+            echo "::warning::Updater signing secrets are missing. Release will skip updater artifacts and fall back to manual-download updates."
+          fi
+
       - name: Sync version from tag to tauri configs
         shell: bash
         run: |
@@ -94,11 +113,14 @@ jobs:
             for (const file of ['tauri.conf.json', 'tauri.conf.headless.json']) {
               const conf = JSON.parse(fs.readFileSync(file, 'utf8'));
               conf.version = '$VERSION';
+              conf.bundle = conf.bundle || {};
+              conf.bundle.createUpdaterArtifacts = process.env.LIME_ENABLE_UPDATER_ARTIFACTS === 'true';
               fs.writeFileSync(file, JSON.stringify(conf, null, 2) + '\n');
             }
           "
           echo "tauri.conf.json version is now: $(node -e "console.log(JSON.parse(require('fs').readFileSync('tauri.conf.json','utf8')).version)")"
           echo "tauri.conf.headless.json version is now: $(node -e "console.log(JSON.parse(require('fs').readFileSync('tauri.conf.headless.json','utf8')).version)")"
+          echo "createUpdaterArtifacts: $(node -e "console.log(JSON.parse(require('fs').readFileSync('tauri.conf.json','utf8')).bundle.createUpdaterArtifacts)")"
 
       - name: Load release notes
         shell: bash
@@ -133,6 +155,7 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Normalize updater signing key
+        if: steps.updater_mode.outputs.enabled == 'true'
         shell: bash
         run: |
           python - <<'PY'
@@ -207,6 +230,7 @@ jobs:
           PY
 
       - name: Validate updater signing key
+        if: steps.updater_mode.outputs.enabled == 'true'
         shell: bash
         run: |
           PROBE_FILE="$RUNNER_TEMP/tauri-signing-probe.txt"
@@ -260,6 +284,7 @@ jobs:
           releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: false
           prerelease: false
+          includeUpdaterJson: ${{ steps.updater_mode.outputs.enabled == 'true' }}
           # tauri-action@v0 使用 assetNamePattern，离线包优先上传并保留独立名称
           assetNamePattern: "[name]_[version]_[arch]-offline[setup][ext]"
           # 默认不启用 voice feature（包含 whisper-rs，编译很慢）
@@ -285,6 +310,7 @@ jobs:
           releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: false
           prerelease: false
+          includeUpdaterJson: ${{ steps.updater_mode.outputs.enabled == 'true' }}
           # tauri-action@v0 使用 assetNamePattern，在线包作为体积更小的备选
           assetNamePattern: "[name]_[version]_[arch]-online[setup][ext]"
           # 默认不启用 voice feature（包含 whisper-rs，编译很慢）
@@ -320,6 +346,7 @@ jobs:
           releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: false
           prerelease: false
+          includeUpdaterJson: ${{ steps.updater_mode.outputs.enabled == 'true' }}
           # 默认不启用 voice feature（包含 whisper-rs，编译很慢）
           args: --target ${{ matrix.target }}
 
@@ -349,6 +376,7 @@ jobs:
           releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: false
           prerelease: false
+          includeUpdaterJson: ${{ steps.updater_mode.outputs.enabled == 'true' }}
           args: --target ${{ matrix.target }}
 
       - name: Build Tauri app (macOS fallback without notarization)
@@ -372,6 +400,7 @@ jobs:
           releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: false
           prerelease: false
+          includeUpdaterJson: ${{ steps.updater_mode.outputs.enabled == 'true' }}
           args: --target ${{ matrix.target }}
 
       - name: Warn on macOS notarization fallback
