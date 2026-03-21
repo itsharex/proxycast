@@ -140,7 +140,7 @@ describe("useSelectedTeamPreference", () => {
       agentTeam: {
         selectedTeam: {
           id: engineeringTeam.id,
-          source: engineeringTeam.source,
+          source: "builtin",
         },
       },
     };
@@ -228,7 +228,7 @@ describe("useSelectedTeamPreference", () => {
         agentTeam: {
           selectedTeam: {
             id: engineeringTeam.id,
-            source: engineeringTeam.source,
+            source: "builtin",
           },
         },
       },

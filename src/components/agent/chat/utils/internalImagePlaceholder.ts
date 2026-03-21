@@ -118,7 +118,7 @@ export function sanitizeContentPartsForDisplay(
     return parts;
   }
 
-  const sanitizedParts = parts.flatMap((part) => {
+  const sanitizedParts = parts.flatMap<ContentPart>((part) => {
     if (part.type !== "text") {
       return [part];
     }

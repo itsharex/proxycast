@@ -640,6 +640,21 @@ interface MountedHarness {
   rerender: (props?: Partial<ComponentProps<typeof AgentChatPage>>) => void;
 }
 
+type MockInputbarSendProps = {
+  onToolStatesChange?: (
+    next:
+      | Record<string, unknown>
+      | ((prev: Record<string, unknown>) => Record<string, unknown>),
+  ) => void;
+  onSend?: (
+    images?: unknown[],
+    webSearch?: boolean,
+    thinking?: boolean,
+    textOverride?: string,
+    executionStrategy?: "react" | "code_orchestrated" | "auto",
+  ) => void | Promise<void> | Promise<boolean | void> | boolean;
+};
+
 const mountedRoots: MountedHarness[] = [];
 const observedWorkspaceIds: string[] = [];
 let sharedSwitchTopicMock: ReturnType<typeof vi.fn>;
@@ -1582,13 +1597,7 @@ describe("AgentChatPage 通用工作台", () => {
     await flushEffects(10);
 
     let latestInputbarProps = mockInputbar.mock.calls.at(-1)?.[0] as
-      | {
-          onToolStatesChange?: (
-            next:
-              | Record<string, unknown>
-              | ((prev: Record<string, unknown>) => Record<string, unknown>),
-          ) => void;
-        }
+      | MockInputbarSendProps
       | undefined;
 
     act(() => {
@@ -1600,15 +1609,7 @@ describe("AgentChatPage 通用工作台", () => {
     await flushEffects(8);
 
     latestInputbarProps = mockInputbar.mock.calls.at(-1)?.[0] as
-      | {
-          onSend?: (
-            images?: unknown[],
-            webSearch?: boolean,
-            thinking?: boolean,
-            textOverride?: string,
-            executionStrategy?: "react" | "code_orchestrated" | "auto",
-          ) => Promise<void>;
-        }
+      | MockInputbarSendProps
       | undefined;
 
     await act(async () => {
@@ -1720,13 +1721,7 @@ describe("AgentChatPage 通用工作台", () => {
     await flushEffects(10);
 
     let latestInputbarProps = mockInputbar.mock.calls.at(-1)?.[0] as
-      | {
-          onToolStatesChange?: (
-            next:
-              | Record<string, unknown>
-              | ((prev: Record<string, unknown>) => Record<string, unknown>),
-          ) => void;
-        }
+      | MockInputbarSendProps
       | undefined;
 
     act(() => {
@@ -1738,15 +1733,7 @@ describe("AgentChatPage 通用工作台", () => {
     await flushEffects(8);
 
     latestInputbarProps = mockInputbar.mock.calls.at(-1)?.[0] as
-      | {
-          onSend?: (
-            images?: unknown[],
-            webSearch?: boolean,
-            thinking?: boolean,
-            textOverride?: string,
-            executionStrategy?: "react" | "code_orchestrated" | "auto",
-          ) => Promise<void>;
-        }
+      | MockInputbarSendProps
       | undefined;
 
     await act(async () => {
@@ -3156,9 +3143,12 @@ describe("AgentChatPage 自动引导", () => {
 
     const mounted = mountedRoots.at(-1);
     expect(mounted).toBeTruthy();
+    if (!mounted) {
+      throw new Error("未找到挂载页面");
+    }
 
     act(() => {
-      mounted?.root.render(
+      mounted.root.render(
         <AgentChatPage
           projectId="project-theme-delayed-intent"
           contentId="content-theme-delayed-intent"

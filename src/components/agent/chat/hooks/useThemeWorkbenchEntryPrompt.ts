@@ -54,7 +54,6 @@ function resolveThemeWorkbenchGateLabel(
       return "写作推进";
     case "publish_confirm":
       return "发布确认";
-    case "idle":
     case null:
     case undefined:
     default:

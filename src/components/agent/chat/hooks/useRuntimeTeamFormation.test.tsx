@@ -40,19 +40,23 @@ function renderHook(props?: Partial<HookProps>) {
     selectedTeam: createSelectedTeam(),
     subagentEnabled: true,
     hasRealTeamGraph: false,
-    generateRuntimeTeam: vi.fn(async () => ({
-      id: "ephemeral-1",
-      source: "ephemeral",
-      label: "临时 Team",
-      description: "自动生成",
-      roles: [
-        {
-          id: "member-1",
-          label: "执行者",
-          summary: "执行当前任务",
-        },
-      ],
-    })),
+    generateRuntimeTeam: vi.fn(
+      async (
+        _options: Parameters<NonNullable<HookProps["generateRuntimeTeam"]>>[0],
+      ): Promise<TeamDefinition> => ({
+        id: "ephemeral-1",
+        source: "ephemeral",
+        label: "临时 Team",
+        description: "自动生成",
+        roles: [
+          {
+            id: "member-1",
+            label: "执行者",
+            summary: "执行当前任务",
+          },
+        ],
+      }),
+    ),
     createRequestId: () => "request-1",
     now: () => 1_710_000_000_000,
   };

@@ -13,6 +13,7 @@ import {
   createTeamDefinitionId,
   normalizeTeamDefinition,
   type TeamDefinition,
+  type TeamRoleDefinition,
 } from "./teamDefinitions";
 
 interface GenerateTeamWithModelOptions {
@@ -136,13 +137,23 @@ function parseGeneratedTeam(
   const json = extractJsonObject(raw);
   const parsed = JSON.parse(json) as GeneratedTeamPayload;
   const payload = parsed.team && typeof parsed.team === "object" ? parsed.team : parsed;
+  const normalizedRoles: TeamRoleDefinition[] | undefined = payload.roles?.map(
+    (role) => ({
+      id: role.id?.trim() || "",
+      label: role.label?.trim() || "",
+      summary: role.summary?.trim() || "",
+      profileId: role.profileId?.trim() || undefined,
+      roleKey: role.roleKey?.trim() || undefined,
+      skillIds: role.skillIds?.map((skillId) => skillId.trim()).filter(Boolean) || [],
+    }),
+  );
   const normalized = normalizeTeamDefinition({
     id: createTeamDefinitionId("ephemeral-team"),
     source: "ephemeral",
     label: payload.label,
     description: payload.description,
     theme: activeTheme?.trim() || undefined,
-    roles: payload.roles,
+    roles: normalizedRoles,
   });
 
   if (!normalized) {
@@ -188,7 +199,7 @@ export async function generateEphemeralTeamWithModel(
     resolvedExecutionStrategy,
   );
   const eventName = `agent_team_draft:${sessionId}:${Date.now()}`;
-  let unlisten: (() => void) | null = null;
+  const unlistenRef: { current: (() => void) | null } = { current: null };
 
   try {
     const completion = new Promise<TeamDefinition>((resolve, reject) => {
@@ -207,7 +218,7 @@ export async function generateEphemeralTeamWithModel(
 
       void (async () => {
         try {
-          unlisten = await safeListen(eventName, async (event) => {
+          unlistenRef.current = await safeListen(eventName, async (event) => {
             const parsed = parseStreamEvent(event.payload);
             if (!parsed) {
               return;
@@ -292,7 +303,7 @@ export async function generateEphemeralTeamWithModel(
     return await completion;
   } finally {
     try {
-      unlisten?.();
+      unlistenRef.current?.();
     } catch {
       // ignore cleanup failure
     }

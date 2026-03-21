@@ -5398,8 +5398,8 @@ export function AgentChatWorkspace({
     dismissThemeWorkbenchEntryPrompt,
   } = useThemeWorkbenchEntryPrompt({
     activeTheme,
-    contentId,
-    sessionId,
+    contentId: contentId ?? undefined,
+    sessionId: sessionId ?? undefined,
     isThemeWorkbench,
     shouldUseCompactThemeWorkbench,
     messagesCount: messages.length,

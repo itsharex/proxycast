@@ -2,6 +2,8 @@ import React from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ConfiguredProvider } from "@/hooks/useConfiguredProviders";
+import type { EnhancedModelMetadata } from "@/lib/types/modelRegistry";
 import { AgentChatHomeShell } from "./AgentChatHomeShell";
 import { SettingsTabs } from "@/types/settings";
 
@@ -67,8 +69,12 @@ const {
     mockSetProviderType: vi.fn(),
     mockSetModel: vi.fn(),
     mockSetExecutionStrategy: vi.fn(),
-    mockLoadConfiguredProviders: vi.fn(async () => []),
-    mockLoadProviderModels: vi.fn(async () => []),
+    mockLoadConfiguredProviders: vi.fn(
+      async (): Promise<ConfiguredProvider[]> => [],
+    ),
+    mockLoadProviderModels: vi.fn(
+      async (): Promise<EnhancedModelMetadata[]> => [],
+    ),
     mockFilterModelsByTheme: vi.fn(
       (_theme: string | undefined, models: unknown[]) => ({
         models,
