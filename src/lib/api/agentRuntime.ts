@@ -141,6 +141,14 @@ export interface AsterSubagentSessionInfo {
     | "aborted"
     | "closed";
   queued_turn_count?: number;
+  team_phase?: "queued" | "running";
+  team_parallel_budget?: number;
+  team_active_count?: number;
+  team_queued_count?: number;
+  provider_concurrency_group?: string;
+  provider_parallel_budget?: number;
+  queue_reason?: string;
+  retryable_overload?: boolean;
 }
 
 export interface AsterSubagentSkillInfo {
@@ -181,6 +189,11 @@ export interface TauriMessageContent {
   id?: string;
   action_type?: string;
   data?: unknown;
+  scope?: {
+    session_id?: string;
+    thread_id?: string;
+    turn_id?: string;
+  };
   tool_name?: string;
   arguments?: unknown;
   success?: boolean;
@@ -263,6 +276,11 @@ export interface AgentRuntimeRespondActionRequest {
   user_data?: unknown;
   metadata?: Record<string, unknown>;
   event_name?: string;
+  action_scope?: {
+    session_id?: string;
+    thread_id?: string;
+    turn_id?: string;
+  };
 }
 
 export interface AgentRuntimeUpdateSessionRequest {

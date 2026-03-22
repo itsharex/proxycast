@@ -2,6 +2,10 @@ import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useWorkbenchStore } from "@/stores/useWorkbenchStore";
 import {
+  IMAGE_WORKBENCH_FOCUS_EVENT,
+  IMAGE_WORKBENCH_REQUEST_EVENT,
+} from "@/lib/imageWorkbenchEvents";
+import {
   clickButtonByText,
   clickButtonByTitle,
   clickByTestId,
@@ -851,16 +855,8 @@ describe("WorkbenchPage 左侧栏模式行为", () => {
     expect(latestAgentChatProps?.preferContentReviewInRightRail).toBe(true);
   });
 
-  it("右侧栏生成图片提交应按所选模型调用图片接口", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: async () =>
-        JSON.stringify({
-          data: [{ url: "https://images.example.com/generated-1.png" }],
-        }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
+  it("右侧栏生成图片提交应派发图片工作台事件", async () => {
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
 
     try {
       const { container } = await enterDefaultWorkspace();
@@ -880,41 +876,50 @@ describe("WorkbenchPage 左侧栏模式行为", () => {
       clickButtonByText(container, "一键生成");
       await flushEffects(8);
 
-      expect(mockGetNextApiKey).toHaveBeenCalledWith("new-api");
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(mockGetNextApiKey).not.toHaveBeenCalled();
+      const requestEvent = dispatchSpy.mock.calls
+        .map(([event]) => event)
+        .find(
+          (event): event is CustomEvent<Record<string, unknown>> =>
+            event instanceof CustomEvent &&
+            event.type === IMAGE_WORKBENCH_REQUEST_EVENT,
+        );
 
-      const [endpoint, requestInit] = fetchMock.mock.calls[0] as [
-        string,
-        { body?: unknown },
-      ];
-      expect(endpoint).toBe(
-        "https://new-api.example.com/v1/images/generations",
-      );
-      const body = JSON.parse(String(requestInit.body));
-      expect(body.model).toBe("gpt-image-1");
-      expect(body.prompt).toContain("赛博城市夜景");
-      expect(body.size).toBe("1792x1024");
-      expect(container.textContent).toContain("图片生成成功");
+      expect(requestEvent).toBeDefined();
+      expect(requestEvent?.detail).toMatchObject({
+        projectId: "project-1",
+        contentId: "content-1",
+        target: "generate",
+        aspectRatio: "16:9",
+        modelPreset: "basic",
+      });
+      expect(String(requestEvent?.detail?.prompt || "")).toContain("赛博城市夜景");
+      expect(container.textContent).toContain("图片任务已提交");
+      clickButtonByText(container, "查看画布");
+      await flushEffects();
+      const focusEvent = dispatchSpy.mock.calls
+        .map(([event]) => event)
+        .find(
+          (event): event is CustomEvent<Record<string, unknown>> =>
+            event instanceof CustomEvent &&
+            event.type === IMAGE_WORKBENCH_FOCUS_EVENT,
+        );
+      expect(focusEvent?.detail).toMatchObject({
+        projectId: "project-1",
+        contentId: "content-1",
+      });
       expect(
         container.querySelector(
           "[data-testid='workbench-generated-output-image']",
         ),
-      ).not.toBeNull();
+      ).toBeNull();
     } finally {
-      vi.unstubAllGlobals();
+      dispatchSpy.mockRestore();
     }
   });
 
-  it("右侧栏生成封面提交应调用图片接口并带平台提示词", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: async () =>
-        JSON.stringify({
-          data: [{ url: "https://images.example.com/cover-1.png" }],
-        }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
+  it("右侧栏生成封面提交应派发封面工作台事件并带平台信息", async () => {
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
 
     try {
       const { container } = await enterDefaultWorkspace();
@@ -934,24 +939,44 @@ describe("WorkbenchPage 左侧栏模式行为", () => {
       clickButtonByText(container, "一键生成");
       await flushEffects(8);
 
-      expect(mockGetNextApiKey).toHaveBeenCalledWith("new-api");
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(mockGetNextApiKey).not.toHaveBeenCalled();
+      const requestEvent = dispatchSpy.mock.calls
+        .map(([event]) => event)
+        .find(
+          (event): event is CustomEvent<Record<string, unknown>> =>
+            event instanceof CustomEvent &&
+            event.type === IMAGE_WORKBENCH_REQUEST_EVENT,
+        );
 
-      const [endpoint, requestInit] = fetchMock.mock.calls[0] as [
-        string,
-        { body?: unknown },
-      ];
-      expect(endpoint).toBe(
-        "https://new-api.example.com/v1/images/generations",
+      expect(requestEvent).toBeDefined();
+      expect(requestEvent?.detail).toMatchObject({
+        projectId: "project-1",
+        contentId: "content-1",
+        target: "cover",
+        aspectRatio: "16:9",
+        count: 1,
+        modelPreset: "basic",
+      });
+      expect(String(requestEvent?.detail?.prompt || "")).toContain("B站平台封面图");
+      expect(String(requestEvent?.detail?.prompt || "")).toContain(
+        "科技发布会主视觉",
       );
-      const body = JSON.parse(String(requestInit.body));
-      expect(body.model).toBe("gpt-image-1");
-      expect(body.prompt).toContain("B站平台封面图");
-      expect(body.prompt).toContain("科技发布会主视觉");
-      expect(body.size).toBe("1792x1024");
-      expect(body.n).toBe(1);
+      expect(container.textContent).toContain("封面任务已提交");
+      clickButtonByText(container, "查看画布");
+      await flushEffects();
+      const focusEvent = dispatchSpy.mock.calls
+        .map(([event]) => event)
+        .find(
+          (event): event is CustomEvent<Record<string, unknown>> =>
+            event instanceof CustomEvent &&
+            event.type === IMAGE_WORKBENCH_FOCUS_EVENT,
+        );
+      expect(focusEvent?.detail).toMatchObject({
+        projectId: "project-1",
+        contentId: "content-1",
+      });
     } finally {
-      vi.unstubAllGlobals();
+      dispatchSpy.mockRestore();
     }
   });
 

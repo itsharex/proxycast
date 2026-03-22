@@ -45,7 +45,7 @@ function resolveSubtitle(
 
   if (request.status === "submitted") {
     return context === "timeline"
-      ? "该阶段的问答已完成，回合记录改为结构化回显。"
+      ? "该阶段的问答已完成，阶段记录已改为结构化回显。"
       : "已收到你的补充信息，助手会继续执行后续流程。";
   }
 

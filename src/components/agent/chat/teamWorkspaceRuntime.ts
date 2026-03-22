@@ -8,6 +8,11 @@ import {
   type TeamDefinition,
   type TeamRoleDefinition,
 } from "./utils/teamDefinitions";
+import {
+  resolveTeamWorkspaceDisplayFormationMeta,
+  resolveTeamWorkspaceDisplayMemberStatusLabel,
+  resolveTeamWorkspaceDisplayRuntimeStatusLabel,
+} from "./utils/teamWorkspaceCopy";
 
 export type TeamWorkspaceRuntimeStatus =
   AsterSubagentSessionInfo["runtime_status"];
@@ -27,6 +32,14 @@ export interface TeamWorkspaceLiveRuntimeState {
   runtimeStatus: TeamWorkspaceRuntimeStatus;
   latestTurnStatus: TeamWorkspaceRuntimeStatus;
   queuedTurnCount?: number;
+  teamPhase?: string;
+  teamParallelBudget?: number;
+  teamActiveCount?: number;
+  teamQueuedCount?: number;
+  providerConcurrencyGroup?: string;
+  providerParallelBudget?: number;
+  queueReason?: string;
+  retryableOverload?: boolean;
   baseFingerprint: string;
 }
 
@@ -35,6 +48,14 @@ export interface TeamWorkspaceRuntimeSessionSnapshot {
   runtimeStatus?: TeamWorkspaceRuntimeStatus;
   latestTurnStatus?: TeamWorkspaceRuntimeStatus;
   queuedTurnCount?: number;
+  teamPhase?: string;
+  teamParallelBudget?: number;
+  teamActiveCount?: number;
+  teamQueuedCount?: number;
+  providerConcurrencyGroup?: string;
+  providerParallelBudget?: number;
+  queueReason?: string;
+  retryableOverload?: boolean;
   updatedAt?: number;
 }
 
@@ -43,6 +64,14 @@ export interface TeamWorkspaceRuntimeCard {
   runtimeStatus?: TeamWorkspaceRuntimeStatus;
   latestTurnStatus?: TeamWorkspaceRuntimeStatus;
   queuedTurnCount?: number;
+  teamPhase?: string;
+  teamParallelBudget?: number;
+  teamActiveCount?: number;
+  teamQueuedCount?: number;
+  providerConcurrencyGroup?: string;
+  providerParallelBudget?: number;
+  queueReason?: string;
+  retryableOverload?: boolean;
 }
 
 export interface TeamWorkspaceExecutionSummary {
@@ -114,18 +143,18 @@ export interface TeamWorkspaceRuntimeFormationState {
 
 const FORMATION_STATUS_META = {
   forming: {
-    label: "组建中",
-    title: "正在准备本轮 Team",
+    label: resolveTeamWorkspaceDisplayFormationMeta("forming").label,
+    title: resolveTeamWorkspaceDisplayFormationMeta("forming").title,
     badgeClassName: "border border-sky-200 bg-sky-50 text-sky-700",
   },
   formed: {
-    label: "已形成",
-    title: "本轮 Team 已就绪",
+    label: resolveTeamWorkspaceDisplayFormationMeta("formed").label,
+    title: resolveTeamWorkspaceDisplayFormationMeta("formed").title,
     badgeClassName: "border border-emerald-200 bg-emerald-50 text-emerald-700",
   },
   failed: {
-    label: "失败",
-    title: "Team 生成失败",
+    label: resolveTeamWorkspaceDisplayFormationMeta("failed").label,
+    title: resolveTeamWorkspaceDisplayFormationMeta("failed").title,
     badgeClassName: "border border-rose-200 bg-rose-50 text-rose-700",
   },
 } satisfies Record<
@@ -139,27 +168,27 @@ const FORMATION_STATUS_META = {
 
 const MEMBER_STATUS_META = {
   planned: {
-    label: "计划中",
+    label: resolveTeamWorkspaceDisplayMemberStatusLabel("planned"),
     badgeClassName: "border border-slate-200 bg-slate-50 text-slate-600",
   },
   spawning: {
-    label: "拉起中",
+    label: resolveTeamWorkspaceDisplayMemberStatusLabel("spawning"),
     badgeClassName: "border border-sky-200 bg-sky-50 text-sky-700",
   },
   running: {
-    label: "运行中",
+    label: resolveTeamWorkspaceDisplayMemberStatusLabel("running"),
     badgeClassName: "border border-sky-200 bg-sky-50 text-sky-700",
   },
   waiting: {
-    label: "等待中",
+    label: resolveTeamWorkspaceDisplayMemberStatusLabel("waiting"),
     badgeClassName: "border border-amber-200 bg-amber-50 text-amber-700",
   },
   completed: {
-    label: "已完成",
+    label: resolveTeamWorkspaceDisplayMemberStatusLabel("completed"),
     badgeClassName: "border border-emerald-200 bg-emerald-50 text-emerald-700",
   },
   failed: {
-    label: "失败",
+    label: resolveTeamWorkspaceDisplayMemberStatusLabel("failed"),
     badgeClassName: "border border-rose-200 bg-rose-50 text-rose-700",
   },
 } satisfies Record<
@@ -172,31 +201,31 @@ const MEMBER_STATUS_META = {
 
 const STATUS_META = {
   idle: {
-    label: "待开始",
+    label: resolveTeamWorkspaceDisplayRuntimeStatusLabel(undefined),
     badgeClassName: "border border-slate-200 bg-white text-slate-600",
   },
   queued: {
-    label: "排队中",
+    label: resolveTeamWorkspaceDisplayRuntimeStatusLabel("queued"),
     badgeClassName: "border border-amber-200 bg-amber-50 text-amber-700",
   },
   running: {
-    label: "运行中",
+    label: resolveTeamWorkspaceDisplayRuntimeStatusLabel("running"),
     badgeClassName: "border border-sky-200 bg-sky-50 text-sky-700",
   },
   completed: {
-    label: "已完成",
+    label: resolveTeamWorkspaceDisplayRuntimeStatusLabel("completed"),
     badgeClassName: "border border-emerald-200 bg-emerald-50 text-emerald-700",
   },
   failed: {
-    label: "失败",
+    label: resolveTeamWorkspaceDisplayRuntimeStatusLabel("failed"),
     badgeClassName: "border border-rose-200 bg-rose-50 text-rose-700",
   },
   aborted: {
-    label: "已中止",
+    label: resolveTeamWorkspaceDisplayRuntimeStatusLabel("aborted"),
     badgeClassName: "border border-rose-200 bg-rose-50 text-rose-700",
   },
   closed: {
-    label: "已停止",
+    label: resolveTeamWorkspaceDisplayRuntimeStatusLabel("closed"),
     badgeClassName: "border border-slate-200 bg-slate-100 text-slate-600",
   },
 } satisfies Record<
@@ -333,7 +362,7 @@ function resolveItemActivityDescriptor(item: AgentThreadItem): {
       };
     case "subagent_activity":
       return {
-        title: "子代理动态",
+        title: "协作进展",
         detail: normalizeActivityText(
           item.summary || item.title || item.status_label,
         ),
@@ -346,24 +375,9 @@ function resolveItemActivityDescriptor(item: AgentThreadItem): {
 export function resolveTeamWorkspaceRuntimeStatusLabel(
   status?: TeamWorkspaceResolvedRuntimeStatus,
 ): string {
-  switch (status) {
-    case "queued":
-      return "排队中";
-    case "running":
-      return "运行中";
-    case "completed":
-      return "已完成";
-    case "failed":
-      return "失败";
-    case "aborted":
-      return "已中止";
-    case "closed":
-      return "已停止";
-    case "not_found":
-      return "未找到";
-    default:
-      return "待开始";
-  }
+  return resolveTeamWorkspaceDisplayRuntimeStatusLabel(
+    status === "idle" ? undefined : status,
+  );
 }
 
 export function isTeamWorkspaceTerminalStatus(
@@ -399,18 +413,18 @@ function resolveExecutionSummaryStatusTitle(params: {
   if (runningSessionCount > 0) {
     if (queuedSessionCount > 0) {
       return totalSessionCount > 1
-        ? `Team 运行中 · ${runningSessionCount} 运行 / ${queuedSessionCount} 排队`
-        : "Team 运行中";
+        ? `协作处理中 · ${runningSessionCount} 位处理中 / ${queuedSessionCount} 位稍后开始`
+        : "协作处理中";
     }
     return totalSessionCount > 1
-      ? `Team 运行中 · ${runningSessionCount}/${totalSessionCount}`
-      : "Team 运行中";
+      ? `协作处理中 · ${runningSessionCount}/${totalSessionCount}`
+      : "协作处理中";
   }
 
   if (queuedSessionCount > 0) {
     return totalSessionCount > 1
-      ? `Team 排队中 · ${queuedSessionCount}/${totalSessionCount}`
-      : "Team 排队中";
+      ? `协作准备中 · ${queuedSessionCount}/${totalSessionCount}`
+      : "协作准备中";
   }
 
   return null;
@@ -610,6 +624,18 @@ export function applyLiveRuntimeState<T extends TeamWorkspaceRuntimeCard>(
     runtimeStatus: liveState.runtimeStatus,
     latestTurnStatus: liveState.latestTurnStatus,
     queuedTurnCount: liveState.queuedTurnCount ?? session.queuedTurnCount,
+    teamPhase: liveState.teamPhase ?? session.teamPhase,
+    teamParallelBudget:
+      liveState.teamParallelBudget ?? session.teamParallelBudget,
+    teamActiveCount: liveState.teamActiveCount ?? session.teamActiveCount,
+    teamQueuedCount: liveState.teamQueuedCount ?? session.teamQueuedCount,
+    providerConcurrencyGroup:
+      liveState.providerConcurrencyGroup ?? session.providerConcurrencyGroup,
+    providerParallelBudget:
+      liveState.providerParallelBudget ?? session.providerParallelBudget,
+    queueReason: liveState.queueReason ?? session.queueReason,
+    retryableOverload:
+      liveState.retryableOverload ?? session.retryableOverload,
   };
 }
 

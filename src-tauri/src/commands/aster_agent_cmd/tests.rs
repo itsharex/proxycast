@@ -2,6 +2,8 @@
 mod tests {
     use super::*;
     use async_trait::async_trait;
+    use crate::commands::aster_agent_cmd::action_runtime::build_runtime_action_scope;
+    use crate::commands::aster_agent_cmd::dto::AgentRuntimeActionScope;
     use lime_agent::request_tool_policy::resolve_request_tool_policy;
     use regex::Regex;
     use std::ffi::OsString;
@@ -602,6 +604,7 @@ mod tests {
             user_data: Some(serde_json::json!({ "answer": "B" })),
             metadata: None,
             event_name: None,
+            action_scope: None,
         };
 
         assert_eq!(
@@ -621,6 +624,7 @@ mod tests {
             user_data: None,
             metadata: None,
             event_name: None,
+            action_scope: None,
         };
 
         assert_eq!(
@@ -640,6 +644,7 @@ mod tests {
             user_data: None,
             metadata: None,
             event_name: None,
+            action_scope: None,
         };
 
         assert_eq!(
@@ -665,6 +670,59 @@ mod tests {
         assert_eq!(
             request.event_name.as_deref(),
             Some("aster_stream_session-1")
+        );
+    }
+
+    #[test]
+    fn test_agent_runtime_respond_action_request_deserializes_action_scope_aliases() {
+        let request: AgentRuntimeRespondActionRequest = serde_json::from_value(serde_json::json!({
+            "sessionId": "session-1",
+            "requestId": "req-2",
+            "actionType": "elicitation",
+            "confirmed": true,
+            "actionScope": {
+                "sessionId": "session-1",
+                "threadId": "thread-1",
+                "turnId": "turn-1"
+            }
+        }))
+        .expect("request should deserialize");
+
+        assert_eq!(
+            request.action_scope,
+            Some(AgentRuntimeActionScope {
+                session_id: Some("session-1".to_string()),
+                thread_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn test_build_runtime_action_scope_ignores_blank_values() {
+        let request = AgentRuntimeRespondActionRequest {
+            session_id: "session-1".to_string(),
+            request_id: "req-3".to_string(),
+            action_type: AgentRuntimeActionType::AskUser,
+            confirmed: true,
+            response: None,
+            user_data: None,
+            metadata: None,
+            event_name: None,
+            action_scope: Some(AgentRuntimeActionScope {
+                session_id: Some(" session-1 ".to_string()),
+                thread_id: Some("   ".to_string()),
+                turn_id: Some("turn-1".to_string()),
+            }),
+        };
+
+        assert_eq!(
+            build_runtime_action_scope(&request),
+            Some(ActionRequiredScope {
+                session_id: Some("session-1".to_string()),
+                thread_id: None,
+                turn_id: Some("turn-1".to_string()),
+            })
         );
     }
 
@@ -1257,7 +1315,7 @@ mod tests {
                 "turn_team_decision": "team_prepared",
                 "turn_team_reason": "runtime_team_prepared",
                 "turn_team_blueprint": {
-                    "label": "本轮调试 Team",
+                    "label": "当前调试 Team",
                     "description": "先分析，再实现，最后验证。",
                     "roles": [
                         {
@@ -1278,14 +1336,14 @@ mod tests {
         })))
         .expect("team prompt should exist");
 
-        assert!(prompt.contains("发送前完成 Team 预编队"));
-        assert!(prompt.contains("本轮调试 Team"));
+        assert!(prompt.contains("发送前已经准备好协作分工"));
+        assert!(prompt.contains("当前调试 Team"));
         assert!(prompt.contains("先分析，再实现，最后验证。"));
         assert!(prompt.contains("分析：负责定位问题。"));
         assert!(prompt.contains("id: runtime-explorer"));
         assert!(prompt.contains("blueprintRoleId"));
-        assert!(prompt.contains("让各角色承担自己的输出"));
-        assert!(prompt.contains("不要等主 agent 整轮完成后再补做 team"));
+        assert!(prompt.contains("主对话要像项目助理一样汇总目标"));
+        assert!(prompt.contains("不要等主 agent 完整处理结束后再补做 team"));
     }
 
     #[test]
@@ -1299,8 +1357,8 @@ mod tests {
         })))
         .expect("team prompt should exist");
 
-        assert!(prompt.contains("当前回合未在 GUI 中预编队 Team"));
-        assert!(prompt.contains("直接单 Agent 执行更合适"));
+        assert!(prompt.contains("当前任务没有在 GUI 中提前准备 Team"));
+        assert!(prompt.contains("主助手直接处理更合适"));
         assert!(prompt.contains("不要为了形式化 team 而推迟主任务"));
     }
 
@@ -1771,7 +1829,7 @@ mod tests {
     }
 
     #[test]
-    fn test_subagent_counts_toward_team_limit_matches_controlled_lifecycle() {
+    fn test_subagent_counts_toward_team_limit_only_counts_active_states() {
         assert!(subagent_counts_toward_team_limit(
             SubagentRuntimeStatusKind::Idle
         ));
@@ -1781,11 +1839,14 @@ mod tests {
         assert!(subagent_counts_toward_team_limit(
             SubagentRuntimeStatusKind::Running
         ));
-        assert!(subagent_counts_toward_team_limit(
+        assert!(!subagent_counts_toward_team_limit(
             SubagentRuntimeStatusKind::Completed
         ));
-        assert!(subagent_counts_toward_team_limit(
+        assert!(!subagent_counts_toward_team_limit(
             SubagentRuntimeStatusKind::Failed
+        ));
+        assert!(!subagent_counts_toward_team_limit(
+            SubagentRuntimeStatusKind::Aborted
         ));
         assert!(!subagent_counts_toward_team_limit(
             SubagentRuntimeStatusKind::Closed

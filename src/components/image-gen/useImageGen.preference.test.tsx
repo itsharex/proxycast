@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cleanupMountedRoots,
@@ -63,6 +63,7 @@ function mountHook(preferredProviderId?: string): HookHarness {
 function mountHookWithOptions(options: {
   preferredProviderId?: string;
   preferredModelId?: string;
+  allowFallback?: boolean;
 }): HookHarness {
   let hookValue: ReturnType<typeof useImageGen> | null = null;
 
@@ -79,6 +80,55 @@ function mountHookWithOptions(options: {
         throw new Error("hook 尚未初始化");
       }
       return hookValue;
+    },
+  };
+}
+
+function mountHookWithReactiveOptions(initialOptions: {
+  preferredProviderId?: string;
+  preferredModelId?: string;
+  allowFallback?: boolean;
+}): HookHarness & {
+  updateOptions: (next: {
+    preferredProviderId?: string;
+    preferredModelId?: string;
+    allowFallback?: boolean;
+  }) => Promise<void>;
+} {
+  let hookValue: ReturnType<typeof useImageGen> | null = null;
+  let setOptions:
+    | ((
+        next: {
+          preferredProviderId?: string;
+          preferredModelId?: string;
+          allowFallback?: boolean;
+        },
+      ) => void)
+    | null = null;
+
+  function TestComponent() {
+    const [options, setInnerOptions] = useState(initialOptions);
+    useEffect(() => {
+      setOptions = setInnerOptions;
+    }, []);
+    hookValue = useImageGen(options);
+    return null;
+  }
+
+  renderIntoDom(<TestComponent />, mountedRoots);
+
+  return {
+    getValue: () => {
+      if (!hookValue) {
+        throw new Error("hook 尚未初始化");
+      }
+      return hookValue;
+    },
+    updateOptions: async (next) => {
+      await act(async () => {
+        setOptions?.(next);
+        await Promise.resolve();
+      });
     },
   };
 }
@@ -125,5 +175,40 @@ describe("useImageGen 项目偏好", () => {
 
     expect(harness.getValue().selectedProvider?.id).toBe("fal");
     expect(harness.getValue().selectedModelId).toBe("fal-ai/flux-kontext/dev");
+  });
+
+  it("偏好在首次挂载后到达时，也应切换到设置指定的图片 Provider 和模型", async () => {
+    const harness = mountHookWithReactiveOptions({});
+    await act(async () => {
+      await waitForReady(harness);
+    });
+
+    expect(harness.getValue().selectedProvider?.id).toBe("zhipuai");
+
+    await harness.updateOptions({
+      preferredProviderId: "fal",
+      preferredModelId: "fal-ai/flux-kontext/dev",
+    });
+
+    await act(async () => {
+      await waitForReady(harness);
+    });
+
+    expect(harness.getValue().selectedProvider?.id).toBe("fal");
+    expect(harness.getValue().selectedModelId).toBe("fal-ai/flux-kontext/dev");
+  });
+
+  it("默认图片服务不可用且禁止回退时，不应偷偷切到其他 Provider", async () => {
+    const harness = mountHookWithOptions({
+      preferredProviderId: "missing-provider",
+      allowFallback: false,
+    });
+    await act(async () => {
+      await flushEffects();
+    });
+
+    expect(harness.getValue().selectedProvider).toBeUndefined();
+    expect(harness.getValue().selectedProviderId).toBe("");
+    expect(harness.getValue().preferredProviderUnavailable).toBe(true);
   });
 });

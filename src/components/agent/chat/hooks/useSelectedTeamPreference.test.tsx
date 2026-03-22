@@ -256,8 +256,8 @@ describe("useSelectedTeamPreference", () => {
     const ephemeralTeam: TeamDefinition = {
       id: "ephemeral-team-generated",
       source: "ephemeral",
-      label: "本轮 Team",
-      description: "仅本轮会话使用",
+      label: "当前 Team",
+      description: "仅当前会话使用",
       roles: [
         {
           id: "planner",

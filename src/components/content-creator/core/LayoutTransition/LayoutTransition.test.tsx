@@ -1,9 +1,12 @@
 import React from "react";
+import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { LayoutMode } from "../../types";
 import { LayoutTransition } from "./LayoutTransition";
+import { emitCompactRightPanelOpen } from "@/lib/compactRightPanelEvents";
 import {
   cleanupMountedRoots,
+  clickElement,
   mountHarness,
   setupReactActEnvironment,
   type MountedRoot,
@@ -108,7 +111,7 @@ describe("LayoutTransition", () => {
     expect(root?.getAttribute("data-layout-axis")).toBe("horizontal");
   });
 
-  it("小屏 chat-canvas 模式应改为上下堆叠，避免右侧区域挤压不可见", () => {
+  it("小屏 chat-canvas 模式应改为右侧聊天抽屉，而不是上下堆叠", () => {
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       writable: true,
@@ -130,13 +133,83 @@ describe("LayoutTransition", () => {
       '[data-testid="layout-transition-root"]',
     );
 
-    expect(root?.getAttribute("data-layout-axis")).toBe("vertical");
+    expect(root?.getAttribute("data-layout-axis")).toBe("horizontal");
+    expect(root?.getAttribute("data-chat-panel-placement")).toBe("overlay-right");
+    expect(
+      container.querySelector('[data-testid="layout-chat-overlay-trigger"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector<HTMLElement>('[data-testid="layout-chat-panel"]')
+        ?.getAttribute("data-overlay-state"),
+    ).toBe("closed");
+
+    clickElement(
+      container.querySelector('button[aria-label="展开右侧聊天区"]'),
+    );
+
+    expect(
+      container.querySelector<HTMLElement>('[data-testid="layout-chat-panel"]')
+        ?.getAttribute("data-overlay-state"),
+    ).toBe("open");
     expect(
       container.querySelector('[data-testid="layout-chat-content"]'),
     ).not.toBeNull();
     expect(
+      container.querySelector('[data-testid="layout-chat-drawer-header"]')
+        ?.textContent,
+    ).toContain("右侧聊天区");
+    expect(
+      container.querySelector('[data-testid="layout-chat-drawer-header"]')
+        ?.textContent,
+    ).toContain("调度记录");
+    expect(
       container.querySelector('[data-testid="layout-canvas-content"]'),
     ).not.toBeNull();
+
+    clickElement(
+      container.querySelector('button[aria-label="收起右侧聊天区"]'),
+    );
+    expect(
+      container.querySelector<HTMLElement>('[data-testid="layout-chat-panel"]')
+        ?.getAttribute("data-overlay-state"),
+    ).toBe("closed");
+  });
+
+  it("小屏聊天抽屉打开后，收到工作台抽屉打开事件应自动收起", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 1080,
+    });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      writable: true,
+      value: 720,
+    });
+
+    const { container } = mountHarness(
+      LayoutHarness,
+      { mode: "chat-canvas" },
+      mountedRoots,
+    );
+
+    clickElement(
+      container.querySelector('button[aria-label="展开右侧聊天区"]'),
+    );
+    expect(
+      container.querySelector<HTMLElement>('[data-testid="layout-chat-panel"]')
+        ?.getAttribute("data-overlay-state"),
+    ).toBe("open");
+
+    await act(async () => {
+      emitCompactRightPanelOpen({ source: "workbench" });
+      await Promise.resolve();
+    });
+
+    expect(
+      container.querySelector<HTMLElement>('[data-testid="layout-chat-panel"]')
+        ?.getAttribute("data-overlay-state"),
+    ).toBe("closed");
   });
 
   it("画布内容为空时应退回聊天布局，避免保留空白画布列", () => {

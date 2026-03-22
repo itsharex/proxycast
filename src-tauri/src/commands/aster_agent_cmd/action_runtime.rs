@@ -61,6 +61,8 @@ struct SubmitElicitationResponseRequest {
     user_data: serde_json::Value,
     #[serde(default)]
     metadata: Option<serde_json::Value>,
+    #[serde(default)]
+    action_scope: Option<ActionRequiredScope>,
 }
 
 pub(crate) fn validate_elicitation_submission(
@@ -87,6 +89,7 @@ pub(crate) fn build_action_resume_runtime_status() -> TauriRuntimeStatus {
             "已唤醒当前执行链路".to_string(),
             "等待下一条执行事件".to_string(),
         ],
+        metadata: None,
     }
 }
 
@@ -129,6 +132,28 @@ pub(crate) fn build_runtime_action_user_data(
     serde_json::from_str(trimmed).unwrap_or_else(|_| serde_json::Value::String(trimmed.to_string()))
 }
 
+pub(crate) fn build_runtime_action_scope(
+    request: &AgentRuntimeRespondActionRequest,
+) -> Option<ActionRequiredScope> {
+    let Some(scope) = request.action_scope.as_ref() else {
+        return None;
+    };
+
+    let session_id = normalize_optional_text(scope.session_id.clone());
+    let thread_id = normalize_optional_text(scope.thread_id.clone());
+    let turn_id = normalize_optional_text(scope.turn_id.clone());
+
+    if session_id.is_none() && thread_id.is_none() && turn_id.is_none() {
+        return None;
+    }
+
+    Some(ActionRequiredScope {
+        session_id,
+        thread_id,
+        turn_id,
+    })
+}
+
 /// 统一运行时：响应工具确认 / ask / elicitation。
 #[tauri::command]
 pub async fn agent_runtime_respond_action(
@@ -150,6 +175,7 @@ pub async fn agent_runtime_respond_action(
         }
         AgentRuntimeActionType::AskUser | AgentRuntimeActionType::Elicitation => {
             let user_data = build_runtime_action_user_data(&request);
+            let action_scope = build_runtime_action_scope(&request);
             let resume_event_name = normalize_optional_text(request.event_name.clone());
             submit_runtime_elicitation_response_internal(
                 state.inner(),
@@ -158,6 +184,7 @@ pub async fn agent_runtime_respond_action(
                     request_id: request.request_id.clone(),
                     user_data,
                     metadata: request.metadata.clone(),
+                    action_scope,
                 },
             )
             .await
@@ -178,16 +205,19 @@ async fn submit_runtime_elicitation_response_internal(
     let session_id = validate_elicitation_submission(&session_id, &request.request_id)?;
 
     tracing::info!(
-        "[AsterAgent] 提交 elicitation 响应: session={}, request_id={}",
+        "[AsterAgent] 提交 elicitation 响应: session={}, request_id={}, action_scope={}",
         session_id,
-        request.request_id
+        request.request_id,
+        serde_json::to_string(&request.action_scope).unwrap_or_else(|_| "null".to_string())
     );
 
-    let message =
-        Message::user().with_content(MessageContent::action_required_elicitation_response(
-            request.request_id.clone(),
-            request.user_data,
-        ));
+    let message = Message::user().with_content(MessageContent::ActionRequired(ActionRequired {
+        data: ActionRequiredData::ElicitationResponse {
+            id: request.request_id.clone(),
+            user_data: request.user_data,
+        },
+        scope: request.action_scope,
+    }));
 
     let mut session_config_builder =
         SessionConfigBuilder::new(&session_id).include_context_trace(true);

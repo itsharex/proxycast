@@ -891,7 +891,7 @@ describe("ThemeWorkbenchSidebar", () => {
 
     expect(container.textContent).toContain("运行详情");
     expect(container.textContent).toContain("ID：run-detail-1");
-    expect(container.textContent).toContain("状态：运行中");
+    expect(container.textContent).toContain("状态：处理中");
   });
 
   it("运行详情应支持复制运行ID与元数据", async () => {

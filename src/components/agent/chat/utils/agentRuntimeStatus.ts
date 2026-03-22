@@ -35,8 +35,8 @@ export function buildInitialAgentRuntimeStatus(options: {
 
   return {
     phase: "preparing",
-    title: "Agent 正在准备执行",
-    detail: "正在理解请求、判断执行车道并准备当前回合。",
+    title: "正在准备处理",
+    detail: "正在理解你的需求并准备当前阶段。",
     checkpoints,
   };
 }
@@ -55,8 +55,8 @@ export function buildWaitingAgentRuntimeStatus(options: {
 
   return {
     phase: "routing",
-    title: "正在建立执行回合",
-    detail: "已提交到运行时，正在装载工作区与等待首个执行事件。",
+    title: "正在启动处理流程",
+    detail: "已开始处理，正在准备环境并等待第一条进展。",
     checkpoints,
   };
 }
@@ -71,10 +71,10 @@ export function buildContextRuntimeStatus(
 
   return {
     phase: "context",
-    title: "正在装载上下文",
+    title: "正在整理相关信息",
     detail: latestStep
       ? `${latestStep.stage}：${latestStep.detail}`
-      : "正在整理上下文以生成更准确的响应。",
+      : "正在整理相关信息，以便给出更准确的结果。",
     checkpoints,
   };
 }
@@ -82,9 +82,9 @@ export function buildContextRuntimeStatus(
 export function buildActionResumeRuntimeStatus(): AgentRuntimeStatus {
   return {
     phase: "routing",
-    title: "已提交补充信息，继续执行中",
-    detail: "补充信息已回填到当前执行链路，正在恢复后续步骤。",
-    checkpoints: ["补充信息已确认", "已唤醒当前执行链路", "等待下一条执行事件"],
+    title: "已收到补充信息，继续处理中",
+    detail: "补充信息已加入当前流程，正在继续后续步骤。",
+    checkpoints: ["补充信息已确认", "已恢复当前流程", "等待下一条进展"],
   };
 }
 
@@ -93,9 +93,9 @@ export function buildFailedAgentRuntimeStatus(
 ): AgentRuntimeStatus {
   return {
     phase: "failed",
-    title: "当前执行失败",
+    title: "当前处理失败",
     detail: normalizeRuntimeErrorDetail(errorMessage),
-    checkpoints: ["已保留当前回合过程", "可修正问题后重试", "如需继续可补充更明确的输入"],
+    checkpoints: ["已保留当前阶段记录", "可修正问题后重试", "如需继续可补充更明确的输入"],
   };
 }
 
@@ -114,7 +114,7 @@ export function formatAgentRuntimeStatusSummary(
   status?: AgentRuntimeStatus | null,
 ): string {
   if (!status?.title) {
-    return "Agent 正在准备执行";
+    return "正在准备处理";
   }
 
   const lines = [status.title.trim()];

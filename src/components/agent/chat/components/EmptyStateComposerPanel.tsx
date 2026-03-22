@@ -36,6 +36,7 @@ import { SkillBadge } from "./Inputbar/components/SkillBadge";
 import { SkillSelector } from "./Inputbar/components/SkillSelector";
 import { TeamSelector } from "./Inputbar/components/TeamSelector";
 import { TeamModeEntryButton } from "./Inputbar/components/TeamModeEntryButton";
+import { StableProcessingNotice } from "./StableProcessingNotice";
 import type { WorkspaceSettings } from "@/types/workspace";
 import { CREATION_MODE_CONFIG } from "./constants";
 import type {
@@ -790,6 +791,14 @@ export function EmptyStateComposerPanel({
           onContinueSingleAgent={handleContinueSingleAgent}
         />
       ) : null}
+
+      <StableProcessingNotice
+        providerType={providerType}
+        model={model}
+        scope={subagentEnabled ? "team" : "request"}
+        className="mx-4 mb-3"
+        testId="empty-state-stable-processing-notice"
+      />
 
       <Toolbar>
         <ToolLoginLeft>

@@ -60,13 +60,23 @@ pub(super) async fn try_handle(
             serde_json::to_value(diagnostics)?
         }
         "clear_logs" => {
-            state.logs.write().await.clear();
+            let log_file_path = {
+                let mut logs = state.logs.write().await;
+                let log_file_path = logs.get_log_file_path();
+                logs.clear();
+                log_file_path
+            };
+            crate::app::commands::clear_persisted_log_artifacts_from_path(log_file_path)?;
             serde_json::json!({ "success": true })
         }
         "clear_diagnostic_log_history" => {
-            let log_file_path = { state.logs.read().await.get_log_file_path() };
-            state.logs.write().await.clear();
-            crate::app::commands::clear_diagnostic_log_artifacts_from_path(log_file_path)?;
+            let log_file_path = {
+                let mut logs = state.logs.write().await;
+                let log_file_path = logs.get_log_file_path();
+                logs.clear();
+                log_file_path
+            };
+            crate::app::commands::clear_persisted_log_artifacts_from_path(log_file_path)?;
             serde_json::json!({ "success": true })
         }
         _ => return Ok(None),

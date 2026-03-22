@@ -5,6 +5,7 @@ import type {
 } from "@/lib/api/agentStream";
 import type { ArtifactStatus } from "@/lib/artifact/types";
 import type { ActionRequired, AgentRuntimeStatus, Message } from "../types";
+import { resolveToolDisplayLabel } from "./toolDisplayInfo";
 import {
   resolveArtifactPreviewText,
   resolveArtifactWritePhase,
@@ -1304,8 +1305,8 @@ function deriveHarnessSessionStateFromItems(
           id: `${item.id}:summary`,
           toolCallId: item.id,
           toolName: "turn_summary",
-          title: "回合决策摘要",
-          summary: item.text.split(/\r?\n/)[0] || "回合决策",
+          title: "当前任务摘要",
+          summary: item.text.split(/\r?\n/)[0] || "当前进展",
           preview: buildTextPreview(item.text),
           content: maybeKeepTextContent(item.text),
         });
@@ -1327,8 +1328,11 @@ function deriveHarnessSessionStateFromItems(
               ? /^https?:\/\//i.test(queryLabel || "")
                 ? "网页访问摘要"
                 : "联网检索摘要"
-              : "工具执行摘要",
-          summary: artifactPath || queryLabel || item.tool_name,
+              : "处理摘要",
+          summary:
+            artifactPath ||
+            queryLabel ||
+            resolveToolDisplayLabel(item.tool_name),
           preview: buildTextPreview(item.output),
           content: maybeKeepTextContent(item.output),
           artifactPath,

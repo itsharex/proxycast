@@ -201,7 +201,7 @@ export function useAgentStream(options: UseAgentStreamOptions) {
       title: "已加入排队列表",
       detail: `当前会话仍在执行中，本条消息会在前一条完成后自动开始。待处理内容：${buildQueuedMessagePreview(content)}`,
       checkpoints: [
-        "已创建待执行回合",
+        "已创建待处理阶段",
         webSearch ? "联网搜索能力待命" : "直接回答优先",
         currentExecutionStrategy === "code_orchestrated"
           ? "代码编排待命"
@@ -232,6 +232,7 @@ export function useAgentStream(options: UseAgentStreamOptions) {
       const observer = options?.observer;
       const requestMetadata = options?.requestMetadata;
       const messagePurpose = options?.purpose;
+      const assistantDraft = options?.assistantDraft;
       const expectingQueue =
         Boolean(activeStreamRef.current) || queuedTurns.length > 0;
 
@@ -240,7 +241,7 @@ export function useAgentStream(options: UseAgentStreamOptions) {
       const assistantMsg: Message = {
         id: assistantMsgId,
         role: "assistant",
-        content: "",
+        content: assistantDraft?.content || "",
         timestamp: new Date(),
         isThinking: true,
         contentParts: [],
@@ -250,7 +251,8 @@ export function useAgentStream(options: UseAgentStreamOptions) {
               content,
               webSearch,
             )
-          : buildInitialAgentRuntimeStatus({
+          : assistantDraft?.initialRuntimeStatus ||
+            buildInitialAgentRuntimeStatus({
               executionStrategy: effectiveExecutionStrategy,
               webSearch,
               thinking: _thinking,
@@ -512,6 +514,8 @@ export function useAgentStream(options: UseAgentStreamOptions) {
           webSearch,
           thinking: _thinking,
         });
+        const effectiveWaitingRuntimeStatus =
+          assistantDraft?.waitingRuntimeStatus || waitingRuntimeStatus;
 
         const activateStream = () => {
           if (streamActivated) {
@@ -529,8 +533,8 @@ export function useAgentStream(options: UseAgentStreamOptions) {
             prev.map((msg) =>
               msg.id === assistantMsgId
                 ? {
-                    ...msg,
-                    runtimeStatus: waitingRuntimeStatus,
+                  ...msg,
+                    runtimeStatus: effectiveWaitingRuntimeStatus,
                   }
                 : msg,
             ),
@@ -560,7 +564,9 @@ export function useAgentStream(options: UseAgentStreamOptions) {
               started_at: optimisticStartedAt,
               updated_at: new Date().toISOString(),
               type: "turn_summary",
-              text: formatAgentRuntimeStatusSummary(waitingRuntimeStatus),
+              text: formatAgentRuntimeStatusSummary(
+                effectiveWaitingRuntimeStatus,
+              ),
             }),
           );
         }

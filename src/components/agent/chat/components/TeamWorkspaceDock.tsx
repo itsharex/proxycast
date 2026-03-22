@@ -19,6 +19,11 @@ import {
 } from "../teamWorkspaceRuntime";
 import { TeamWorkspaceBoard } from "./TeamWorkspaceBoard";
 import type { TeamRoleDefinition } from "../utils/teamDefinitions";
+import {
+  TEAM_WORKSPACE_PLAN_LABEL,
+  TEAM_WORKSPACE_REALTIME_BADGE_LABEL,
+  TEAM_WORKSPACE_SURFACE_TITLE,
+} from "../utils/teamWorkspaceCopy";
 
 const DockContainer = styled.div<{
   $withBottomOverlay: boolean;
@@ -149,12 +154,13 @@ const DockToggle = styled.button<{
   $active: boolean;
   $expanded: boolean;
   $attention: boolean;
+  $launcherOnly: boolean;
 }>`
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 42px;
-  padding: 8px 12px;
+  min-height: ${({ $launcherOnly }) => ($launcherOnly ? "36px" : "42px")};
+  padding: ${({ $launcherOnly }) => ($launcherOnly ? "6px 10px" : "8px 12px")};
   border-radius: 999px;
   border: 1px solid
     ${({ $active, $expanded }) =>
@@ -163,9 +169,13 @@ const DockToggle = styled.button<{
         : $active
           ? "rgba(56, 189, 248, 0.32)"
           : "rgba(203, 213, 225, 0.9)"};
-  background: #ffffff;
+  background: ${({ $launcherOnly }) =>
+    $launcherOnly ? "rgba(255, 255, 255, 0.98)" : "#ffffff"};
   color: #0f172a;
-  box-shadow: 0 16px 40px -28px rgba(15, 23, 42, 0.28);
+  box-shadow: ${({ $launcherOnly }) =>
+    $launcherOnly
+      ? "0 10px 24px -18px rgba(15, 23, 42, 0.18)"
+      : "0 16px 40px -28px rgba(15, 23, 42, 0.28)"};
   transition:
     transform 0.18s ease,
     box-shadow 0.18s ease,
@@ -177,18 +187,30 @@ const DockToggle = styled.button<{
           animation: ${dockAttentionPulse} 2.4s ease-in-out infinite;
         `
       : ""}
+  ${({ $launcherOnly, $attention }) =>
+    $launcherOnly && $attention
+      ? css`
+          animation: none;
+        `
+      : ""}
 
   &:hover {
     transform: translateY(-1px);
-    box-shadow: 0 18px 44px -28px rgba(15, 23, 42, 0.32);
+    box-shadow: ${({ $launcherOnly }) =>
+      $launcherOnly
+        ? "0 12px 28px -18px rgba(15, 23, 42, 0.22)"
+        : "0 18px 44px -28px rgba(15, 23, 42, 0.32)"};
   }
 `;
 
-const DockIconShell = styled.span<{ $attention: boolean }>`
+const DockIconShell = styled.span<{
+  $attention: boolean;
+  $launcherOnly: boolean;
+}>`
   position: relative;
   display: inline-flex;
-  height: 28px;
-  width: 28px;
+  height: ${({ $launcherOnly }) => ($launcherOnly ? "24px" : "28px")};
+  width: ${({ $launcherOnly }) => ($launcherOnly ? "24px" : "28px")};
   align-items: center;
   justify-content: center;
   border-radius: 999px;
@@ -203,6 +225,61 @@ const DockIconShell = styled.span<{ $attention: boolean }>`
           border-color: rgba(125, 211, 252, 0.96);
         `
       : ""}
+`;
+
+const DockTextStack = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+`;
+
+const DockPrimaryText = styled.span<{ $launcherOnly: boolean }>`
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #0f172a;
+  font-size: ${({ $launcherOnly }) => ($launcherOnly ? "13px" : "14px")};
+  font-weight: 700;
+`;
+
+const DockStatusBadge = styled.span<{
+  $tone: "idle" | "active" | "success" | "error";
+}>`
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  border: 1px solid
+    ${({ $tone }) =>
+      $tone === "success"
+        ? "rgba(167, 243, 208, 0.96)"
+        : $tone === "error"
+          ? "rgba(254, 205, 211, 0.96)"
+          : $tone === "active"
+            ? "rgba(186, 230, 253, 0.96)"
+            : "rgba(226, 232, 240, 0.96)"};
+  background: ${({ $tone }) =>
+    $tone === "success"
+      ? "#ecfdf5"
+      : $tone === "error"
+        ? "#fff1f2"
+        : $tone === "active"
+          ? "#f0f9ff"
+          : "#f8fafc"};
+  color: ${({ $tone }) =>
+    $tone === "success"
+      ? "#047857"
+      : $tone === "error"
+        ? "#be123c"
+        : $tone === "active"
+          ? "#0369a1"
+          : "#64748b"};
 `;
 
 const DockSignal = styled.span`
@@ -433,6 +510,7 @@ export function TeamWorkspaceDock({
   selectedTeamRoles = [],
   runtimeTeamState = null,
 }: TeamWorkspaceDockProps) {
+  const launcherOnly = typeof onActivateWorkbench === "function";
   const hasRealTeamGraph =
     childSubagentSessions.length > 0 || Boolean(subagentParentContext);
   const hasRuntimeFormation = Boolean(runtimeTeamState);
@@ -479,24 +557,122 @@ export function TeamWorkspaceDock({
     (runtimeTeamState?.blueprint?.roles.length ?? 0) > 0 ||
     Boolean(selectedTeamSummary?.trim()) ||
     (selectedTeamRoles?.length ?? 0) > 0;
+  const activeRuntimeSessionCount = childSubagentSessions.filter(
+    (session) =>
+      session.runtime_status === "queued" || session.runtime_status === "running",
+  ).length;
+  const runningRuntimeSessionCount = childSubagentSessions.filter(
+    (session) => session.runtime_status === "running",
+  ).length;
+  const queuedRuntimeSessionCount = childSubagentSessions.filter(
+    (session) => session.runtime_status === "queued",
+  ).length;
+  const teamConcurrencySnapshot = childSubagentSessions.find(
+    (session) =>
+      session.team_parallel_budget !== undefined ||
+      session.team_active_count !== undefined ||
+      session.team_queued_count !== undefined ||
+      session.provider_parallel_budget !== undefined ||
+      Boolean(session.queue_reason),
+  );
+  const teamConcurrencyBadgeText =
+    teamConcurrencySnapshot?.team_parallel_budget !== undefined
+      ? `${teamConcurrencySnapshot.team_active_count ?? runningRuntimeSessionCount}/${teamConcurrencySnapshot.team_parallel_budget} 处理中`
+      : runningRuntimeSessionCount > 0
+        ? `${runningRuntimeSessionCount} 位处理中`
+        : null;
+  const teamQueueBadgeText =
+    (teamConcurrencySnapshot?.team_queued_count ?? queuedRuntimeSessionCount) > 0
+      ? `${teamConcurrencySnapshot?.team_queued_count ?? queuedRuntimeSessionCount} 位等待中`
+      : null;
+  const teamQueueReason =
+    teamConcurrencySnapshot?.queue_reason?.trim() || null;
+  const launcherStatusMeta = useMemo<
+    { label: string; tone: "idle" | "active" | "success" | "error" } | null
+  >(() => {
+    if (!launcherOnly) {
+      return null;
+    }
+
+    if (runtimeTeamState?.status === "forming") {
+      return { label: "准备中", tone: "active" };
+    }
+
+    if (runtimeTeamState?.status === "failed") {
+      return { label: "失败", tone: "error" };
+    }
+
+    if (hasRealTeamGraph) {
+      if (activeRuntimeSessionCount > 0) {
+        return {
+          label:
+            teamConcurrencyBadgeText ||
+            `${activeRuntimeSessionCount} 位处理中`,
+          tone: "active",
+        };
+      }
+
+      return {
+        label: `${dockCount} 名成员`,
+        tone: dockCount > 0 ? "success" : "idle",
+      };
+    }
+
+    if (runtimeTeamState?.status === "formed") {
+      return runtimeTeamState.members.length > 0
+        ? { label: `${runtimeTeamState.members.length} 名成员`, tone: "success" }
+        : { label: "已就绪", tone: "success" };
+    }
+
+    if (runtimeTeamLabel) {
+      return { label: "已准备", tone: "idle" };
+    }
+
+    return { label: "待开始", tone: "idle" };
+  }, [
+    activeRuntimeSessionCount,
+    dockCount,
+    hasRealTeamGraph,
+    launcherOnly,
+    teamConcurrencyBadgeText,
+    runtimeTeamLabel,
+    runtimeTeamState,
+  ]);
   const toggleLabel = useMemo(() => {
     if (expanded) {
-      return "收起 Team";
+      return "收起协作面板";
     }
     if (hasRealTeamGraph) {
-      return `查看 Team · ${dockCount}`;
+      if (teamConcurrencyBadgeText || teamQueueBadgeText) {
+        return [
+          "查看任务进展",
+          teamConcurrencyBadgeText,
+          teamQueueBadgeText,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+      }
+      return `查看任务进展 · ${dockCount}`;
     }
     if (runtimeTeamState?.status === "forming") {
-      return "查看 Team · 组建中";
+      return "查看任务进展 · 准备中";
     }
     if (runtimeTeamState?.status === "formed") {
-      return `查看 Team · ${runtimeTeamState.members.length}`;
+      return `查看任务进展 · ${runtimeTeamState.members.length}`;
     }
     if (runtimeTeamState?.status === "failed") {
-      return "查看 Team · 失败";
+      return "查看任务进展 · 失败";
     }
-    return "Team";
-  }, [dockCount, expanded, hasRealTeamGraph, runtimeTeamState]);
+    return TEAM_WORKSPACE_SURFACE_TITLE;
+  }, [
+    dockCount,
+    expanded,
+    hasRealTeamGraph,
+    runtimeTeamState,
+    teamConcurrencyBadgeText,
+    teamQueueBadgeText,
+  ]);
+  const launcherPrimaryLabel = runtimeTeamLabel || TEAM_WORKSPACE_SURFACE_TITLE;
 
   useEffect(() => {
     const normalizedSessionId = currentSessionId ?? null;
@@ -603,8 +779,6 @@ export function TeamWorkspaceDock({
     return null;
   }
 
-  const launcherOnly = typeof onActivateWorkbench === "function";
-
   const panelContent = hasRealTeamGraph ? (
     <TeamWorkspaceBoard
       embedded={true}
@@ -641,30 +815,35 @@ export function TeamWorkspaceDock({
         <EmptyStateEyebrow>
           <span className="inline-flex items-center gap-2">
             <Workflow className="h-3.5 w-3.5" />
-            <span>Team 已启用</span>
+            <span>{TEAM_WORKSPACE_SURFACE_TITLE}已启用</span>
           </span>
-          <EmptyStateBadge $tone="success">实时订阅</EmptyStateBadge>
+          <EmptyStateBadge $tone="success">
+            {TEAM_WORKSPACE_REALTIME_BADGE_LABEL}
+          </EmptyStateBadge>
           {runtimeFormationMeta ? (
             <EmptyStateBadge>{runtimeFormationMeta.label}</EmptyStateBadge>
           ) : null}
         </EmptyStateEyebrow>
         <EmptyStateTitle>
-          {runtimeFormationMeta?.title || "等待团队成员加入"}
+          {runtimeFormationMeta?.title || "等待协作成员加入"}
         </EmptyStateTitle>
         <EmptyStateDescription>
           {runtimeTeamState?.status === "forming"
-            ? "系统正在根据本轮任务准备成员，真实团队成员加入后会自动切换到完整团队工作台。"
+            ? "系统正在按当前任务准备协作分工，成员接入后会自动展开完整协作面板。"
             : runtimeTeamState?.status === "formed"
-              ? `已准备 ${runtimeTeamState.members.length} 个成员，后续真实成员会接管实时协作轨道。`
-              : runtimeTeamState?.status === "failed"
+              ? `已准备 ${runtimeTeamState.members.length} 位协作成员，后续会自动接入并继续处理。`
+            : runtimeTeamState?.status === "failed"
                 ? runtimeTeamState.errorMessage?.trim() ||
-                  "本轮 Team 准备失败，你仍然可以继续在当前对话中执行。"
+                  "这次协作准备失败，你仍然可以继续在当前对话中处理。"
                 : (
                     <>
-                      当系统开始真正分派团队成员后，这里会自动切换到真实团队工作台。
+                      需要时系统会自动邀请协作成员加入，这里会切换成完整协作面板。
                     </>
                   )}
         </EmptyStateDescription>
+        {teamQueueReason ? (
+          <EmptyStateBadge>{teamQueueReason}</EmptyStateBadge>
+        ) : null}
         {runtimeTeamLabel && hasSelectedTeamDetails ? (
           <EmptyStateDetailCard>
             <EmptyStateDetailToggle
@@ -677,8 +856,8 @@ export function TeamWorkspaceDock({
                 <EmptyStateDetailTitle>{runtimeTeamLabel}</EmptyStateDetailTitle>
                 <EmptyStateDetailHint>
                   {runtimeTeamState
-                    ? "查看本轮成员与参考蓝图"
-                    : "查看当前 Team 配置与角色分工"}
+                    ? "查看当前协作分工与参考方案"
+                    : "查看当前协作方案与分工"}
                 </EmptyStateDetailHint>
               </div>
               {teamDetailExpanded ? (
@@ -692,7 +871,7 @@ export function TeamWorkspaceDock({
                 {runtimeTeamSummary ? (
                   <EmptyStateRoleItem>
                     <EmptyStateRoleName>
-                      {runtimeTeamState ? "本轮摘要" : "Team 摘要"}
+                      {runtimeTeamState ? "当前摘要" : "方案摘要"}
                     </EmptyStateRoleName>
                     <EmptyStateRoleSummary>{runtimeTeamSummary}</EmptyStateRoleSummary>
                   </EmptyStateRoleItem>
@@ -748,11 +927,11 @@ export function TeamWorkspaceDock({
                 {runtimeTeamState?.blueprint?.label ? (
                   <EmptyStateRoleItem>
                     <EmptyStateRoleName>
-                      参考蓝图 · {runtimeTeamState.blueprint.label}
+                      参考方案 · {runtimeTeamState.blueprint.label}
                     </EmptyStateRoleName>
                     <EmptyStateRoleSummary>
                       {runtimeTeamState.blueprint.summary ||
-                        "本轮 Team 参考了当前蓝图 Team 的角色偏好。"}
+                        "当前协作参考了当前方案里的分工偏好。"}
                     </EmptyStateRoleSummary>
                   </EmptyStateRoleItem>
                 ) : null}
@@ -763,7 +942,7 @@ export function TeamWorkspaceDock({
         <EmptyStateFooter>
           {runtimeTeamLabel ? (
             <EmptyStateBadge data-testid="team-workspace-selected-team">
-              当前 Team：{runtimeTeamLabel}
+              当前{TEAM_WORKSPACE_PLAN_LABEL}：{runtimeTeamLabel}
             </EmptyStateBadge>
           ) : null}
           {runtimeTeamSummary ? (
@@ -812,14 +991,15 @@ export function TeamWorkspaceDock({
         aria-expanded={launcherOnly ? false : expanded}
         aria-label={
           launcherOnly
-            ? "打开 Team Workbench"
+            ? `打开${TEAM_WORKSPACE_SURFACE_TITLE}`
             : expanded
-              ? "收起 Team Workspace"
-              : "展开 Team Workspace"
+              ? `收起${TEAM_WORKSPACE_SURFACE_TITLE}`
+              : `展开${TEAM_WORKSPACE_SURFACE_TITLE}`
         }
         $active={hasRealTeamGraph}
         $expanded={expanded}
         $attention={showAttentionCue}
+        $launcherOnly={launcherOnly}
         onClick={() => {
           if (launcherOnly) {
             onActivateWorkbench?.();
@@ -837,7 +1017,10 @@ export function TeamWorkspaceDock({
           });
         }}
       >
-        <DockIconShell $attention={showAttentionCue}>
+        <DockIconShell
+          $attention={showAttentionCue}
+          $launcherOnly={launcherOnly}
+        >
           <Workflow className="h-4 w-4" />
           {showAttentionCue ? (
             <DockSignal
@@ -846,9 +1029,22 @@ export function TeamWorkspaceDock({
             />
           ) : null}
         </DockIconShell>
-        <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
-          {toggleLabel}
-        </span>
+        {launcherOnly ? (
+          <DockTextStack>
+            <DockPrimaryText $launcherOnly={true}>
+              {launcherPrimaryLabel}
+            </DockPrimaryText>
+            {launcherStatusMeta ? (
+              <DockStatusBadge $tone={launcherStatusMeta.tone}>
+                {launcherStatusMeta.label}
+              </DockStatusBadge>
+            ) : null}
+          </DockTextStack>
+        ) : (
+          <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
+            {toggleLabel}
+          </span>
+        )}
       </DockToggle>
       {!launcherOnly &&
       expanded &&

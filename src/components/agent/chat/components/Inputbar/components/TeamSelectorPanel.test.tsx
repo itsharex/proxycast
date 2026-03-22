@@ -215,4 +215,22 @@ describe("TeamSelectorPanel", () => {
     expect(onPersistCustomTeams).toHaveBeenCalledWith([]);
     expect(mockToast.success).toHaveBeenCalled();
   });
+
+  it("命中稳妥模式模型时应提前提示 Team 会依次开始", async () => {
+    const { container } = renderPanel({
+      providerType: "openai",
+      model: "glm-4.7",
+    });
+
+    await flushEffects();
+
+    expect(
+      container.querySelector(
+        '[data-testid="team-selector-stable-processing-notice"]',
+      ),
+    ).toBeTruthy();
+    expect(container.textContent).toContain("稳妥模式");
+    expect(container.textContent).toContain("协作成员");
+    expect(container.textContent).toContain("依次开始");
+  });
 });

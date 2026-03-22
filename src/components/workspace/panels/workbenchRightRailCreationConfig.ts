@@ -102,6 +102,16 @@ export function mapImageSizeTypeToResolution(size: ImageSizeType): string {
   return "1024x1024";
 }
 
+export function mapImageSizeTypeToAspectRatio(size: ImageSizeType): string {
+  if (size === "16-9") {
+    return "16:9";
+  }
+  if (size === "9-16") {
+    return "9:16";
+  }
+  return "1:1";
+}
+
 export function mapCoverPlatformToResolution(platform: CoverPlatformType): string {
   if (platform === "bilibili") {
     return "1792x1024";
@@ -110,4 +120,13 @@ export function mapCoverPlatformToResolution(platform: CoverPlatformType): strin
     return "1024x1792";
   }
   return "1024x1792";
+}
+
+export function mapCoverPlatformToAspectRatio(
+  platform: CoverPlatformType,
+): string {
+  if (platform === "bilibili") {
+    return "16:9";
+  }
+  return "9:16";
 }

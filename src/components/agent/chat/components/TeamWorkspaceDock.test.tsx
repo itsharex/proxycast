@@ -163,7 +163,7 @@ describe("TeamWorkspaceDock", () => {
       ],
     });
 
-    expect(container.textContent).toContain("Team");
+    expect(container.textContent).toContain("创作协作");
 
     const toggleButton = container.querySelector<HTMLButtonElement>(
       '[data-testid="team-workspace-dock-toggle"]',
@@ -174,10 +174,10 @@ describe("TeamWorkspaceDock", () => {
       toggleButton?.click();
     });
 
-    expect(document.body.textContent).toContain("等待团队成员加入");
-    expect(document.body.textContent).toContain("分派团队成员");
+    expect(document.body.textContent).toContain("等待协作成员加入");
+    expect(document.body.textContent).toContain("协作方案");
     expect(document.body.textContent).toContain("不遮挡画布");
-    expect(document.body.textContent).toContain("当前 Team：前端联调团队");
+    expect(document.body.textContent).toContain("当前协作方案：前端联调团队");
     expect(document.body.textContent).toContain("分析、实现、验证三段式推进。");
     expect(document.body.textContent).not.toContain("查看详情");
     expect(document.body.querySelector('[data-testid="team-workspace-empty-card"]')).toBeTruthy();
@@ -186,7 +186,7 @@ describe("TeamWorkspaceDock", () => {
     ).toBeTruthy();
   });
 
-  it("空态工作台应支持展开当前 Team 的详情", async () => {
+  it("空态工作台应支持展开当前协作方案的详情", async () => {
     const { container } = await renderDock({
       selectedTeamLabel: "前端联调团队",
       selectedTeamSummary: "分析、实现、验证三段式推进。",
@@ -231,7 +231,7 @@ describe("TeamWorkspaceDock", () => {
     expect(document.body.textContent).toContain("负责落地改动与结果说明");
   });
 
-  it("真实子代理从空态出现时，应自动展开 team 面板", async () => {
+  it("真实子代理从空态出现时，应自动展开协作面板", async () => {
     const { container, render } = await renderDock();
 
     expect(
@@ -256,11 +256,11 @@ describe("TeamWorkspaceDock", () => {
     expect(
       document.body.querySelector('[data-testid="team-workspace-dock-panel"]'),
     ).toBeTruthy();
-    expect(container.textContent).toContain("收起 Team");
+    expect(container.textContent).toContain("收起协作面板");
     expect(document.body.textContent).toContain("研究员");
   });
 
-  it("仅处于 Team 组建中时，不应自动展开面板，但应显示提醒", async () => {
+  it("仅处于协作准备中时，不应自动展开面板，但应显示提醒", async () => {
     const { container } = await renderDock({
       runtimeTeamState: {
         requestId: "runtime-forming-1",
@@ -280,13 +280,13 @@ describe("TeamWorkspaceDock", () => {
     expect(
       document.body.querySelector('[data-testid="team-workspace-dock-panel"]'),
     ).toBeNull();
-    expect(container.textContent).toContain("查看 Team · 组建中");
+    expect(container.textContent).toContain("查看任务进展 · 准备中");
     expect(
       container.querySelector('[data-testid="team-workspace-dock-signal"]'),
     ).toBeTruthy();
   });
 
-  it("Team 已就绪但真实成员未出现时，不应自动展开面板", async () => {
+  it("协作方案已就绪但真实成员未出现时，不应自动展开面板", async () => {
     const { container } = await renderDock({
       runtimeTeamState: {
         requestId: "runtime-formed-2",
@@ -316,13 +316,13 @@ describe("TeamWorkspaceDock", () => {
     expect(
       document.body.querySelector('[data-testid="team-workspace-dock-panel"]'),
     ).toBeNull();
-    expect(container.textContent).toContain("查看 Team · 1");
+    expect(container.textContent).toContain("查看任务进展 · 1");
     expect(
       container.querySelector('[data-testid="team-workspace-dock-signal"]'),
     ).toBeTruthy();
   });
 
-  it("Team 准备失败时，不应自动展开面板，但应保留提醒入口", async () => {
+  it("协作准备失败时，不应自动展开面板，但应保留提醒入口", async () => {
     const { container } = await renderDock({
       runtimeTeamState: {
         requestId: "runtime-failed-1",
@@ -343,10 +343,71 @@ describe("TeamWorkspaceDock", () => {
     expect(
       document.body.querySelector('[data-testid="team-workspace-dock-panel"]'),
     ).toBeNull();
-    expect(container.textContent).toContain("查看 Team · 失败");
+    expect(container.textContent).toContain("查看任务进展 · 失败");
     expect(
       container.querySelector('[data-testid="team-workspace-dock-signal"]'),
     ).toBeTruthy();
+  });
+
+  it("launcherOnly 模式应显示轻量胶囊入口，并触发画布激活", async () => {
+    const onActivateWorkbench = vi.fn();
+    const { container } = await renderDock({
+      placement: "inline",
+      onActivateWorkbench,
+      runtimeTeamState: {
+        requestId: "runtime-formed-launcher-1",
+        status: "formed",
+        label: "修复 Team",
+        summary: "分析、执行、验证协作闭环。",
+        members: [
+          {
+            id: "runtime-explorer",
+            label: "分析",
+            summary: "负责定位问题边界。",
+            roleKey: "explorer",
+            profileId: "code-explorer",
+            skillIds: ["repo-exploration"],
+            status: "running",
+          },
+        ],
+        blueprint: {
+          label: "代码排障团队",
+          summary: "分析、执行、验证三段式推进。",
+          roles: [],
+        },
+        updatedAt: Date.now(),
+      },
+      childSubagentSessions: [
+        {
+          id: "child-1",
+          name: "分析",
+          created_at: 1_710_000_000,
+          updated_at: 1_710_000_100,
+          session_type: "sub_agent",
+          runtime_status: "running",
+          task_summary: "定位问题边界",
+          role_hint: "explorer",
+        },
+      ],
+    });
+
+    const toggleButton = container.querySelector<HTMLButtonElement>(
+      '[data-testid="team-workspace-dock-toggle"]',
+    );
+
+    expect(toggleButton).toBeTruthy();
+    expect(toggleButton?.textContent).toContain("修复 Team");
+    expect(toggleButton?.textContent).toContain("1 位处理中");
+    expect(toggleButton?.textContent).not.toContain("查看任务进展");
+
+    act(() => {
+      toggleButton?.click();
+    });
+
+    expect(onActivateWorkbench).toHaveBeenCalledTimes(1);
+    expect(
+      document.body.querySelector('[data-testid="team-workspace-dock-panel"]'),
+    ).toBeNull();
   });
 
   it("真实 team 图谱折叠时，应显示查看入口和动态提示", async () => {
@@ -369,7 +430,7 @@ describe("TeamWorkspaceDock", () => {
       '[data-testid="team-workspace-dock-toggle"]',
     );
 
-    expect(toggleButton?.textContent).toContain("查看 Team · 1");
+    expect(toggleButton?.textContent).toContain("查看任务进展 · 1");
     expect(
       container.querySelector('[data-testid="team-workspace-dock-signal"]'),
     ).toBeTruthy();
@@ -446,7 +507,7 @@ describe("TeamWorkspaceDock", () => {
     const toggleButton = container.querySelector<HTMLButtonElement>(
       '[data-testid="team-workspace-dock-toggle"]',
     );
-    expect(toggleButton?.textContent).toContain("收起 Team");
+    expect(toggleButton?.textContent).toContain("收起协作面板");
 
     act(() => {
       toggleButton?.click();
@@ -485,7 +546,7 @@ describe("TeamWorkspaceDock", () => {
     expect(
       document.body.querySelector('[data-testid="team-workspace-dock-panel"]'),
     ).toBeNull();
-    expect(toggleButton?.textContent).toContain("查看 Team · 2");
+    expect(toggleButton?.textContent).toContain("查看任务进展 · 2");
   });
 
   it("切换会话后，新的真实成员出现应再次自动展开", async () => {
@@ -547,10 +608,10 @@ describe("TeamWorkspaceDock", () => {
     expect(
       document.body.querySelector('[data-testid="team-workspace-dock-panel"]'),
     ).toBeTruthy();
-    expect(container.textContent).toContain("收起 Team");
+    expect(container.textContent).toContain("收起协作面板");
   });
 
-  it("本轮 Team 已就绪时，应在空态 Dock 展示成员摘要", async () => {
+  it("本轮协作方案已就绪时，应在空态 Dock 展示成员摘要", async () => {
     const { container } = await renderDock({
       runtimeTeamState: {
         requestId: "runtime-formed-1",
@@ -580,7 +641,7 @@ describe("TeamWorkspaceDock", () => {
     const toggleButton = container.querySelector<HTMLButtonElement>(
       '[data-testid="team-workspace-dock-toggle"]',
     );
-    expect(toggleButton?.textContent).toContain("查看 Team · 1");
+    expect(toggleButton?.textContent).toContain("查看任务进展 · 1");
 
     act(() => {
       toggleButton?.click();
@@ -595,9 +656,8 @@ describe("TeamWorkspaceDock", () => {
       detailToggle?.click();
     });
 
-    expect(document.body.textContent).toContain("本轮 Team 已就绪");
+    expect(document.body.textContent).toContain("协作分工已准备好");
     expect(document.body.textContent).toContain("修复 Team");
     expect(document.body.textContent).toContain("分析");
-    expect(document.body.textContent).toContain("repo-exploration");
   });
 });

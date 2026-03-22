@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Pause, Play, Trash2 } from "lucide-react";
-import { clearLogs, getPersistedLogsTail, type LogEntry } from "@/lib/api/logs";
+import {
+  clearLogs,
+  getLogs,
+  getPersistedLogsTail,
+  type LogEntry,
+} from "@/lib/api/logs";
 import {
   type ChannelLogPreset,
   buildChannelLogRegex,
@@ -10,6 +15,39 @@ import {
 const POLL_INTERVAL_MS = 1000;
 const TAIL_LINES = 800;
 const MAX_DISPLAY_LINES = 500;
+
+function mergeLogEntries(
+  inMemoryEntries: LogEntry[],
+  persistedEntries: LogEntry[],
+): LogEntry[] {
+  const merged = [...persistedEntries, ...inMemoryEntries];
+  if (merged.length <= 1) {
+    return merged;
+  }
+
+  const seen = new Set<string>();
+  const deduped: LogEntry[] = [];
+
+  for (const entry of merged) {
+    const key = `${entry.timestamp}::${entry.level}::${entry.message}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(entry);
+  }
+
+  deduped.sort((left, right) => {
+    const leftTime = new Date(left.timestamp).getTime();
+    const rightTime = new Date(right.timestamp).getTime();
+    if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
+      return left.timestamp.localeCompare(right.timestamp);
+    }
+    return leftTime - rightTime;
+  });
+
+  return deduped;
+}
 
 function formatTime(timestamp: string): string {
   const hmsMatch = timestamp.match(/(\d{2}:\d{2}:\d{2})/);
@@ -58,7 +96,25 @@ export function ChannelLogTailPanel() {
 
     const poll = async () => {
       try {
-        const entries = await getPersistedLogsTail(TAIL_LINES);
+        const [inMemoryResult, persistedResult] = await Promise.allSettled([
+          getLogs(),
+          getPersistedLogsTail(TAIL_LINES),
+        ]);
+        if (
+          inMemoryResult.status === "rejected" &&
+          persistedResult.status === "rejected"
+        ) {
+          throw persistedResult.reason instanceof Error
+            ? persistedResult.reason
+            : inMemoryResult.reason instanceof Error
+              ? inMemoryResult.reason
+              : new Error("日志源均不可用");
+        }
+
+        const entries = mergeLogEntries(
+          inMemoryResult.status === "fulfilled" ? inMemoryResult.value : [],
+          persistedResult.status === "fulfilled" ? persistedResult.value : [],
+        );
         if (!active) return;
         setLogs(entries);
         setError(null);
@@ -119,7 +175,7 @@ export function ChannelLogTailPanel() {
 
   const handleClear = async () => {
     const confirmed = window.confirm(
-      "确认清空日志吗？\n这会清空当前内存日志和 ~/.lime/logs/lime.log，且无法恢复。",
+      "确认清空日志吗？\n这会清空当前内存日志、当前日志文件以及历史渠道诊断日志，且无法恢复。",
     );
     if (!confirmed) {
       return;
@@ -143,7 +199,8 @@ export function ChannelLogTailPanel() {
         <div>
           <h3 className="text-sm font-medium">渠道日志 Tail</h3>
           <p className="text-xs text-muted-foreground">
-            数据源：~/.lime/logs/lime.log（每秒刷新）
+            数据源：运行时内存日志 + 应用日志目录中的 lime.log
+            与轮转日志（每秒刷新）
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -190,6 +247,7 @@ export function ChannelLogTailPanel() {
           >
             <option value="all">全部</option>
             <option value="telegram">TelegramGateway</option>
+            <option value="wechat">WechatGateway</option>
             <option value="rpc">RPC</option>
             <option value="feishu">FeishuGateway</option>
             <option value="custom">自定义正则</option>
@@ -202,7 +260,7 @@ export function ChannelLogTailPanel() {
             <input
               value={customPattern}
               onChange={(event) => setCustomPattern(event.target.value)}
-              placeholder="TelegramGateway|RPC"
+              placeholder="TelegramGateway|WechatGateway|RPC"
               className="h-9 w-full rounded-md border bg-background px-3 text-sm font-mono"
             />
           </label>

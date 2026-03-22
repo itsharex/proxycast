@@ -27,6 +27,15 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { CompactRightDockButton } from "@/components/ui/compact-right-dock-button";
+import {
+  CompactRightDrawerHeader,
+  CompactRightDrawerIconButton,
+} from "@/components/ui/compact-right-drawer-header";
+import {
+  emitCompactRightPanelOpen,
+  onCompactRightPanelOpen,
+} from "@/lib/compactRightPanelEvents";
 import { listDirectory, type DirectoryListing } from "@/lib/api/fileBrowser";
 import type { Artifact } from "@/lib/artifact/types";
 import type { CanvasStateUnion } from "@/components/content-creator/canvas/canvasUtils";
@@ -143,6 +152,7 @@ export interface CanvasWorkbenchTeamView {
   title?: string;
   subtitle?: string;
   autoFocusToken?: string | number | null;
+  preferFullscreenPreview?: boolean;
   triggerState?: {
     tone: "idle" | "active" | "error";
     label?: string | null;
@@ -203,41 +213,27 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function resolveStackedWorkbenchMetrics(shellHeight: number): {
-  minHeight: number;
-  maxHeight: number;
-  defaultHeight: number;
+function resolveStackedWorkbenchMetrics(shellWidth: number): {
+  minWidth: number;
+  maxWidth: number;
+  defaultWidth: number;
 } {
-  const safeShellHeight = shellHeight > 0 ? shellHeight : 720;
-  const minHeight = Math.max(220, Math.min(300, Math.round(safeShellHeight * 0.32)));
-  const maxHeight = Math.max(
-    minHeight + 80,
-    Math.min(560, safeShellHeight - 56),
+  const safeShellWidth = shellWidth > 0 ? shellWidth : STACKED_LAYOUT_BREAKPOINT;
+  const minWidth = Math.max(280, Math.min(340, Math.round(safeShellWidth * 0.36)));
+  const maxWidth = Math.max(
+    minWidth + 40,
+    Math.min(480, safeShellWidth - 28),
   );
-  const defaultHeight = clamp(
-    Math.round(safeShellHeight * 0.48),
-    minHeight,
-    maxHeight,
+  const defaultWidth = clamp(
+    Math.round(safeShellWidth * 0.42),
+    minWidth,
+    maxWidth,
   );
   return {
-    minHeight,
-    maxHeight,
-    defaultHeight,
+    minWidth,
+    maxWidth,
+    defaultWidth,
   };
-}
-
-function resolveStackedTriggerClassName(
-  tone: "idle" | "active" | "error",
-): string {
-  switch (tone) {
-    case "active":
-      return "border-sky-200 bg-sky-50 text-sky-700 shadow-sky-950/10 hover:bg-sky-100 hover:text-sky-800";
-    case "error":
-      return "border-rose-200 bg-rose-50 text-rose-700 shadow-rose-950/10 hover:bg-rose-100 hover:text-rose-800";
-    case "idle":
-    default:
-      return "border-slate-200 bg-white text-slate-600 shadow-slate-950/10 hover:bg-slate-50 hover:text-slate-900";
-  }
 }
 
 function normalizePath(value: string): string {
@@ -538,8 +534,8 @@ export const CanvasWorkbenchLayout = memo(function CanvasWorkbenchLayout({
   const [collapsed, setCollapsed] = useState(false);
   const [isStackedLayout, setIsStackedLayout] = useState(false);
   const [stackedWorkbenchOpen, setStackedWorkbenchOpen] = useState(false);
-  const [shellHeight, setShellHeight] = useState(720);
-  const [stackedWorkbenchHeight, setStackedWorkbenchHeight] = useState<number | null>(
+  const [shellWidth, setShellWidth] = useState(STACKED_LAYOUT_BREAKPOINT);
+  const [stackedWorkbenchWidth, setStackedWorkbenchWidth] = useState<number | null>(
     null,
   );
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -645,21 +641,17 @@ export const CanvasWorkbenchLayout = memo(function CanvasWorkbenchLayout({
       return;
     }
 
-    const updateLayout = (width: number, height: number) => {
+    const updateLayout = (width: number) => {
       if (width <= 0) {
         return;
       }
       setIsStackedLayout(width < STACKED_LAYOUT_BREAKPOINT);
-      if (height > 0) {
-        setShellHeight(height);
-      }
+      setShellWidth(width);
     };
 
     const fallbackWidth =
       node.getBoundingClientRect().width || node.clientWidth || window.innerWidth;
-    const fallbackHeight =
-      node.getBoundingClientRect().height || node.clientHeight || window.innerHeight;
-    updateLayout(fallbackWidth, fallbackHeight);
+    updateLayout(fallbackWidth);
 
     if (typeof ResizeObserver === "undefined") {
       return;
@@ -671,11 +663,7 @@ export const CanvasWorkbenchLayout = memo(function CanvasWorkbenchLayout({
         contentRect?.width ||
         node.getBoundingClientRect().width ||
         node.clientWidth;
-      const nextHeight =
-        contentRect?.height ||
-        node.getBoundingClientRect().height ||
-        node.clientHeight;
-      updateLayout(nextWidth, nextHeight);
+      updateLayout(nextWidth);
     });
 
     observer.observe(node);
@@ -694,19 +682,31 @@ export const CanvasWorkbenchLayout = memo(function CanvasWorkbenchLayout({
     }
   }, [isStackedLayout]);
 
+  useEffect(() => {
+    if (!isStackedLayout) {
+      return;
+    }
+
+    return onCompactRightPanelOpen((detail) => {
+      if (detail.source !== "workbench") {
+        setStackedWorkbenchOpen(false);
+      }
+    });
+  }, [isStackedLayout]);
+
   const stackedWorkbenchMetrics = useMemo(
-    () => resolveStackedWorkbenchMetrics(shellHeight),
-    [shellHeight],
+    () => resolveStackedWorkbenchMetrics(shellWidth),
+    [shellWidth],
   );
 
   useEffect(() => {
-    setStackedWorkbenchHeight((previous) =>
+    setStackedWorkbenchWidth((previous) =>
       previous == null
-        ? stackedWorkbenchMetrics.defaultHeight
+        ? stackedWorkbenchMetrics.defaultWidth
         : clamp(
             previous,
-            stackedWorkbenchMetrics.minHeight,
-            stackedWorkbenchMetrics.maxHeight,
+            stackedWorkbenchMetrics.minWidth,
+            stackedWorkbenchMetrics.maxWidth,
           ),
     );
   }, [stackedWorkbenchMetrics]);
@@ -742,6 +742,7 @@ export const CanvasWorkbenchLayout = memo(function CanvasWorkbenchLayout({
     setCollapsed(false);
     if (isStackedLayout) {
       setStackedWorkbenchOpen(true);
+      emitCompactRightPanelOpen({ source: "workbench" });
     }
   }, [isStackedLayout, teamView?.autoFocusToken, teamView?.enabled]);
 
@@ -1364,93 +1365,102 @@ export const CanvasWorkbenchLayout = memo(function CanvasWorkbenchLayout({
     options?: {
       showCollapseButton?: boolean;
     },
-  ) => (
-    <div
-      className={cn(
-        "border-b border-slate-200/80",
-        stacked ? "px-3 py-3" : "px-4 py-4",
-      )}
-    >
-      {stacked ? (
-        <div className="mb-3 flex justify-center">
-          <span className="h-1.5 w-10 rounded-full bg-slate-200" />
-        </div>
-      ) : null}
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-            {activeTab === "team" ? "Team Workbench" : "Canvas Workbench"}
-          </div>
-          <div
-            className={cn(
-              "mt-1 text-sm font-semibold text-foreground",
-              stacked ? "line-clamp-2" : "truncate",
-            )}
-          >
-            {activeTab === "team"
-              ? teamView?.title || currentTarget.title
-              : currentTarget.title}
-          </div>
-          {activeTab === "team" && teamView?.subtitle ? (
-            <div
-              className={cn(
-                "mt-1 text-xs text-slate-500",
-                stacked ? "line-clamp-2" : "truncate",
-              )}
-            >
-              {teamView.subtitle}
+  ) => {
+    const headerTitle =
+      activeTab === "team" ? teamView?.title || currentTarget.title : currentTarget.title;
+
+    if (stacked) {
+      return (
+        <CompactRightDrawerHeader
+          eyebrow="右侧工作台"
+          heading={headerTitle}
+          subtitle={
+            activeTab === "team"
+              ? teamView?.subtitle || "产物、文件、变更与预览"
+              : "产物、文件、变更与预览"
+          }
+          meta={activeTab !== "team" ? selectionPath : undefined}
+          icon={<PanelRightOpen className="h-3.5 w-3.5" />}
+          actions={
+            <>
+              {activeTab !== "team" ? (
+                <CompactRightDrawerIconButton
+                  aria-label="下载当前画布项"
+                  disabled={!currentContent.trim()}
+                  onClick={handleDownload}
+                >
+                  <Download className="h-4 w-4" />
+                </CompactRightDrawerIconButton>
+              ) : null}
+              <CompactRightDrawerIconButton
+                aria-label="折叠画布工作台"
+                onClick={() => setStackedWorkbenchOpen(false)}
+              >
+                <PanelRightClose className="h-4 w-4" />
+              </CompactRightDrawerIconButton>
+            </>
+          }
+        >
+          {renderTabButtons(true)}
+        </CompactRightDrawerHeader>
+      );
+    }
+
+    return (
+      <div className="border-b border-slate-200/80 px-4 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+              {activeTab === "team" ? "Team Workbench" : "Canvas Workbench"}
             </div>
-          ) : null}
-          {activeTab !== "team" && selectionPath ? (
-            <div
-              className={cn(
-                "mt-1 text-xs text-slate-500",
-                stacked ? "line-clamp-2 break-all" : "truncate",
-              )}
-            >
-              {selectionPath}
+            <div className="mt-1 truncate text-sm font-semibold text-foreground">
+              {headerTitle}
             </div>
-          ) : null}
+            {activeTab === "team" && teamView?.subtitle ? (
+              <div className="mt-1 truncate text-xs text-slate-500">
+                {teamView.subtitle}
+              </div>
+            ) : null}
+            {activeTab !== "team" && selectionPath ? (
+              <div className="mt-1 truncate text-xs text-slate-500">
+                {selectionPath}
+              </div>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-2">
+            {activeTab !== "team" ? (
+              <button
+                type="button"
+                aria-label="下载当前画布项"
+                disabled={!currentContent.trim()}
+                onClick={handleDownload}
+                className={cn(
+                  "inline-flex h-8 w-8 items-center justify-center rounded-xl border transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                  WORKBENCH_GHOST_BUTTON_CLASSNAME,
+                )}
+              >
+                <Download className="h-4 w-4" />
+              </button>
+            ) : null}
+            {options?.showCollapseButton ? (
+              <button
+                type="button"
+                aria-label="折叠画布工作台"
+                onClick={() => setCollapsed(true)}
+                className={cn(
+                  "inline-flex h-8 w-8 items-center justify-center rounded-xl border transition-colors",
+                  WORKBENCH_GHOST_BUTTON_CLASSNAME,
+                )}
+              >
+                <PanelRightClose className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {activeTab !== "team" ? (
-            <button
-              type="button"
-              aria-label="下载当前画布项"
-              disabled={!currentContent.trim()}
-              onClick={handleDownload}
-              className={cn(
-                "inline-flex h-8 w-8 items-center justify-center rounded-xl border transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-                WORKBENCH_GHOST_BUTTON_CLASSNAME,
-              )}
-            >
-              <Download className="h-4 w-4" />
-            </button>
-          ) : null}
-          {stacked || options?.showCollapseButton ? (
-            <button
-              type="button"
-              aria-label="折叠画布工作台"
-              onClick={() => {
-                if (stacked) {
-                  setStackedWorkbenchOpen(false);
-                  return;
-                }
-                setCollapsed(true);
-              }}
-              className={cn(
-                "inline-flex h-8 w-8 items-center justify-center rounded-xl border transition-colors",
-                WORKBENCH_GHOST_BUTTON_CLASSNAME,
-              )}
-            >
-              <PanelRightClose className="h-4 w-4" />
-            </button>
-          ) : null}
-        </div>
+        {renderTabButtons(false)}
       </div>
-      {renderTabButtons(stacked)}
-    </div>
-  );
+    );
+  };
 
   const renderWorkbenchFooter = (stacked: boolean) => (
     activeTab === "team" && teamView?.renderFooter ? (
@@ -1550,17 +1560,17 @@ export const CanvasWorkbenchLayout = memo(function CanvasWorkbenchLayout({
       event.preventDefault();
       stackedResizeCleanupRef.current?.();
 
-      const startY = event.clientY;
-      const startHeight =
-        stackedWorkbenchHeight ?? stackedWorkbenchMetrics.defaultHeight;
+      const startX = event.clientX;
+      const startWidth =
+        stackedWorkbenchWidth ?? stackedWorkbenchMetrics.defaultWidth;
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
-        const nextHeight = clamp(
-          startHeight + (startY - moveEvent.clientY),
-          stackedWorkbenchMetrics.minHeight,
-          stackedWorkbenchMetrics.maxHeight,
+        const nextWidth = clamp(
+          startWidth + (startX - moveEvent.clientX),
+          stackedWorkbenchMetrics.minWidth,
+          stackedWorkbenchMetrics.maxWidth,
         );
-        setStackedWorkbenchHeight(nextHeight);
+        setStackedWorkbenchWidth(nextWidth);
       };
 
       const handleMouseUp = () => {
@@ -1579,45 +1589,38 @@ export const CanvasWorkbenchLayout = memo(function CanvasWorkbenchLayout({
     },
     [
       isStackedLayout,
-      stackedWorkbenchHeight,
-      stackedWorkbenchMetrics.defaultHeight,
-      stackedWorkbenchMetrics.maxHeight,
-      stackedWorkbenchMetrics.minHeight,
+      stackedWorkbenchMetrics.defaultWidth,
+      stackedWorkbenchMetrics.maxWidth,
+      stackedWorkbenchMetrics.minWidth,
       stackedWorkbenchOpen,
+      stackedWorkbenchWidth,
     ],
   );
 
   const stackedWorkbenchTrigger =
     isStackedLayout && !stackedWorkbenchOpen ? (
-      <button
-        type="button"
-        aria-label="展开画布工作台"
+      <CompactRightDockButton
+        icon={<PanelRightOpen className="h-4 w-4" />}
+        label={activeTab === "team" ? "Team 工作台" : "工作台"}
+        badgeLabel={teamView?.triggerState?.label || undefined}
+        badgeTone={
+          teamView?.triggerState?.tone === "idle"
+            ? "default"
+            : teamView?.triggerState?.tone || "default"
+        }
+        ariaLabel="展开画布工作台"
         title="工作台"
-        onClick={() => setStackedWorkbenchOpen(true)}
-        data-testid="canvas-workbench-trigger"
-        className={cn(
-          "inline-flex h-10 items-center gap-2 rounded-full border px-3.5 text-sm font-medium shadow-lg transition-all hover:-translate-y-0.5",
-          resolveStackedTriggerClassName(teamView?.triggerState?.tone || "idle"),
-        )}
-      >
-        <PanelRightOpen className="h-4 w-4" />
-        <span>{activeTab === "team" ? "Team 工作台" : "工作台"}</span>
-        {teamView?.triggerState?.label ? (
-          <span
-            className={cn(
-              "rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-none",
-              teamView.triggerState.tone === "error"
-                ? "border-rose-200 bg-white/90 text-rose-700"
-                : teamView.triggerState.tone === "active"
-                  ? "border-sky-200 bg-white/90 text-sky-700"
-                  : "border-slate-200 bg-white/90 text-slate-600",
-            )}
-          >
-            {teamView.triggerState.label}
-          </span>
-        ) : null}
-      </button>
+        testId="canvas-workbench-trigger"
+        onClick={() => {
+          setStackedWorkbenchOpen(true);
+          emitCompactRightPanelOpen({ source: "workbench" });
+        }}
+      />
     ) : undefined;
+  const preferFullscreenTeamPreview =
+    activeTab === "team" &&
+    teamView?.enabled === true &&
+    teamView.preferFullscreenPreview === true;
 
   return (
     <div
@@ -1630,54 +1633,61 @@ export const CanvasWorkbenchLayout = memo(function CanvasWorkbenchLayout({
       )}
     >
       <div
+        data-testid="canvas-workbench-preview-region"
         className={cn(
           "min-w-0 overflow-hidden",
-          isStackedLayout ? "h-full" : "flex-1",
+          isStackedLayout ? "h-full" : "flex-1 h-full",
         )}
       >
       {activeTab === "team" && teamView?.enabled
-        ? teamView.renderPreview({
-            stackedWorkbenchTrigger,
-          })
+        ? teamView.renderPreview(
+            preferFullscreenTeamPreview
+              ? undefined
+              : {
+                  stackedWorkbenchTrigger,
+                },
+          )
         : renderPreview(currentTarget, {
             stackedWorkbenchTrigger,
           })}
       </div>
 
-      {isStackedLayout ? (
+      {preferFullscreenTeamPreview ? null : isStackedLayout ? (
         stackedWorkbenchOpen ? (
           <>
             <button
               type="button"
               aria-label="折叠画布工作台遮罩"
               onClick={() => setStackedWorkbenchOpen(false)}
-              className="absolute inset-0 z-10 bg-slate-950/5"
+              className="absolute inset-0 z-10 bg-slate-950/8"
             />
             <section
               data-testid="canvas-workbench-layout"
-              data-panel-placement="overlay-bottom"
-              className="absolute inset-x-3 bottom-3 z-20 flex max-w-full flex-col overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.16)]"
+              data-panel-placement="overlay-right"
+              className="absolute bottom-3 right-3 top-3 z-20 flex max-w-[calc(100%-24px)] flex-col overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.16)]"
               style={{
-                height: `${stackedWorkbenchHeight ?? stackedWorkbenchMetrics.defaultHeight}px`,
-                minHeight: `${stackedWorkbenchMetrics.minHeight}px`,
-                maxHeight: `${stackedWorkbenchMetrics.maxHeight}px`,
+                width: `${stackedWorkbenchWidth ?? stackedWorkbenchMetrics.defaultWidth}px`,
+                minWidth: `${stackedWorkbenchMetrics.minWidth}px`,
+                maxWidth: `${stackedWorkbenchMetrics.maxWidth}px`,
               }}
             >
               <div
                 role="separator"
-                aria-orientation="horizontal"
-                aria-label="调整画布工作台高度"
+                aria-orientation="vertical"
+                aria-label="调整画布工作台宽度"
                 data-testid="canvas-workbench-resize-handle"
                 onMouseDown={handleStartStackedResize}
-                className="flex h-5 shrink-0 cursor-row-resize items-center justify-center border-b border-slate-200/80 bg-white"
+                className="absolute inset-y-0 left-0 flex w-5 shrink-0 cursor-col-resize items-center justify-center border-r border-slate-200/80 bg-white"
               >
-                <span className="h-1.5 w-10 rounded-full bg-slate-200" />
+                <span className="h-10 w-1.5 rounded-full bg-slate-200" />
               </div>
+              <div className="flex min-h-0 flex-1 flex-col pl-5">
               {renderWorkbenchHeader(true)}
               <div className="flex-1 overflow-auto px-3 py-3">
                 {renderActiveTab()}
               </div>
               {renderWorkbenchFooter(true)}
+              </div>
             </section>
           </>
         ) : null

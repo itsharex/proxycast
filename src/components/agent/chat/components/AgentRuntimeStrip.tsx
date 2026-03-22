@@ -94,7 +94,7 @@ export const AgentRuntimeStrip: React.FC<AgentRuntimeStripProps> = ({
     if (isSending) {
       nextItems.push({
         key: "sending",
-        label: runtimeStatusTitle || "正在准备执行",
+        label: runtimeStatusTitle || "正在准备处理",
         tone: "secondary",
       });
     }
@@ -128,8 +128,8 @@ export const AgentRuntimeStrip: React.FC<AgentRuntimeStripProps> = ({
         key: "team_running",
         label:
           queuedTeamSessions > 0
-            ? `Team 运行中 ${activeTeamSessions}/${childSubagentSessions.length} · 排队 ${queuedTeamSessions}`
-            : `Team 运行中 ${activeTeamSessions}/${childSubagentSessions.length}`,
+            ? `协作处理中 ${activeTeamSessions}/${childSubagentSessions.length} · 稍后开始 ${queuedTeamSessions}`
+            : `协作处理中 ${activeTeamSessions}/${childSubagentSessions.length}`,
         tone: "secondary",
       });
     } else if (childSubagentSessions.length > 0) {
@@ -137,8 +137,8 @@ export const AgentRuntimeStrip: React.FC<AgentRuntimeStripProps> = ({
         key: "team_sessions",
         label:
           completedTeamSessions > 0
-            ? `Team 会话 ${childSubagentSessions.length} · 已收敛 ${completedTeamSessions}`
-            : `Team 会话 ${childSubagentSessions.length}`,
+            ? `协作会话 ${childSubagentSessions.length} · 已完成 ${completedTeamSessions}`
+            : `协作会话 ${childSubagentSessions.length}`,
         tone: "outline",
       });
     } else if (compatSubagentRuntime.isRunning) {
@@ -146,8 +146,8 @@ export const AgentRuntimeStrip: React.FC<AgentRuntimeStripProps> = ({
         compatSubagentRuntime.progress &&
         typeof compatSubagentRuntime.progress.completed === "number" &&
         typeof compatSubagentRuntime.progress.total === "number"
-          ? `子代理运行中 ${compatSubagentRuntime.progress.completed}/${compatSubagentRuntime.progress.total}`
-          : "子代理运行中";
+          ? `协作成员处理中 ${compatSubagentRuntime.progress.completed}/${compatSubagentRuntime.progress.total}`
+          : "协作成员处理中";
       nextItems.push({
         key: "subagent_running",
         label: progressLabel,
@@ -156,7 +156,7 @@ export const AgentRuntimeStrip: React.FC<AgentRuntimeStripProps> = ({
     } else if (harnessState.delegatedTasks.length > 0) {
       nextItems.push({
         key: "delegated",
-        label: `最近委派 ${harnessState.delegatedTasks.length}`,
+        label: `最近协作 ${harnessState.delegatedTasks.length}`,
         tone: "outline",
       });
     }
@@ -172,7 +172,7 @@ export const AgentRuntimeStrip: React.FC<AgentRuntimeStripProps> = ({
     if (nextItems.length === 0) {
       nextItems.push({
         key: "default_mode",
-        label: "当前以直接回答优先，必要时再升级工具链",
+        label: "当前会先直接回答，必要时再调用更多能力",
         tone: "outline",
       });
     }
@@ -196,13 +196,13 @@ export const AgentRuntimeStrip: React.FC<AgentRuntimeStripProps> = ({
       }
     >
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <div className="text-sm font-medium text-foreground">通用 Agent</div>
+        <div className="text-sm font-medium text-foreground">通用助手</div>
         <Badge variant="outline">{themeLabel}</Badge>
         {toolPreferences.subagent ? (
           <Badge variant={hasSelectedTeam ? "secondary" : "outline"}>
             {hasSelectedTeam
-              ? `Team · ${selectedTeamLabel || `${selectedTeamRoleCount} 角色`}`
-              : "Team mode"}
+              ? `协作 · ${selectedTeamLabel || `${selectedTeamRoleCount} 角色`}`
+              : "协作模式"}
           </Badge>
         ) : null}
       </div>
@@ -223,14 +223,14 @@ export const AgentRuntimeStrip: React.FC<AgentRuntimeStripProps> = ({
       </div>
       {toolPreferences.subagent ? (
         <div className="mb-3 rounded-xl border border-border/70 bg-background/80 px-3 py-2 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">当前 Team</span>
+          <span className="font-medium text-foreground">当前协作设置</span>
           <span>
             {" "}
             ·{" "}
             {selectedTeamSummary?.trim() ||
               (hasSelectedTeam
-                ? `已配置 ${selectedTeamRoleCount} 个角色，运行时可按需委派。`
-                : "已开启 Team mode，本轮可选择或自定义 Team。")}
+                ? `已配置 ${selectedTeamRoleCount} 个角色，系统会按需邀请协作成员。`
+                : "已开启协作模式，本次可选择或自定义协作方案。")}
           </span>
         </div>
       ) : null}

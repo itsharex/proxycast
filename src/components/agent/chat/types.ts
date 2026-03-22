@@ -47,6 +47,12 @@ export type BrowserPreflightState =
 
 // ============ 权限确认相关类型 ============
 
+export interface ActionRequiredScope {
+  sessionId?: string;
+  threadId?: string;
+  turnId?: string;
+}
+
 /** 权限确认请求类型 */
 export interface ActionRequired {
   /** 请求 ID */
@@ -63,6 +69,8 @@ export interface ActionRequired {
   questions?: Question[];
   /** 请求的数据结构（elicitation 类型） */
   requestedSchema?: any;
+  /** 运行时作用域（用于与 ask / elicitation 原始请求精确匹配） */
+  scope?: ActionRequiredScope;
   /** 前端交互状态（用于保留已提交的 ask/elicitation 面板） */
   status?: "pending" | "queued" | "submitted";
   /** 是否为前端根据 Ask 工具调用生成的临时请求（尚未拿到真实 requestId） */
@@ -146,6 +154,21 @@ export interface AgentRuntimeStatus {
   title: string;
   detail: string;
   checkpoints?: string[];
+  metadata?: {
+    team_phase?: string;
+    team_parallel_budget?: number;
+    team_active_count?: number;
+    team_queued_count?: number;
+    concurrency_phase?: string;
+    concurrency_scope?: string;
+    concurrency_active_count?: number;
+    concurrency_queued_count?: number;
+    concurrency_budget?: number;
+    provider_concurrency_group?: string;
+    provider_parallel_budget?: number;
+    queue_reason?: string;
+    retryable_overload?: boolean;
+  };
 }
 
 export interface BrowserAssistSessionState {

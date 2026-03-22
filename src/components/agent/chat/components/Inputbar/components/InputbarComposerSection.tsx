@@ -7,15 +7,18 @@ import type { MessageImage } from "../../../types";
 import { CharacterMention } from "./CharacterMention";
 import { InputbarCore } from "./InputbarCore";
 import { SkillSelector } from "./SkillSelector";
+import type { BuiltinInputCommand } from "./builtinCommands";
 import { TeamSelector } from "./TeamSelector";
 import { TeamModeEntryButton } from "./TeamModeEntryButton";
 import { ThemeWorkbenchStatusPanel } from "./ThemeWorkbenchStatusPanel";
 import { InputbarModelExtra } from "./InputbarModelExtra";
 import { InputbarVisionCapabilityNotice } from "./InputbarVisionCapabilityNotice";
 import { InputbarExecutionStrategySelect } from "./InputbarExecutionStrategySelect";
+import { StableProcessingNotice } from "../../StableProcessingNotice";
 import { isGeneralResearchTheme } from "../../../utils/generalAgentPrompt";
 import type { TeamDefinition } from "../../../utils/teamDefinitions";
 import { getTeamSuggestion } from "../../../utils/teamSuggestion";
+import { shouldShowStableProcessingNotice } from "../../../utils/stableProcessingExperience";
 import type { WorkspaceSettings } from "@/types/workspace";
 import type {
   ThemeWorkbenchGateState,
@@ -37,6 +40,7 @@ interface InputbarComposerSectionProps {
   activeSkill?: Skill | null;
   onSelectCharacter?: (character: Character) => void;
   onSelectSkill: (skill: Skill) => void;
+  onSelectBuiltinCommand: (command: BuiltinInputCommand | null) => void;
   onClearSkill?: () => void;
   onNavigateToSettings?: () => void;
   onImportSkill?: () => void | Promise<void>;
@@ -85,6 +89,7 @@ export const InputbarComposerSection: React.FC<
   activeSkill,
   onSelectCharacter,
   onSelectSkill,
+  onSelectBuiltinCommand,
   onClearSkill,
   onNavigateToSettings,
   onImportSkill,
@@ -131,6 +136,40 @@ export const InputbarComposerSection: React.FC<
   const currentPendingImages =
     (inputAdapter.state.attachments as MessageImage[] | undefined) ||
     pendingImages;
+  const resolvedProviderType = inputAdapter.model?.providerType;
+  const resolvedModel = inputAdapter.model?.model;
+  const shouldShowStableNotice =
+    !isThemeWorkbenchVariant &&
+    shouldShowStableProcessingNotice({
+      providerType: resolvedProviderType,
+      model: resolvedModel,
+    });
+  const shouldShowVisionNotice =
+    currentPendingImages.length > 0 &&
+    Boolean(resolvedProviderType?.trim()) &&
+    Boolean(resolvedModel?.trim());
+  const resolvedTopExtra =
+    topExtra || shouldShowStableNotice || shouldShowVisionNotice ? (
+      <>
+        {topExtra}
+        {shouldShowStableNotice ? (
+          <StableProcessingNotice
+            providerType={resolvedProviderType}
+            model={resolvedModel}
+            scope={activeTools["subagent_mode"] ? "team" : "request"}
+            className="mx-3 mb-2"
+            testId="inputbar-stable-processing-notice"
+          />
+        ) : null}
+        {shouldShowVisionNotice ? (
+          <InputbarVisionCapabilityNotice
+            providerType={resolvedProviderType}
+            model={resolvedModel}
+            hasPendingImages={currentPendingImages.length > 0}
+          />
+        ) : null}
+      </>
+    ) : undefined;
   const handleEnableTeamMode = () => {
     if (!selectedTeam) {
       setTeamSelectorAutoOpenToken((current) => (current ?? 0) + 1);
@@ -169,6 +208,7 @@ export const InputbarComposerSection: React.FC<
         onChange={inputAdapter.actions.setText}
         onSelectCharacter={onSelectCharacter}
         onSelectSkill={onSelectSkill}
+        onSelectBuiltinCommand={onSelectBuiltinCommand}
         onNavigateToSettings={onNavigateToSettings}
       />
       <InputbarCore
@@ -201,16 +241,7 @@ export const InputbarComposerSection: React.FC<
         showTranslate={!isThemeWorkbenchVariant}
         showDragHandle={!isThemeWorkbenchVariant}
         visualVariant={isThemeWorkbenchVariant ? "floating" : "default"}
-        topExtra={
-          <>
-            {topExtra}
-            <InputbarVisionCapabilityNotice
-              providerType={inputAdapter.model?.providerType}
-              model={inputAdapter.model?.model}
-              hasPendingImages={currentPendingImages.length > 0}
-            />
-          </>
-        }
+        topExtra={resolvedTopExtra}
         activeTheme={activeTheme}
         queuedTurns={queuedTurns}
         onPromoteQueuedTurn={onPromoteQueuedTurn}

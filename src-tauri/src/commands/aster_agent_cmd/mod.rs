@@ -58,7 +58,9 @@ use aster::agents::extension::ExtensionConfig;
 use aster::agents::subagent_scheduler::SubAgentTask;
 use aster::agents::{Agent, AgentEvent};
 use aster::chrome_mcp::get_chrome_mcp_tools;
-use aster::conversation::message::{Message, MessageContent};
+use aster::conversation::message::{
+    ActionRequired, ActionRequiredData, ActionRequiredScope, Message, MessageContent,
+};
 use aster::permission::{
     ConditionOperator, ConditionType, PermissionCondition, PermissionScope, ToolPermission,
     ToolPermissionManager,
@@ -89,17 +91,24 @@ use lime_agent::request_tool_policy::{
     stream_message_reply_with_policy, ReplyAttemptError, RequestToolPolicy, RequestToolPolicyMode,
 };
 use lime_agent::{
+    acquire_provider_runtime_permit, acquire_team_runtime_permit,
     build_subagent_customization_prompt, builtin_profile_descriptor_by_id,
     builtin_team_preset_descriptor_by_id, builtin_team_preset_label_by_id, is_virtual_memory_path,
     list_subagent_cascade_session_ids, load_subagent_runtime_status,
     merge_system_prompt_with_runtime_agents, message_suggests_news_expansion,
-    read_subagent_control_state, resolve_virtual_memory_path, summarize_builtin_skill,
+    normalize_team_runtime_provider_group, preview_provider_runtime_wait_snapshot,
+    preview_team_runtime_wait_snapshot, read_subagent_control_state,
+    release_provider_runtime_permit, release_team_runtime_permit,
+    resolve_provider_runtime_parallel_budget, resolve_virtual_memory_path,
+    snapshot_provider_runtime_lease, snapshot_team_runtime_session, summarize_builtin_skill,
     virtual_memory_relative_path, write_subagent_control_state, ProviderContinuationCapability,
-    ProviderContinuationCapable, ProviderContinuationState, RuntimeProjectionSnapshot,
-    SessionStateSnapshot, SubagentControlState, SubagentCustomizationState, SubagentRuntimeStatus,
-    SubagentRuntimeStatusKind, SubagentSkillPromptBlock, SubagentSkillSummary, TauriRuntimeStatus,
-    TurnInputEnvelopeBuilder, TurnPromptAugmentationStageKind, TurnProviderRoutingSnapshot,
-    TurnRequestToolPolicySnapshot, TurnState, TurnSystemPromptSource, DURABLE_MEMORY_VIRTUAL_ROOT,
+    ProviderContinuationCapable, ProviderContinuationState, ProviderRuntimeGovernorSnapshot,
+    RuntimeProjectionSnapshot, SessionStateSnapshot, SubagentControlState,
+    SubagentCustomizationState, SubagentRuntimeStatus, SubagentRuntimeStatusKind,
+    SubagentSkillPromptBlock, SubagentSkillSummary, TauriRuntimeStatus,
+    TeamRuntimeGovernorSnapshot, TurnInputEnvelopeBuilder, TurnPromptAugmentationStageKind,
+    TurnProviderRoutingSnapshot, TurnRequestToolPolicySnapshot, TurnState, TurnSystemPromptSource,
+    DURABLE_MEMORY_VIRTUAL_ROOT,
 };
 use lime_services::api_key_provider_service::ApiKeyProviderService;
 use lime_services::mcp_service::McpService;
@@ -132,7 +141,7 @@ const WORKSPACE_SANDBOX_NOTIFY_ENV_KEYS: &[&str] = &[
 ];
 const WORKSPACE_SANDBOX_FALLBACK_WARNING_CODE: &str = "workspace_sandbox_fallback";
 const WORKSPACE_PATH_AUTO_CREATED_WARNING_CODE: &str = "workspace_path_auto_created";
-const DEFAULT_TEAM_MAX_ACTIVE_SUBAGENTS: usize = 3;
+const DEFAULT_TEAM_MAX_ACTIVE_SUBAGENTS: usize = 8;
 const SOCIAL_IMAGE_DEFAULT_MODEL: &str = "gemini-3-pro-image-preview";
 const SOCIAL_IMAGE_DEFAULT_SIZE: &str = "1024x1024";
 const SOCIAL_IMAGE_DEFAULT_RESPONSE_FORMAT: &str = "url";

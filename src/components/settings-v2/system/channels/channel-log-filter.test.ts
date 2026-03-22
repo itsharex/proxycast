@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LogEntry } from "@/lib/api/logs";
-import {
-  buildChannelLogRegex,
-  filterChannelLogs,
-} from "./channel-log-filter";
+import { buildChannelLogRegex, filterChannelLogs } from "./channel-log-filter";
 
 const MOCK_LOGS: LogEntry[] = [
   {
@@ -15,6 +12,11 @@ const MOCK_LOGS: LogEntry[] = [
     timestamp: "2026-03-05 10:00:01.000",
     level: "info",
     message: "[RPC] agent.run created runId=abc",
+  },
+  {
+    timestamp: "2026-03-05 10:00:01.500",
+    level: "info",
+    message: "[WechatGateway] account=wx-default 收到消息",
   },
   {
     timestamp: "2026-03-05 10:00:02.000",
@@ -40,19 +42,26 @@ describe("channel-log-filter", () => {
     expect(result[0].message).toContain("agent.run");
   });
 
+  it("预置 wechat 过滤应命中 WechatGateway", () => {
+    const { regex, error } = buildChannelLogRegex("wechat", "");
+    expect(error).toBeNull();
+    const result = filterChannelLogs(MOCK_LOGS, regex);
+    expect(result).toHaveLength(1);
+    expect(result[0].message).toContain("WechatGateway");
+  });
+
   it("自定义正则非法时应返回错误并回退不过滤", () => {
     const { regex, error } = buildChannelLogRegex("custom", "[invalid");
     expect(regex).toBeNull();
     expect(error).toContain("正则表达式无效");
     const result = filterChannelLogs(MOCK_LOGS, regex);
-    expect(result).toHaveLength(3);
+    expect(result).toHaveLength(4);
   });
 
   it("all 模式应不过滤", () => {
     const { regex, error } = buildChannelLogRegex("all", "");
     expect(error).toBeNull();
     const result = filterChannelLogs(MOCK_LOGS, regex);
-    expect(result).toHaveLength(3);
+    expect(result).toHaveLength(4);
   });
 });
-

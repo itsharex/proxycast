@@ -4,7 +4,7 @@
  * @module components/content-creator/canvas/poster/ElementToolbar
  */
 
-import React, { memo, useState, useRef } from "react";
+import React, { memo, useState } from "react";
 import styled from "styled-components";
 import {
   MousePointer2,
@@ -71,10 +71,6 @@ const ShapeButton = styled(Button)`
   font-size: 10px;
 `;
 
-const HiddenInput = styled.input`
-  display: none;
-`;
-
 /**
  * 工具类型
  */
@@ -97,7 +93,6 @@ export const ElementToolbar: React.FC<ElementToolbarProps> = memo(
     const [activeTool, setActiveTool] = useState<ToolType>("select");
     const [shapePopoverOpen, setShapePopoverOpen] = useState(false);
     const [alignPopoverOpen, setAlignPopoverOpen] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleToolClick = (tool: ToolType) => {
       setActiveTool(tool);
@@ -108,7 +103,8 @@ export const ElementToolbar: React.FC<ElementToolbarProps> = memo(
           setActiveTool("select");
           break;
         case "image":
-          fileInputRef.current?.click();
+          void onAddImage();
+          setActiveTool("select");
           break;
         case "background":
           onSetBackground();
@@ -119,15 +115,6 @@ export const ElementToolbar: React.FC<ElementToolbarProps> = memo(
     const handleShapeSelect = (type: ShapeType) => {
       onAddShape(type);
       setShapePopoverOpen(false);
-      setActiveTool("select");
-    };
-
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-        onAddImage();
-      }
-      e.target.value = "";
       setActiveTool("select");
     };
 
@@ -173,13 +160,6 @@ export const ElementToolbar: React.FC<ElementToolbarProps> = memo(
             </TooltipTrigger>
             <TooltipContent>添加图片</TooltipContent>
           </Tooltip>
-
-          <HiddenInput
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            onChange={handleFileChange}
-          />
 
           <Popover open={shapePopoverOpen} onOpenChange={setShapePopoverOpen}>
             <Tooltip>

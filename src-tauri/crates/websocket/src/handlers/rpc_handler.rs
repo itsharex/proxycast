@@ -58,6 +58,39 @@ pub struct RpcHandler {
     state: RpcHandlerState,
 }
 
+fn normalize_agent_prompt_from_inputs(inputs: &[AgentInputBlock]) -> String {
+    let mut lines = Vec::new();
+    for input in inputs {
+        match input {
+            AgentInputBlock::Text { text } => {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    lines.push(trimmed.to_string());
+                }
+            }
+            AgentInputBlock::Media(media) => {
+                let mut line = format!(
+                    "[附件: type={} source={} path={}]",
+                    media.media_type,
+                    match media.source_type {
+                        AgentInputSourceType::LocalPath => "local_path",
+                        AgentInputSourceType::DataUrl => "data_url",
+                    },
+                    media.path_or_data
+                );
+                if let Some(mime_type) = media.mime_type.as_deref() {
+                    line.push_str(&format!(" mime={mime_type}"));
+                }
+                if let Some(file_name) = media.file_name.as_deref() {
+                    line.push_str(&format!(" file={file_name}"));
+                }
+                lines.push(line);
+            }
+        }
+    }
+    lines.join("\n")
+}
+
 impl RpcHandler {
     /// 创建新的 RPC 处理器
     pub fn new(state: RpcHandlerState) -> Self {
@@ -120,10 +153,22 @@ impl RpcHandler {
             .ok_or_else(|| {
                 RpcError::invalid_params("Missing or invalid parameters for agent.run")
             })?;
-        let message = params.message.trim().to_string();
+        let raw_message = params.message.trim().to_string();
+        let message = if let Some(inputs) = params.inputs.as_ref() {
+            let normalized = normalize_agent_prompt_from_inputs(inputs);
+            if normalized.trim().is_empty() {
+                raw_message.clone()
+            } else if raw_message.is_empty() {
+                normalized
+            } else {
+                format!("{}\n{}", raw_message.clone(), normalized)
+            }
+        } else {
+            raw_message.clone()
+        };
         if message.is_empty() {
             return Err(RpcError::invalid_params(
-                "agent.run message cannot be empty",
+                "agent.run message and inputs cannot both be empty",
             ));
         }
         let db = self
@@ -147,6 +192,7 @@ impl RpcHandler {
         let start_metadata = json!({
             "trigger": "websocket_rpc",
             "message": message,
+            "inputs": params.inputs.clone(),
             "stream": params.stream,
             "model": params.model.clone(),
             "web_search": params.web_search,
@@ -190,6 +236,13 @@ impl RpcHandler {
                 "prompt": message_for_task,
                 "session_id": session_id_for_task,
             });
+            if !raw_message.trim().is_empty() {
+                task_params["raw_message"] = serde_json::Value::String(raw_message);
+            }
+            if let Some(inputs) = params.inputs.clone() {
+                task_params["inputs"] =
+                    serde_json::to_value(inputs).unwrap_or(serde_json::Value::Null);
+            }
             if let Some(web_search) = params.web_search {
                 task_params["web_search"] = serde_json::Value::Bool(web_search);
             }

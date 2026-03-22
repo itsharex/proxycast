@@ -470,9 +470,11 @@ async fn count_active_team_subagents(parent_session_id: &str) -> Result<usize, S
 }
 
 pub(crate) fn subagent_counts_toward_team_limit(status: SubagentRuntimeStatusKind) -> bool {
-    !matches!(
+    matches!(
         status,
-        SubagentRuntimeStatusKind::Closed | SubagentRuntimeStatusKind::NotFound
+        SubagentRuntimeStatusKind::Idle
+            | SubagentRuntimeStatusKind::Queued
+            | SubagentRuntimeStatusKind::Running
     )
 }
 
@@ -490,7 +492,7 @@ async fn enforce_team_spawn_limits(parent_session_id: &str) -> Result<(), String
     let active_count = count_active_team_subagents(parent_session_id).await?;
     if active_count >= DEFAULT_TEAM_MAX_ACTIVE_SUBAGENTS {
         return Err(format!(
-            "team 当前最多允许 {} 个活跃子代理并发执行；请先 close_agent 关闭已完成子代理，或复用已有子代理。",
+            "当前协作区最多同时保留 {} 位待处理成员；请先关闭已不需要的成员，或复用已有成员继续处理。",
             DEFAULT_TEAM_MAX_ACTIVE_SUBAGENTS
         ));
     }

@@ -337,7 +337,7 @@ export const InputbarCore: React.FC<InputbarCoreProps> = ({
                       $hasLabel={isLoading}
                     >
                       <ArrowUp size={isLoading ? 16 : 20} strokeWidth={3} />
-                      {isLoading ? <span>排队</span> : null}
+                      {isLoading ? <span>稍后处理</span> : null}
                     </SendButton>
                   </ActionButtonGroup>
                 </RightSection>

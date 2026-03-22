@@ -5,6 +5,7 @@ export interface WorkbenchRightRailProps {
   shouldRender: boolean;
   isCreateWorkspaceView: boolean;
   projectId?: string | null;
+  contentId?: string | null;
   theme?: WorkspaceTheme;
   creationMode?: CreationMode;
   creationType?: string;

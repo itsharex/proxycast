@@ -340,6 +340,12 @@ export interface StreamEventActionRequired {
   request_id: string;
   /** 操作类型 */
   action_type: "tool_confirmation" | "ask_user" | "elicitation";
+  /** 原始运行时作用域 */
+  scope?: {
+    session_id?: string;
+    thread_id?: string;
+    turn_id?: string;
+  };
   /** 工具名称（工具确认时） */
   tool_name?: string;
   /** 工具参数（工具确认时） */
@@ -365,6 +371,46 @@ export interface ContextTraceStep {
   detail: string;
 }
 
+function normalizeActionRequiredScope(
+  value: unknown,
+):
+  | {
+      session_id?: string;
+      thread_id?: string;
+      turn_id?: string;
+    }
+  | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const scope = {
+    session_id:
+      typeof record.session_id === "string"
+        ? record.session_id
+        : typeof record.sessionId === "string"
+          ? record.sessionId
+          : undefined,
+    thread_id:
+      typeof record.thread_id === "string"
+        ? record.thread_id
+        : typeof record.threadId === "string"
+          ? record.threadId
+          : undefined,
+    turn_id:
+      typeof record.turn_id === "string"
+        ? record.turn_id
+        : typeof record.turnId === "string"
+          ? record.turnId
+          : undefined,
+  };
+
+  return scope.session_id || scope.thread_id || scope.turn_id
+    ? scope
+    : undefined;
+}
+
 export interface StreamEventContextTrace {
   type: "context_trace";
   steps: ContextTraceStep[];
@@ -375,6 +421,21 @@ export interface StreamRuntimeStatusPayload {
   title: string;
   detail: string;
   checkpoints?: string[];
+  metadata?: {
+    team_phase?: string;
+    team_parallel_budget?: number;
+    team_active_count?: number;
+    team_queued_count?: number;
+    concurrency_phase?: string;
+    concurrency_scope?: string;
+    concurrency_active_count?: number;
+    concurrency_queued_count?: number;
+    concurrency_budget?: number;
+    provider_concurrency_group?: string;
+    provider_parallel_budget?: number;
+    queue_reason?: string;
+    retryable_overload?: boolean;
+  };
 }
 
 export interface StreamEventRuntimeStatus {
@@ -607,6 +668,7 @@ export function parseStreamEvent(data: unknown): StreamEvent | null {
           | "tool_confirmation"
           | "ask_user"
           | "elicitation",
+        scope: normalizeActionRequiredScope(event.scope ?? actionData.scope),
         tool_name:
           (event.tool_name as string | undefined) ||
           (actionData.tool_name as string | undefined),
@@ -662,6 +724,10 @@ export function parseStreamEvent(data: unknown): StreamEvent | null {
         event.status && typeof event.status === "object"
           ? (event.status as Record<string, unknown>)
           : null;
+      const metadata =
+        status?.metadata && typeof status.metadata === "object"
+          ? (status.metadata as Record<string, unknown>)
+          : null;
       const phase = status?.phase;
       return {
         type: "runtime_status",
@@ -674,6 +740,62 @@ export function parseStreamEvent(data: unknown): StreamEvent | null {
           detail: typeof status?.detail === "string" ? status.detail : "",
           checkpoints: Array.isArray(status?.checkpoints)
             ? (status?.checkpoints as string[])
+            : undefined,
+          metadata: metadata
+            ? {
+                team_phase:
+                  typeof metadata.team_phase === "string"
+                    ? metadata.team_phase
+                    : undefined,
+                team_parallel_budget:
+                  typeof metadata.team_parallel_budget === "number"
+                    ? metadata.team_parallel_budget
+                    : undefined,
+                team_active_count:
+                  typeof metadata.team_active_count === "number"
+                    ? metadata.team_active_count
+                    : undefined,
+                team_queued_count:
+                  typeof metadata.team_queued_count === "number"
+                    ? metadata.team_queued_count
+                    : undefined,
+                concurrency_phase:
+                  typeof metadata.concurrency_phase === "string"
+                    ? metadata.concurrency_phase
+                    : undefined,
+                concurrency_scope:
+                  typeof metadata.concurrency_scope === "string"
+                    ? metadata.concurrency_scope
+                    : undefined,
+                concurrency_active_count:
+                  typeof metadata.concurrency_active_count === "number"
+                    ? metadata.concurrency_active_count
+                    : undefined,
+                concurrency_queued_count:
+                  typeof metadata.concurrency_queued_count === "number"
+                    ? metadata.concurrency_queued_count
+                    : undefined,
+                concurrency_budget:
+                  typeof metadata.concurrency_budget === "number"
+                    ? metadata.concurrency_budget
+                    : undefined,
+                provider_concurrency_group:
+                  typeof metadata.provider_concurrency_group === "string"
+                    ? metadata.provider_concurrency_group
+                    : undefined,
+                provider_parallel_budget:
+                  typeof metadata.provider_parallel_budget === "number"
+                    ? metadata.provider_parallel_budget
+                    : undefined,
+                queue_reason:
+                  typeof metadata.queue_reason === "string"
+                    ? metadata.queue_reason
+                    : undefined,
+                retryable_overload:
+                  typeof metadata.retryable_overload === "boolean"
+                    ? metadata.retryable_overload
+                    : undefined,
+              }
             : undefined,
         },
       };

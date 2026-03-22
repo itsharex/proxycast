@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from "react";
 import type { A2UISubmissionNoticeData } from "../components/A2UISubmissionNotice";
+import { BuiltinCommandBadge } from "../components/BuiltinCommandBadge";
 import { SkillBadge } from "../components/SkillBadge";
 import { useActiveSkill } from "./useActiveSkill";
 import { useHintRoutes } from "./useHintRoutes";
@@ -19,6 +20,7 @@ import { TeamSuggestionBar } from "@/components/agent/chat/components/TeamSugges
 import type { A2UIResponse } from "@/components/content-creator/a2ui/types";
 import { getTeamSuggestion } from "@/components/agent/chat/utils/teamSuggestion";
 import type { MessageImage } from "../../../types";
+import type { BuiltinInputCommand } from "../components/builtinCommands";
 
 interface UseInputbarControllerParams {
   input: string;
@@ -82,6 +84,8 @@ export function useInputbarController({
   onEnableSuggestedTeam,
 }: UseInputbarControllerParams) {
   const { activeSkill, setActiveSkill, clearActiveSkill } = useActiveSkill();
+  const [activeBuiltinCommand, setActiveBuiltinCommand] =
+    useState<BuiltinInputCommand | null>(null);
   const {
     pendingImages,
     fileInputRef,
@@ -137,10 +141,12 @@ export function useInputbarController({
     executionStrategy,
     activeTools,
     activeSkill,
+    activeBuiltinCommand,
     activeTheme,
     onSend,
     clearPendingImages,
     clearActiveSkill,
+    clearActiveBuiltinCommand: () => setActiveBuiltinCommand(null),
   });
 
   const inputAdapter = useInputbarAdapter({
@@ -195,10 +201,16 @@ export function useInputbarController({
     dismissedTeamSuggestionKey !== teamSuggestionKey;
 
   const topExtra =
-    activeSkill || shouldShowTeamSuggestion
+    activeSkill || activeBuiltinCommand || shouldShowTeamSuggestion
       ? React.createElement(
           React.Fragment,
           null,
+          activeBuiltinCommand
+            ? React.createElement(BuiltinCommandBadge, {
+                command: activeBuiltinCommand,
+                onClear: () => setActiveBuiltinCommand(null),
+              })
+            : null,
           activeSkill
             ? React.createElement(SkillBadge, {
                 skill: activeSkill,
@@ -256,7 +268,18 @@ export function useInputbarController({
     visibleA2UISubmissionNotice,
     isA2UISubmissionNoticeVisible,
     activeSkill,
-    setActiveSkill,
+    setActiveSkill: (skill: Parameters<typeof setActiveSkill>[0]) => {
+      setActiveBuiltinCommand(null);
+      setActiveSkill(skill);
+    },
     clearActiveSkill,
+    activeBuiltinCommand,
+    setActiveBuiltinCommand: (command: BuiltinInputCommand | null) => {
+      if (command) {
+        clearActiveSkill();
+      }
+      setActiveBuiltinCommand(command);
+    },
+    clearActiveBuiltinCommand: () => setActiveBuiltinCommand(null),
   };
 }

@@ -630,6 +630,13 @@ export function handleActionRequiredEvent({
     prompt: data.prompt,
     questions: normalizeActionQuestions(data.questions, data.prompt),
     requestedSchema: data.requested_schema,
+    scope: data.scope
+      ? {
+          sessionId: data.scope.session_id,
+          threadId: data.scope.thread_id,
+          turnId: data.scope.turn_id,
+        }
+      : undefined,
     isFallback: false,
   };
   const actionKey =

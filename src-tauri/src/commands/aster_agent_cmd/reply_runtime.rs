@@ -144,9 +144,9 @@ pub(super) fn build_turn_runtime_statuses(
     let initial_checkpoints = vec![
         execution_strategy_label(effective_strategy).to_string(),
         if request_tool_policy.requires_web_search() {
-            "本回合必须先联网核实".to_string()
+            "当前任务需要先联网核实".to_string()
         } else if news_expansion_needed {
-            "已识别新闻综述类输入，将先并发 WebSearch 扩搜".to_string()
+            "已识别新闻综述类输入，将先分批联网补充信息".to_string()
         } else if request_tool_policy.allows_web_search() {
             "联网搜索仅作为候选能力待命".to_string()
         } else {
@@ -182,7 +182,7 @@ pub(super) fn build_turn_runtime_statuses(
     let decided = if request_tool_policy.requires_web_search() {
         (
             "已决定：先联网检索".to_string(),
-            "当前回合已被明确指定为先搜索后答复，会先完成联网核实再继续生成。".to_string(),
+            "当前任务已被明确指定为先搜索后答复，会先完成联网核实再继续生成。".to_string(),
             vec![
                 "用户明确要求联网搜索".to_string(),
                 "搜索结果返回后再形成最终答复".to_string(),
@@ -191,10 +191,10 @@ pub(super) fn build_turn_runtime_statuses(
     } else if news_expansion_needed {
         (
             "已决定：先联网扩搜".to_string(),
-            "当前输入属于新闻/最新动态综述类请求，会先并发执行多组 WebSearch，再基于结果做主题聚类与交叉验证。"
+            "当前输入属于新闻或最新动态综述类请求，会先分批执行多组联网搜索，再基于结果做主题归纳与交叉核实。"
                 .to_string(),
             vec![
-                "统一使用 WebSearch 执行多组扩搜".to_string(),
+                "统一使用 WebSearch 分批补充信息".to_string(),
                 "完成来源整合后再组织最终答复".to_string(),
             ],
         )
@@ -261,7 +261,7 @@ pub(super) fn build_turn_runtime_statuses(
             "已决定：直接回答优先".to_string(),
             "当前请求无需默认升级为搜索或任务，先直接给出结果，必要时再调用工具。".to_string(),
             vec![
-                "默认保持单回合直接回答".to_string(),
+                "默认保持直接回答".to_string(),
                 "只有证据不足或时效性要求出现时才升级".to_string(),
             ],
         )
@@ -271,16 +271,17 @@ pub(super) fn build_turn_runtime_statuses(
         TauriRuntimeStatus {
             phase: "preparing".to_string(),
             title: "正在理解意图".to_string(),
-            detail:
-                "正在判断当前回合应该直接回答、深度思考、规划、联网核实，还是升级为任务/多代理。"
-                    .to_string(),
+            detail: "正在判断当前任务应该直接回答、深度思考、规划、联网核实，还是升级为任务协作。"
+                .to_string(),
             checkpoints: initial_checkpoints,
+            metadata: None,
         },
         TauriRuntimeStatus {
             phase: "routing".to_string(),
             title: decided.0,
             detail: decided.1,
             checkpoints: decided.2,
+            metadata: None,
         },
     )
 }

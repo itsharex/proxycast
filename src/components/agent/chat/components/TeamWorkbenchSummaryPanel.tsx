@@ -138,14 +138,14 @@ export function TeamWorkbenchSummaryPanel({
       hint: executionSummary.hasActiveRuntime ? "正在协作" : "尚未运行",
     },
     {
-      label: "运行中",
+      label: "处理中",
       value: String(executionSummary.runningSessionCount),
-      hint: executionSummary.runningSessionCount > 0 ? "并发执行" : "暂无",
+      hint: executionSummary.runningSessionCount > 0 ? "正在推进" : "暂无",
     },
     {
-      label: "排队中",
+      label: "稍后开始",
       value: String(executionSummary.queuedSessionCount),
-      hint: executionSummary.queuedSessionCount > 0 ? "等待调度" : "暂无",
+      hint: executionSummary.queuedSessionCount > 0 ? "按顺序继续" : "暂无",
     },
     {
       label: hasRealTeamGraph
@@ -159,7 +159,7 @@ export function TeamWorkbenchSummaryPanel({
       hint: hasRealTeamGraph
         ? "已进入团队图谱"
         : runtimeTeamState
-          ? "本轮编队"
+          ? "当前编队"
           : "等待创建",
     },
   ];
@@ -194,7 +194,7 @@ export function TeamWorkbenchSummaryPanel({
         <p className="mt-2 text-xs leading-5 text-slate-500">
           {runtimeTeamState?.status === "failed"
             ? runtimeTeamState.errorMessage?.trim() ||
-              "本轮 Team 准备失败，可继续在当前对话中推进。"
+              "这次 Team 准备失败，可继续在当前对话中推进。"
             : runtimeSummaryText ||
             "这里展示团队总览与运行密度；主对话只保留调度记录，角色执行正文在左侧 Team 画布查看。"}
         </p>
@@ -207,11 +207,11 @@ export function TeamWorkbenchSummaryPanel({
             )}
           >
             {runtimeTeamState.status === "forming"
-              ? "模型正在依据本轮任务准备 Team，真实成员加入后会自动切换到实时协作轨道。"
+              ? "模型正在依据当前任务准备 Team，真实成员加入后会自动切换到实时协作轨道。"
               : runtimeTeamState.status === "formed"
                 ? `已准备 ${runtimeTeamState.members.length} 个成员，当前等待系统分派真实成员进入协作。`
                 : runtimeTeamState.errorMessage?.trim() ||
-                  "暂未成功准备本轮 Team。"}
+                  "暂未成功准备这次 Team。"}
           </div>
         ) : null}
         {!hasRealTeamGraph && !runtimeTeamState ? (

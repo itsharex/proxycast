@@ -798,6 +798,20 @@ pub async fn start_background_update_check(
 mod tests {
     use super::*;
 
+    fn next_patch_version_tag() -> String {
+        let mut parts = env!("CARGO_PKG_VERSION")
+            .split('.')
+            .map(|segment| segment.parse::<u64>().expect("版本段必须为数字"))
+            .collect::<Vec<_>>();
+        assert!(
+            parts.len() == 3,
+            "当前包版本应为三段式 semver，实际为 {}",
+            env!("CARGO_PKG_VERSION")
+        );
+        parts[2] += 1;
+        format!("v{}.{}.{}", parts[0], parts[1], parts[2])
+    }
+
     #[test]
     fn test_is_update_cache_fresh() {
         let cache = UpdateCheckCache {
@@ -820,8 +834,10 @@ mod tests {
 
     #[test]
     fn test_build_update_info_from_manifest() {
+        let next_version_tag = next_patch_version_tag();
+        let next_version = next_version_tag.trim_start_matches('v').to_string();
         let manifest = StaticUpdateManifest {
-            version: "v0.94.0".to_string(),
+            version: next_version_tag,
             notes: Some("bug fixes".to_string()),
             pub_date: Some("2026-03-21T00:00:00Z".to_string()),
             platforms: HashMap::from([(
@@ -836,7 +852,7 @@ mod tests {
         };
 
         let info = build_update_info_from_manifest(manifest);
-        assert_eq!(info.latest_version.as_deref(), Some("0.94.0"));
+        assert_eq!(info.latest_version.as_deref(), Some(next_version.as_str()));
         assert!(info.has_update);
         assert_eq!(info.error, None);
     }

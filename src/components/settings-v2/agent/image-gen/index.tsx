@@ -238,6 +238,7 @@ export function ImageGenSettings() {
       selectedGlobalImageProvider.id,
       selectedGlobalImageProvider.type,
       selectedGlobalImageProvider.custom_models,
+      selectedGlobalImageProvider.api_host,
     );
   }, [selectedGlobalImageProvider]);
 
@@ -264,6 +265,7 @@ export function ImageGenSettings() {
           nextProvider.id,
           nextProvider.type,
           nextProvider.custom_models,
+          nextProvider.api_host,
         )
       : [];
     const preferredModelId = preferredProviderId

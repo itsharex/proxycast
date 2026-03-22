@@ -7,11 +7,13 @@ const {
   mockSetSessionExecutionStrategy,
   mockToastError,
   mockUpdateProject,
+  mockWechatChannelSetRuntimeModel,
 } = vi.hoisted(() => ({
   mockNotifyProjectRuntimeAgentsGuide: vi.fn(),
   mockSetSessionExecutionStrategy: vi.fn(async () => undefined),
   mockToastError: vi.fn(),
   mockUpdateProject: vi.fn(async () => undefined),
+  mockWechatChannelSetRuntimeModel: vi.fn(async () => undefined),
 }));
 
 vi.mock("sonner", () => ({
@@ -26,6 +28,10 @@ vi.mock("@/lib/api/project", () => ({
 
 vi.mock("@/components/workspace/services/runtimeAgentsGuideService", () => ({
   notifyProjectRuntimeAgentsGuide: mockNotifyProjectRuntimeAgentsGuide,
+}));
+
+vi.mock("@/lib/api/channelsRuntime", () => ({
+  wechatChannelSetRuntimeModel: mockWechatChannelSetRuntimeModel,
 }));
 
 import { useAgentContext } from "./useAgentContext";
@@ -89,12 +95,30 @@ describe("useAgentContext", () => {
     mockSetSessionExecutionStrategy.mockClear();
     mockToastError.mockReset();
     mockUpdateProject.mockReset();
+    mockWechatChannelSetRuntimeModel.mockReset();
     localStorage.clear();
     sessionStorage.clear();
   });
 
   afterEach(() => {
     document.body.innerHTML = "";
+  });
+
+  it("切换 provider 和 model 时应同步微信运行时模型", async () => {
+    const harness = mountHook();
+
+    await act(async () => {
+      harness.getValue().setProviderType("deepseek");
+      harness.getValue().setModel("deepseek-reasoner");
+      await Promise.resolve();
+    });
+
+    expect(mockWechatChannelSetRuntimeModel).toHaveBeenCalledWith({
+      providerId: "deepseek",
+      modelId: "deepseek-reasoner",
+    });
+
+    harness.unmount();
   });
 
   it("修复目录并重试时应触发运行时 AGENTS 引导", async () => {

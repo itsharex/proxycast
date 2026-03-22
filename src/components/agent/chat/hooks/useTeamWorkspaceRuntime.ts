@@ -20,6 +20,7 @@ import {
   type TeamWorkspaceRuntimeSessionSnapshot,
   type TeamWorkspaceRuntimeStatus,
 } from "../teamWorkspaceRuntime";
+import { resolveTeamWorkspaceDisplayRuntimeStatusLabel } from "../utils/teamWorkspaceCopy";
 
 const LIVE_ACTIVITY_ENTRY_LIMIT = 3;
 const EVENT_ACTIVITY_REFRESH_DEBOUNCE_MS = 240;
@@ -51,6 +52,14 @@ interface TeamWorkspaceRuntimeStreamProjection {
   runtimeStatus?: TeamWorkspaceRuntimeStatus;
   latestTurnStatus?: TeamWorkspaceRuntimeStatus;
   queuedTurnCount?: number;
+  teamPhase?: string;
+  teamParallelBudget?: number;
+  teamActiveCount?: number;
+  teamQueuedCount?: number;
+  providerConcurrencyGroup?: string;
+  providerParallelBudget?: number;
+  queueReason?: string;
+  retryableOverload?: boolean;
   refreshPreview?: boolean;
 }
 
@@ -119,9 +128,9 @@ function buildActivityEntry(params: {
 function buildTextDraftEntry(sessionId: string, draft?: string) {
   return buildActivityEntry({
     id: `stream-text:${sessionId}`,
-    title: "回复进行中",
+    title: "内容生成中",
     detail: draft,
-    statusLabel: "进行中",
+    statusLabel: "处理中",
     badgeClassName: IN_PROGRESS_BADGE_CLASS_NAME,
   });
 }
@@ -129,9 +138,9 @@ function buildTextDraftEntry(sessionId: string, draft?: string) {
 function buildThinkingDraftEntry(sessionId: string, draft?: string) {
   return buildActivityEntry({
     id: `stream-thinking:${sessionId}`,
-    title: "推理进行中",
+    title: "整理思路中",
     detail: draft,
-    statusLabel: "进行中",
+    statusLabel: "处理中",
     badgeClassName: IN_PROGRESS_BADGE_CLASS_NAME,
   });
 }
@@ -140,16 +149,32 @@ function buildRuntimeStatusEntry(
   sessionId: string,
   status: StreamRuntimeStatusPayload,
 ) {
+  const waiting =
+    status.metadata?.team_phase === "queued" ||
+    status.metadata?.concurrency_phase === "queued";
   return buildActivityEntry({
     id: `runtime-status:${sessionId}`,
-    title: status.title.trim() || "运行状态",
+    title: status.title.trim() || "当前进展",
     detail: [status.detail, ...(status.checkpoints ?? []).map((item) => `• ${item}`)]
       .map((item) => item.trim())
       .filter(Boolean)
       .join("\n"),
-    statusLabel: "进行中",
-    badgeClassName: IN_PROGRESS_BADGE_CLASS_NAME,
+    statusLabel: waiting ? "稍后开始" : "处理中",
+    badgeClassName: waiting ? QUEUED_BADGE_CLASS_NAME : IN_PROGRESS_BADGE_CLASS_NAME,
   });
+}
+
+function buildRuntimeStatusMetadataPatch(status: StreamRuntimeStatusPayload) {
+  return {
+    teamPhase: status.metadata?.team_phase,
+    teamParallelBudget: status.metadata?.team_parallel_budget,
+    teamActiveCount: status.metadata?.team_active_count,
+    teamQueuedCount: status.metadata?.team_queued_count,
+    providerConcurrencyGroup: status.metadata?.provider_concurrency_group,
+    providerParallelBudget: status.metadata?.provider_parallel_budget,
+    queueReason: status.metadata?.queue_reason,
+    retryableOverload: status.metadata?.retryable_overload,
+  };
 }
 
 function buildToolActivityEntry(params: {
@@ -159,17 +184,17 @@ function buildToolActivityEntry(params: {
   result?: ToolExecutionResult;
 }) {
   const { sessionId, toolId, toolName, result } = params;
-  const title = toolName?.trim() ? `工具 ${toolName}` : "工具执行";
+  const title = toolName?.trim() ? `处理中 · ${toolName}` : "处理中";
   const detail = result
-    ? result.error || result.output || toolName || "工具执行已完成。"
-    : `正在执行 ${toolName || "工具"}。`;
+    ? result.error || result.output || toolName || "当前步骤已完成。"
+    : `正在处理 ${toolName || "当前步骤"}。`;
   const success = result ? result.success !== false : true;
 
   return buildActivityEntry({
     id: `tool:${sessionId}:${toolId}`,
     title,
     detail,
-    statusLabel: result ? (success ? "完成" : "失败") : "进行中",
+    statusLabel: result ? (success ? "完成" : "需重试") : "处理中",
     badgeClassName: result
       ? success
         ? COMPLETED_BADGE_CLASS_NAME
@@ -214,7 +239,7 @@ function buildErrorActivityEntry(sessionId: string, message: string) {
     id: `error:${sessionId}:${message}`,
     title: "错误",
     detail: message,
-    statusLabel: "失败",
+    statusLabel: "需重试",
     badgeClassName: FAILED_BADGE_CLASS_NAME,
   });
 }
@@ -276,7 +301,17 @@ function buildLiveRuntimeState(
   patch: Partial<
     Pick<
       TeamWorkspaceLiveRuntimeState,
-      "runtimeStatus" | "latestTurnStatus" | "queuedTurnCount"
+      | "runtimeStatus"
+      | "latestTurnStatus"
+      | "queuedTurnCount"
+      | "teamPhase"
+      | "teamParallelBudget"
+      | "teamActiveCount"
+      | "teamQueuedCount"
+      | "providerConcurrencyGroup"
+      | "providerParallelBudget"
+      | "queueReason"
+      | "retryableOverload"
     >
   >,
 ): TeamWorkspaceLiveRuntimeState {
@@ -295,6 +330,30 @@ function buildLiveRuntimeState(
       patch.queuedTurnCount ??
       current?.queuedTurnCount ??
       session.queuedTurnCount,
+    teamPhase:
+      patch.teamPhase ?? current?.teamPhase ?? session.teamPhase,
+    teamParallelBudget:
+      patch.teamParallelBudget ??
+      current?.teamParallelBudget ??
+      session.teamParallelBudget,
+    teamActiveCount:
+      patch.teamActiveCount ?? current?.teamActiveCount ?? session.teamActiveCount,
+    teamQueuedCount:
+      patch.teamQueuedCount ?? current?.teamQueuedCount ?? session.teamQueuedCount,
+    providerConcurrencyGroup:
+      patch.providerConcurrencyGroup ??
+      current?.providerConcurrencyGroup ??
+      session.providerConcurrencyGroup,
+    providerParallelBudget:
+      patch.providerParallelBudget ??
+      current?.providerParallelBudget ??
+      session.providerParallelBudget,
+    queueReason:
+      patch.queueReason ?? current?.queueReason ?? session.queueReason,
+    retryableOverload:
+      patch.retryableOverload ??
+      current?.retryableOverload ??
+      session.retryableOverload,
     baseFingerprint,
   };
 }
@@ -432,15 +491,24 @@ function projectRuntimeStreamEvent(params: {
     case "runtime_status":
       return {
         entry: buildRuntimeStatusEntry(sessionId, event.status),
+        ...buildRuntimeStatusMetadataPatch(event.status),
+        runtimeStatus:
+          event.status.metadata?.team_phase === "queued" ||
+          event.status.metadata?.concurrency_phase === "queued"
+            ? "queued"
+            : event.status.metadata?.team_phase === "running" ||
+                event.status.metadata?.concurrency_phase === "running"
+              ? "running"
+              : undefined,
       };
     case "queue_added":
       return {
         entry: buildLifecycleActivityEntry({
           sessionId,
           key: "queue",
-          title: "进入队列",
-          detail: "新的任务已加入该子代理队列，等待调度执行。",
-          statusLabel: "排队中",
+          title: "稍后开始",
+          detail: "新的说明已经收到，这位协作成员会在前一项完成后继续处理。",
+          statusLabel: resolveTeamWorkspaceDisplayRuntimeStatusLabel("queued"),
           badgeClassName: QUEUED_BADGE_CLASS_NAME,
         }),
         runtimeStatus: "queued",
@@ -452,9 +520,9 @@ function projectRuntimeStreamEvent(params: {
         entry: buildLifecycleActivityEntry({
           sessionId,
           key: "queue",
-          title: "开始执行",
-          detail: "队列中的任务已开始执行。",
-          statusLabel: "运行中",
+          title: "开始处理",
+          detail: "这位协作成员已经开始处理当前任务。",
+          statusLabel: resolveTeamWorkspaceDisplayRuntimeStatusLabel("running"),
           badgeClassName: IN_PROGRESS_BADGE_CLASS_NAME,
         }),
         runtimeStatus: "running",
@@ -489,9 +557,9 @@ function projectRuntimeStreamEvent(params: {
         entry: buildLifecycleActivityEntry({
           sessionId,
           key: "turn",
-          title: "回合开始",
-          detail: "该子代理已开始处理当前回合。",
-          statusLabel: "运行中",
+          title: "继续处理",
+          detail: "这位协作成员正在推进当前内容。",
+          statusLabel: resolveTeamWorkspaceDisplayRuntimeStatusLabel("running"),
           badgeClassName: IN_PROGRESS_BADGE_CLASS_NAME,
         }),
         runtimeStatus: "running",
@@ -504,8 +572,8 @@ function projectRuntimeStreamEvent(params: {
           entry: buildLifecycleActivityEntry({
             sessionId,
             key: "turn",
-            title: "回合完成",
-            detail: "当前回合已完成，正在等待快照同步。",
+            title: "阶段完成",
+            detail: "这一步已经完成，正在同步最新结果。",
             statusLabel: "完成",
             badgeClassName: COMPLETED_BADGE_CLASS_NAME,
           }),
@@ -533,10 +601,10 @@ function projectRuntimeStreamEvent(params: {
         entry: buildLifecycleActivityEntry({
           sessionId,
           key: "turn",
-          title: "回合失败",
+          title: "处理失败",
           detail:
-            event.turn.error_message?.trim() || "当前回合执行失败，请查看错误详情。",
-          statusLabel: "失败",
+            event.turn.error_message?.trim() || "这一步处理失败，请查看错误详情。",
+          statusLabel: "需重试",
           badgeClassName: FAILED_BADGE_CLASS_NAME,
         }),
         runtimeStatus: resolveFinalRuntimeStatus({
@@ -628,6 +696,14 @@ function buildActiveSubagentSnapshots(params: UseTeamWorkspaceRuntimeOptions) {
       runtimeStatus: currentSessionRuntimeStatus,
       latestTurnStatus: currentSessionLatestTurnStatus,
       queuedTurnCount: currentSessionQueuedTurnCount,
+      teamPhase: undefined,
+      teamParallelBudget: undefined,
+      teamActiveCount: undefined,
+      teamQueuedCount: undefined,
+      providerConcurrencyGroup: undefined,
+      providerParallelBudget: undefined,
+      queueReason: undefined,
+      retryableOverload: undefined,
     });
     seen.add(currentSessionId);
   }
@@ -646,6 +722,14 @@ function buildActiveSubagentSnapshots(params: UseTeamWorkspaceRuntimeOptions) {
       runtimeStatus: session.runtime_status,
       latestTurnStatus: session.latest_turn_status,
       queuedTurnCount: session.queued_turn_count,
+      teamPhase: session.team_phase,
+      teamParallelBudget: session.team_parallel_budget,
+      teamActiveCount: session.team_active_count,
+      teamQueuedCount: session.team_queued_count,
+      providerConcurrencyGroup: session.provider_concurrency_group,
+      providerParallelBudget: session.provider_parallel_budget,
+      queueReason: session.queue_reason,
+      retryableOverload: session.retryable_overload,
       updatedAt: session.updated_at,
     });
   });
@@ -1031,7 +1115,15 @@ export function useTeamWorkspaceRuntime(
           if (
             projection.runtimeStatus !== undefined ||
             projection.latestTurnStatus !== undefined ||
-            projection.queuedTurnCount !== undefined
+            projection.queuedTurnCount !== undefined ||
+            projection.teamPhase !== undefined ||
+            projection.teamParallelBudget !== undefined ||
+            projection.teamActiveCount !== undefined ||
+            projection.teamQueuedCount !== undefined ||
+            projection.providerConcurrencyGroup !== undefined ||
+            projection.providerParallelBudget !== undefined ||
+            projection.queueReason !== undefined ||
+            projection.retryableOverload !== undefined
           ) {
             setLiveRuntimeBySessionId((previous) => {
               const current = previous[sessionId];
@@ -1043,6 +1135,14 @@ export function useTeamWorkspaceRuntime(
                   runtimeStatus: projection.runtimeStatus,
                   latestTurnStatus: projection.latestTurnStatus,
                   queuedTurnCount: projection.queuedTurnCount,
+                  teamPhase: projection.teamPhase,
+                  teamParallelBudget: projection.teamParallelBudget,
+                  teamActiveCount: projection.teamActiveCount,
+                  teamQueuedCount: projection.teamQueuedCount,
+                  providerConcurrencyGroup: projection.providerConcurrencyGroup,
+                  providerParallelBudget: projection.providerParallelBudget,
+                  queueReason: projection.queueReason,
+                  retryableOverload: projection.retryableOverload,
                 },
               );
 
@@ -1051,6 +1151,15 @@ export function useTeamWorkspaceRuntime(
                 current.runtimeStatus === nextState.runtimeStatus &&
                 current.latestTurnStatus === nextState.latestTurnStatus &&
                 current.queuedTurnCount === nextState.queuedTurnCount &&
+                current.teamPhase === nextState.teamPhase &&
+                current.teamParallelBudget === nextState.teamParallelBudget &&
+                current.teamActiveCount === nextState.teamActiveCount &&
+                current.teamQueuedCount === nextState.teamQueuedCount &&
+                current.providerConcurrencyGroup ===
+                  nextState.providerConcurrencyGroup &&
+                current.providerParallelBudget === nextState.providerParallelBudget &&
+                current.queueReason === nextState.queueReason &&
+                current.retryableOverload === nextState.retryableOverload &&
                 current.baseFingerprint === nextState.baseFingerprint
               ) {
                 return previous;

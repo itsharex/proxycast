@@ -130,6 +130,7 @@ export function SettingsTab({ projectId, workspaceType }: SettingsTabProps) {
       selectedImageProvider.id,
       selectedImageProvider.type,
       selectedImageProvider.custom_models,
+      selectedImageProvider.api_host,
     );
   }, [selectedImageProvider]);
 

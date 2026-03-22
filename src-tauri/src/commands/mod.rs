@@ -74,6 +74,7 @@ pub mod video_generation_cmd;
 pub mod voice_test_cmd;
 pub mod websocket_cmd;
 pub mod webview_cmd;
+pub mod wechat_channel_cmd;
 pub mod window_cmd;
 pub mod windows_startup_cmd;
 pub mod workspace_cmd;

@@ -10,6 +10,10 @@ import type {
   GatewayTunnelStatus,
   GatewayTunnelSyncWebhookResponse,
   TelegramProbeResult,
+  WechatConfiguredAccount,
+  WechatLoginStartResult,
+  WechatLoginWaitResult,
+  WechatProbeResult,
 } from "./channelsRuntimeTypes";
 
 export type {
@@ -51,10 +55,19 @@ export type {
   TelegramGatewayAccountStatus,
   TelegramGatewayStatus,
   TelegramProbeResult,
+  WechatAccountConfig,
+  WechatBotConfig,
+  WechatConfiguredAccount,
+  WechatGatewayAccountStatus,
+  WechatGatewayStatus,
+  WechatGroupConfig,
+  WechatLoginStartResult,
+  WechatLoginWaitResult,
+  WechatProbeResult,
 } from "./channelsRuntimeTypes";
 
 export async function gatewayChannelStart(params?: {
-  channel?: "telegram" | "feishu" | "discord";
+  channel?: "telegram" | "feishu" | "discord" | "wechat";
   accountId?: string;
   pollTimeoutSecs?: number;
 }): Promise<GatewayChannelStatusResponse> {
@@ -68,7 +81,7 @@ export async function gatewayChannelStart(params?: {
 }
 
 export async function gatewayChannelStop(params?: {
-  channel?: "telegram" | "feishu" | "discord";
+  channel?: "telegram" | "feishu" | "discord" | "wechat";
   accountId?: string;
 }): Promise<GatewayChannelStatusResponse> {
   return safeInvoke("gateway_channel_stop", {
@@ -80,7 +93,7 @@ export async function gatewayChannelStop(params?: {
 }
 
 export async function gatewayChannelStatus(params?: {
-  channel?: "telegram" | "feishu" | "discord";
+  channel?: "telegram" | "feishu" | "discord" | "wechat";
 }): Promise<GatewayChannelStatusResponse> {
   return safeInvoke("gateway_channel_status", {
     request: {
@@ -115,6 +128,78 @@ export async function discordChannelProbe(params?: {
   return safeInvoke("discord_channel_probe", {
     request: {
       account_id: params?.accountId?.trim() || undefined,
+    },
+  });
+}
+
+export async function wechatChannelProbe(params?: {
+  accountId?: string;
+}): Promise<WechatProbeResult> {
+  return safeInvoke("wechat_channel_probe", {
+    request: {
+      account_id: params?.accountId?.trim() || undefined,
+    },
+  });
+}
+
+export async function wechatChannelLoginStart(params?: {
+  baseUrl?: string;
+  botType?: string;
+  sessionKey?: string;
+}): Promise<WechatLoginStartResult> {
+  return safeInvoke("wechat_channel_login_start", {
+    request: {
+      base_url: params?.baseUrl?.trim() || undefined,
+      bot_type: params?.botType?.trim() || undefined,
+      session_key: params?.sessionKey?.trim() || undefined,
+    },
+  });
+}
+
+export async function wechatChannelLoginWait(params: {
+  sessionKey: string;
+  baseUrl?: string;
+  botType?: string;
+  timeoutMs?: number;
+  accountName?: string;
+}): Promise<WechatLoginWaitResult> {
+  return safeInvoke("wechat_channel_login_wait", {
+    request: {
+      session_key: params.sessionKey,
+      base_url: params.baseUrl?.trim() || undefined,
+      bot_type: params.botType?.trim() || undefined,
+      timeout_ms: params.timeoutMs,
+      account_name: params.accountName?.trim() || undefined,
+    },
+  });
+}
+
+export async function wechatChannelListAccounts(): Promise<
+  WechatConfiguredAccount[]
+> {
+  return safeInvoke("wechat_channel_list_accounts");
+}
+
+export async function wechatChannelRemoveAccount(params: {
+  accountId: string;
+  purgeData?: boolean;
+}): Promise<void> {
+  return safeInvoke("wechat_channel_remove_account", {
+    request: {
+      account_id: params.accountId,
+      purge_data: params.purgeData ?? false,
+    },
+  });
+}
+
+export async function wechatChannelSetRuntimeModel(params: {
+  providerId: string;
+  modelId: string;
+}): Promise<string> {
+  return safeInvoke("wechat_channel_set_runtime_model", {
+    request: {
+      provider_id: params.providerId.trim(),
+      model_id: params.modelId.trim(),
     },
   });
 }

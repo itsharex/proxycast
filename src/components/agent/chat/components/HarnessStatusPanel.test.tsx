@@ -351,13 +351,13 @@ describe("HarnessStatusPanel", () => {
 
   it("应支持自定义标题说明与前置运行概览内容", () => {
     renderPanel({
-      title: "Agent 工作台",
+      title: "处理工作台",
       description: "集中查看代理运行轨迹。",
       toggleLabel: "工作台详情",
       leadContent: <div>通用 Agent 运行概览</div>,
     });
 
-    expect(document.body.textContent).toContain("Agent 工作台");
+    expect(document.body.textContent).toContain("处理工作台");
     expect(document.body.textContent).toContain("集中查看代理运行轨迹。");
     expect(document.body.textContent).toContain("通用 Agent 运行概览");
     expect(document.body.textContent).toContain("收起工作台详情");
@@ -387,16 +387,16 @@ describe("HarnessStatusPanel", () => {
       harnessState: createHarnessState({
         runtimeStatus: {
           phase: "routing",
-          title: "正在建立执行回合",
+          title: "正在启动处理流程",
           detail: "已提交到运行时，正在等待首个执行事件。",
           checkpoints: ["会话已建立", "等待首个模型事件"],
         },
       }),
     });
 
-    expect(document.body.textContent).toContain("执行阶段");
-    expect(document.body.textContent).toContain("当前执行阶段");
-    expect(document.body.textContent).toContain("正在建立执行回合");
+    expect(document.body.textContent).toContain("当前任务");
+    expect(document.body.textContent).toContain("任务进展");
+    expect(document.body.textContent).toContain("正在启动处理流程");
     expect(document.body.textContent).toContain("等待首个模型事件");
   });
 
@@ -405,20 +405,20 @@ describe("HarnessStatusPanel", () => {
       harnessState: createHarnessState({
         runtimeStatus: {
           phase: "failed",
-          title: "当前执行失败",
+          title: "当前处理失败",
           detail: "429 rate limit",
-          checkpoints: ["已保留当前回合过程"],
+          checkpoints: ["已保留当前阶段记录"],
         },
       }),
     });
 
-    expect(document.body.textContent).toContain("执行阶段");
+    expect(document.body.textContent).toContain("当前任务");
     expect(document.body.textContent).toContain("失败");
-    expect(document.body.textContent).toContain("当前执行失败");
+    expect(document.body.textContent).toContain("当前处理失败");
     expect(document.body.textContent).toContain("429 rate limit");
   });
 
-  it("存在 selectedTeam 时应在工作台展示当前 Team 配置", () => {
+  it("存在 selectedTeam 时应在工作台展示当前协作设置", () => {
     renderPanel({
       selectedTeamLabel: "前端联调团队",
       selectedTeamSummary: "分析、实现、验证三段式推进。",
@@ -434,16 +434,16 @@ describe("HarnessStatusPanel", () => {
       ],
     });
 
-    expect(document.body.textContent).toContain("当前 Team");
-    expect(document.body.textContent).toContain("当前 Team 配置");
+    expect(document.body.textContent).toContain("协作设置");
+    expect(document.body.textContent).toContain("当前协作设置");
     expect(document.body.textContent).toContain("前端联调团队");
     expect(document.body.textContent).toContain("分析、实现、验证三段式推进。");
-    expect(document.body.textContent).toContain("画像 code-explorer");
-    expect(document.body.textContent).toContain("Role explorer");
+    expect(document.body.textContent).toContain("模板 code-explorer");
+    expect(document.body.textContent).toContain("职责 explorer");
     expect(document.body.textContent).toContain("repo-exploration");
   });
 
-  it("存在真实 child session 时应优先展示 Team 会话摘要，并将旧 scheduler 降级为兼容轨迹", () => {
+  it("存在真实 child session 时应优先展示协作会话摘要，并将旧 scheduler 降级为兼容轨迹", () => {
     renderPanel({
       childSubagentSessions: [
         {
@@ -495,12 +495,12 @@ describe("HarnessStatusPanel", () => {
       },
     });
 
-    expect(document.body.textContent).toContain("Team 运行中");
-    expect(document.body.textContent).toContain("Team 会话");
-    expect(document.body.textContent).toContain("当前 Team 会话");
-    expect(document.body.textContent).toContain("真实 Team 会话");
-    expect(document.body.textContent).toContain("兼容回退");
-    expect(document.body.textContent).toContain("Fallback");
+    expect(document.body.textContent).toContain("协作处理中");
+    expect(document.body.textContent).toContain("协作会话");
+    expect(document.body.textContent).toContain("当前协作会话");
+    expect(document.body.textContent).toContain("实时协作会话");
+    expect(document.body.textContent).toContain("兼容模式");
+    expect(document.body.textContent).toContain("旧链路");
     expect(document.body.textContent).not.toContain("兼容调度进度");
     expect(document.body.textContent).not.toContain("兼容调度轨迹");
     expect(document.body.textContent).toContain("研究代理");

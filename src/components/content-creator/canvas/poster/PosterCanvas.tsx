@@ -110,7 +110,7 @@ const GridOverlay = styled.div<{
  * @returns 海报画布组件
  */
 export const PosterCanvas: React.FC<PosterCanvasProps> = memo(
-  ({ state, onStateChange, projectId, contentId, onClose }) => {
+  ({ state, onStateChange, projectId, contentId, onAddImage, onClose }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -306,8 +306,12 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = memo(
      * 添加图片
      */
     const handleAddImage = useCallback(() => {
+      if (onAddImage) {
+        void onAddImage();
+        return;
+      }
       fileInputRef.current?.click();
-    }, []);
+    }, [onAddImage]);
 
     /**
      * 处理文件选择

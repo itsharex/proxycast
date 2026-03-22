@@ -5,7 +5,6 @@
  */
 
 import React, { useState, memo } from "react";
-import { invoke } from "@tauri-apps/api/core";
 
 /** 从 img URL 中提取 multimodel 格式的提示词 */
 function extractPendingPrompt(src: string): string | null {
@@ -40,6 +39,8 @@ function isPlaceholderUrl(src: string): boolean {
 
 /** 自定义事件名：封面图重新生成成功 */
 export const COVER_IMAGE_REPLACED_EVENT = "lime:cover-image-replaced";
+export const COVER_IMAGE_WORKBENCH_REQUEST_EVENT =
+  "lime:cover-image-workbench-request";
 
 /** 自定义事件 detail 类型 */
 export interface CoverImageReplacedDetail {
@@ -47,6 +48,12 @@ export interface CoverImageReplacedDetail {
   placeholder: string;
   /** 新图片 URL */
   imageUrl: string;
+}
+
+export interface CoverImageWorkbenchRequestDetail {
+  placeholder: string;
+  prompt: string;
+  alt?: string;
 }
 
 interface CoverImagePlaceholderProps {
@@ -66,23 +73,28 @@ export const CoverImagePlaceholder: React.FC<CoverImagePlaceholderProps> = memo(
     const showPlaceholder = isPlaceholder || failed;
     const isFailed = src === "cover-generation-failed" || failed;
 
-    const handleRetry = async () => {
+    const handleRetry = () => {
       if (!pendingPrompt || retrying) return;
       setRetrying(true);
       setRetryError(null);
       try {
-        const imageUrl = await invoke<string>("social_generate_cover_image_cmd", {
-          prompt: pendingPrompt,
-        });
-        // 通知顶层组件替换内容
         window.dispatchEvent(
-          new CustomEvent<CoverImageReplacedDetail>(COVER_IMAGE_REPLACED_EVENT, {
-            detail: { placeholder: src || "", imageUrl },
-          }),
+          new CustomEvent<CoverImageWorkbenchRequestDetail>(
+            COVER_IMAGE_WORKBENCH_REQUEST_EVENT,
+            {
+              detail: {
+                placeholder: src || "",
+                prompt: pendingPrompt,
+                alt,
+              },
+            },
+          ),
         );
+        window.setTimeout(() => {
+          setRetrying(false);
+        }, 1200);
       } catch (err) {
         setRetryError(String(err));
-      } finally {
         setRetrying(false);
       }
     };
@@ -190,7 +202,7 @@ export const CoverImagePlaceholder: React.FC<CoverImagePlaceholderProps> = memo(
               cursor: retrying ? "not-allowed" : "pointer",
             }}
           >
-            {retrying ? "生成中…" : "重新生成封面"}
+            {retrying ? "正在打开配图画布…" : "重新生成封面"}
           </button>
         )}
       </div>

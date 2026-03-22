@@ -71,7 +71,7 @@ describe("InputbarOverlayShell", () => {
     const container = renderShell({
       overlayAccessory: (
         <button type="button" data-testid="team-inline-toggle">
-          查看 Team · 2
+          查看协作进展 · 2
         </button>
       ),
     });

@@ -21,6 +21,7 @@ const providers: MockProvider[] = [
 describe("imageGeneration", () => {
   it("应识别图片 Provider", () => {
     expect(isImageProvider("new-api", "openai")).toBe(true);
+    expect(isImageProvider("fal", "fal")).toBe(true);
     expect(isImageProvider("tts-only", "audio")).toBe(false);
   });
 
@@ -51,5 +52,28 @@ describe("imageGeneration", () => {
       getImageModelsForProvider("custom-provider", "openai", ["gpt-image-1"])[0]
         ?.id,
     ).toBe("gpt-image-1");
+  });
+
+  it("Fal Provider 的自定义模型应过滤掉文本模型并回退到内置图片模型", () => {
+    const models = getImageModelsForProvider(
+      "fal",
+      "openai",
+      ["gpt-5.2-pro"],
+      "https://fal.run/fal-ai",
+    );
+
+    expect(models[0]?.id).toBe("fal-ai/nano-banana-pro");
+    expect(models.some((model) => model.id === "gpt-5.2-pro")).toBe(false);
+  });
+
+  it("Fal Provider 的合法图片模型应继续保留", () => {
+    const models = getImageModelsForProvider(
+      "fal",
+      "openai",
+      ["gpt-5.2-pro", "fal-ai/flux-kontext/dev"],
+      "https://fal.run/fal-ai",
+    );
+
+    expect(models.map((model) => model.id)).toEqual(["fal-ai/flux-kontext/dev"]);
   });
 });

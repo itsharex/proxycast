@@ -23,15 +23,21 @@
 //! 参考文档：`docs/prd/chat-architecture-redesign.md`
 
 use aster::agents::Agent;
+use aster::conversation::message::{
+    ActionRequired, ActionRequiredData, ActionRequiredScope, Message, MessageContent,
+};
+use aster::permission::{Permission, PermissionConfirmation, PrincipalType};
 #[cfg(test)]
 use aster::skills::{global_registry, load_skills_from_directory, SkillSource};
 use aster::tools::{create_shared_history, EditTool, WriteTool};
+use futures::StreamExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
 use crate::credential_bridge::{create_aster_provider, AsterProviderConfig, CredentialBridge};
+use crate::event_converter::TauriActionRequiredScope;
 use crate::provider_continuation_state::{
     resolve_provider_continuation_capability, ProviderContinuationCapability,
     ProviderContinuationCapable, ProviderContinuationState,
@@ -53,6 +59,21 @@ async fn configure_lime_native_file_tools(agent: &Agent) {
     ));
     // 覆盖默认 SkillTool，避免通用对话默认暴露全部本地 Skills。
     registry.register(Box::new(crate::tools::LimeSkillTool::new()));
+}
+
+fn normalize_runtime_action_scope(
+    scope: Option<TauriActionRequiredScope>,
+) -> Option<ActionRequiredScope> {
+    let scope = scope?;
+    if scope.session_id.is_none() && scope.thread_id.is_none() && scope.turn_id.is_none() {
+        return None;
+    }
+
+    Some(ActionRequiredScope {
+        session_id: scope.session_id,
+        thread_id: scope.thread_id,
+        turn_id: scope.turn_id,
+    })
 }
 
 /// 会话级 turn 排队任务
@@ -488,6 +509,94 @@ impl AsterAgentState {
     pub async fn remove_cancel_token(&self, session_id: &str) {
         let mut tokens = self.cancel_tokens.write().await;
         tokens.remove(session_id);
+    }
+
+    /// 提交用户补充信息，恢复等待中的 ask_user / elicitation。
+    pub async fn submit_elicitation_response(
+        &self,
+        session_id: &str,
+        request_id: &str,
+        user_data: serde_json::Value,
+        action_scope: Option<TauriActionRequiredScope>,
+    ) -> Result<(), String> {
+        let trimmed_session_id = session_id.trim();
+        if trimmed_session_id.is_empty() {
+            return Err("session_id 不能为空".to_string());
+        }
+        let trimmed_request_id = request_id.trim();
+        if trimmed_request_id.is_empty() {
+            return Err("request_id 不能为空".to_string());
+        }
+
+        let message =
+            Message::user().with_content(MessageContent::ActionRequired(ActionRequired {
+                data: ActionRequiredData::ElicitationResponse {
+                    id: trimmed_request_id.to_string(),
+                    user_data,
+                },
+                scope: normalize_runtime_action_scope(action_scope),
+            }));
+        let session_config = SessionConfigBuilder::new(trimmed_session_id)
+            .include_context_trace(true)
+            .build();
+
+        let agent_arc = self.get_agent_arc();
+        let guard = agent_arc.read().await;
+        let agent = guard.as_ref().ok_or("Agent not initialized")?;
+        let mut stream = agent
+            .reply(message, session_config, None)
+            .await
+            .map_err(|e| format!("提交 elicitation 响应失败: {e}"))?;
+
+        while let Some(event_result) = stream.next().await {
+            match event_result {
+                Ok(aster::agents::AgentEvent::Message(message)) => {
+                    let text = message.as_concat_text();
+                    if text.contains("Failed to submit elicitation response")
+                        || text.contains("Request not found")
+                    {
+                        return Err(format!("提交 elicitation 响应失败: {text}"));
+                    }
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    return Err(format!("提交 elicitation 响应失败: {error}"));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 提交工具确认结果，恢复等待中的 tool_confirmation。
+    pub async fn confirm_tool_action(
+        &self,
+        request_id: &str,
+        confirmed: bool,
+    ) -> Result<(), String> {
+        let trimmed_request_id = request_id.trim();
+        if trimmed_request_id.is_empty() {
+            return Err("request_id 不能为空".to_string());
+        }
+
+        let permission = if confirmed {
+            Permission::AllowOnce
+        } else {
+            Permission::DenyOnce
+        };
+        let confirmation = PermissionConfirmation {
+            principal_type: PrincipalType::Tool,
+            permission,
+        };
+
+        let agent_arc = self.get_agent_arc();
+        let guard = agent_arc.read().await;
+        let agent = guard.as_ref().ok_or("Agent not initialized")?;
+        agent
+            .handle_confirmation(trimmed_request_id.to_string(), confirmation)
+            .await;
+
+        Ok(())
     }
 
     // ------------------------------------------------------------------------

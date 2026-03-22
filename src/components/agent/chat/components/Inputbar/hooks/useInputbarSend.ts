@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import type { Skill } from "@/lib/api/skills";
 import type { MessageImage } from "../../../types";
+import type { BuiltinInputCommand } from "../components/builtinCommands";
 
 const SOCIAL_ARTICLE_SKILL_KEY = "social_post_with_cover";
 
@@ -12,6 +13,7 @@ interface UseInputbarSendParams {
   executionStrategy?: "react" | "code_orchestrated" | "auto";
   activeTools: Record<string, boolean>;
   activeSkill: Skill | null;
+  activeBuiltinCommand: BuiltinInputCommand | null;
   activeTheme?: string;
   onSend: (
     images?: MessageImage[],
@@ -22,6 +24,7 @@ interface UseInputbarSendParams {
   ) => void | Promise<boolean> | boolean;
   clearPendingImages: () => void;
   clearActiveSkill: () => void;
+  clearActiveBuiltinCommand: () => void;
 }
 
 export function useInputbarSend({
@@ -32,10 +35,12 @@ export function useInputbarSend({
   executionStrategy,
   activeTools,
   activeSkill,
+  activeBuiltinCommand,
   activeTheme,
   onSend,
   clearPendingImages,
   clearActiveSkill,
+  clearActiveBuiltinCommand,
 }: UseInputbarSendParams) {
   return useCallback(async () => {
     if (!input.trim() && pendingImages.length === 0) {
@@ -53,7 +58,9 @@ export function useInputbarSend({
     }
 
     let textOverride: string | undefined;
-    if (activeSkill) {
+    if (activeBuiltinCommand) {
+      textOverride = `${activeBuiltinCommand.commandPrefix} ${input}`.trim();
+    } else if (activeSkill) {
       textOverride = `/${activeSkill.key} ${input}`.trim();
     } else if (
       activeTheme === "social-media" &&
@@ -76,13 +83,16 @@ export function useInputbarSend({
       }
       clearPendingImages();
       clearActiveSkill();
+      clearActiveBuiltinCommand();
     } catch {
       // 发送失败时保留图片与技能，交由上层 toast / 恢复逻辑处理。
     }
   }, [
+    activeBuiltinCommand,
     activeSkill,
     activeTheme,
     activeTools,
+    clearActiveBuiltinCommand,
     clearActiveSkill,
     clearPendingImages,
     executionStrategy,

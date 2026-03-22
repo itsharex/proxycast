@@ -566,15 +566,19 @@ interface StreamingRendererProps {
 
 const RUNTIME_PHASE_LABELS: Record<AgentRuntimeStatus["phase"], string> = {
   preparing: "准备中",
-  routing: "回合建立中",
-  context: "上下文装载中",
-  failed: "执行失败",
+  routing: "处理中",
+  context: "整理信息中",
+  failed: "需要处理",
 };
 
 const AgentRuntimeStatusBlock: React.FC<{ status: AgentRuntimeStatus }> = ({
   status,
 }) => {
   const failed = status.phase === "failed";
+  const sequentialProtection =
+    !failed &&
+    status.metadata?.concurrency_scope === "provider_global" &&
+    status.metadata?.retryable_overload;
 
   return (
     <div
@@ -621,6 +625,11 @@ const AgentRuntimeStatusBlock: React.FC<{ status: AgentRuntimeStatus }> = ({
           )}
           {RUNTIME_PHASE_LABELS[status.phase]}
         </div>
+        {sequentialProtection ? (
+          <div className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs text-amber-700">
+            稳妥处理
+          </div>
+        ) : null}
       </div>
       <div
         className={cn(

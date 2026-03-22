@@ -14,6 +14,7 @@ export function WorkbenchRightRail({
   shouldRender,
   isCreateWorkspaceView,
   projectId,
+  contentId,
   theme,
   creationMode = "guided",
   creationType,
@@ -88,6 +89,7 @@ export function WorkbenchRightRail({
       theme={theme}
       onCollapse={() => setCollapsed(true)}
       projectId={projectId}
+      contentId={contentId}
       onCreateContentFromPrompt={onCreateContentFromPrompt}
       initialExpandedActionKey={pendingExpandedActionKey}
       onInitialExpandedActionConsumed={handleExpandedActionConsumed}

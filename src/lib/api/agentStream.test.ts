@@ -2,6 +2,73 @@ import { describe, expect, it } from "vitest";
 import { parseStreamEvent } from "./agentStream";
 
 describe("agentStream.parseStreamEvent", () => {
+  it("应解析 action_required 的 scope，并兼容嵌套 data.scope", () => {
+    expect(
+      parseStreamEvent({
+        type: "action_required",
+        request_id: "req-scope-1",
+        action_type: "ask_user",
+        scope: {
+          sessionId: "session-1",
+          thread_id: "thread-1",
+          turnId: "turn-1",
+        },
+        prompt: "请选择执行模式",
+        questions: [{ question: "请选择执行模式" }],
+      }),
+    ).toMatchObject({
+      type: "action_required",
+      request_id: "req-scope-1",
+      action_type: "ask_user",
+      prompt: "请选择执行模式",
+      scope: {
+        session_id: "session-1",
+        thread_id: "thread-1",
+        turn_id: "turn-1",
+      },
+    });
+
+    expect(
+      parseStreamEvent({
+        type: "action_required",
+        data: {
+          id: "req-scope-2",
+          type: "elicitation",
+          message: "请补充发布渠道",
+          requested_schema: {
+            type: "object",
+            properties: {
+              channel: {
+                type: "string",
+              },
+            },
+          },
+          scope: {
+            session_id: "session-2",
+            threadId: "thread-2",
+          },
+        },
+      }),
+    ).toMatchObject({
+      type: "action_required",
+      request_id: "req-scope-2",
+      action_type: "elicitation",
+      prompt: "请补充发布渠道",
+      requested_schema: {
+        type: "object",
+        properties: {
+          channel: {
+            type: "string",
+          },
+        },
+      },
+      scope: {
+        session_id: "session-2",
+        thread_id: "thread-2",
+      },
+    });
+  });
+
   it("兼容嵌套 artifact_snapshot 结构", () => {
     expect(
       parseStreamEvent({

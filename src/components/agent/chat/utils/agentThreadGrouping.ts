@@ -1,6 +1,7 @@
 import { parseAIResponse } from "@/components/content-creator/a2ui/parser";
 import type { AgentThreadItem, AgentThreadItemStatus } from "../types";
 import { resolveInternalImageTaskDisplayName } from "./internalImagePlaceholder";
+import { resolveToolDisplayLabel } from "./toolDisplayInfo";
 
 export type AgentThreadGroupKind =
   | "thinking"
@@ -343,10 +344,10 @@ function resolveGroupTitle(kind: Exclude<AgentThreadGroupKind, "thinking">): str
     case "command":
       return "命令执行";
     case "subagent":
-      return "子代理协作";
+      return "协作成员";
     case "other":
     default:
-      return "技术细节";
+      return "执行过程";
   }
 }
 
@@ -395,7 +396,7 @@ function summarizeBrowserItem(item: AgentThreadItem): string | null {
   if (normalized.includes("evaluate") || normalized.includes("runtime")) {
     return "提取页面信息";
   }
-  return shortenText(url ? `操作 ${url}` : item.tool_name);
+  return shortenText(url ? `操作 ${url}` : resolveToolDisplayLabel(item.tool_name));
 }
 
 function summarizeSearchItem(item: AgentThreadItem): string | null {
@@ -409,7 +410,8 @@ function summarizeSearchItem(item: AgentThreadItem): string | null {
 
   const args = asRecord(item.arguments);
   return shortenText(
-    readString(args, ["query", "q", "pattern", "search", "url"]) || item.tool_name,
+    readString(args, ["query", "q", "pattern", "search", "url"]) ||
+      resolveToolDisplayLabel(item.tool_name),
   );
 }
 
@@ -420,7 +422,7 @@ function summarizeFileItem(item: AgentThreadItem): string | null {
   }
 
   if (item.type === "tool_call") {
-    return shortenText(item.tool_name);
+    return shortenText(resolveToolDisplayLabel(item.tool_name));
   }
 
   return null;
@@ -434,7 +436,8 @@ function summarizeCommandItem(item: AgentThreadItem): string | null {
   if (item.type === "tool_call") {
     const args = asRecord(item.arguments);
     return shortenText(
-      readString(args, ["command", "cmd", "script"]) || item.tool_name,
+      readString(args, ["command", "cmd", "script"]) ||
+        resolveToolDisplayLabel(item.tool_name),
       64,
     );
   }
@@ -465,7 +468,7 @@ function summarizeAlertItem(item: AgentThreadItem): string | null {
 
 function summarizeOtherItem(item: AgentThreadItem): string | null {
   if (item.type === "tool_call") {
-    return shortenText(item.tool_name);
+    return shortenText(resolveToolDisplayLabel(item.tool_name));
   }
   return null;
 }
@@ -505,7 +508,14 @@ function summarizeGroupPreviewLine(
       return summarizeAlertItem(item);
     case "approval":
       if (item.type === "approval_request" || item.type === "request_user_input") {
-        return shortenText(item.prompt || item.action_type || "需要你确认");
+        return shortenText(
+          item.prompt ||
+            (item.action_type === "ask_user"
+              ? "需要补充信息"
+              : item.action_type === "elicitation"
+                ? "需要进一步确认"
+                : "需要你确认"),
+        );
       }
       return null;
     case "other":
@@ -598,10 +608,10 @@ export function buildAgentThreadDisplayModel(
       countLabel: resolveCountLabel(current.kind, current.items.length),
       rawDetailLabel:
         current.kind === "thinking"
-          ? "查看思考细节"
+          ? "查看处理思路"
           : current.kind === "approval"
-            ? "查看处理项"
-            : "查看执行细节",
+            ? "查看待处理项"
+            : "查看执行过程",
       defaultExpanded: shouldDefaultExpand(current.kind, status),
       startedAt,
       completedAt,

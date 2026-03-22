@@ -27,7 +27,7 @@ function resolveRunSummary(event: CompatSubagentEvent): string | undefined {
     case "started":
       return `准备调度 ${event.totalTasks} 个子任务`;
     case "progress":
-      return `进度 ${event.progress.completed}/${event.progress.total}，运行中 ${event.progress.running}`;
+      return `进度 ${event.progress.completed}/${event.progress.total}，处理中 ${event.progress.running}`;
     case "completed":
       return event.success
         ? `子代理协作完成，耗时 ${Math.round(event.durationMs / 1000)} 秒`

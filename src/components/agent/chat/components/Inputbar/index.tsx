@@ -178,6 +178,7 @@ export const Inputbar: React.FC<InputbarProps> = ({
     activeSkill,
     setActiveSkill,
     clearActiveSkill,
+    setActiveBuiltinCommand,
   } = useInputbarController({
     input,
     setInput,
@@ -246,6 +247,7 @@ export const Inputbar: React.FC<InputbarProps> = ({
         activeSkill={activeSkill}
         onSelectCharacter={onSelectCharacter}
         onSelectSkill={setActiveSkill}
+        onSelectBuiltinCommand={setActiveBuiltinCommand}
         onClearSkill={clearActiveSkill}
         onNavigateToSettings={onNavigateToSettings}
         onImportSkill={onImportSkill}

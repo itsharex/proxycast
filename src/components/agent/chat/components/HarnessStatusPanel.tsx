@@ -74,6 +74,11 @@ import {
   classifySearchQuerySemantic,
   summarizeSearchQuerySemantics,
 } from "../utils/searchQueryGrouping";
+import {
+  normalizeToolNameKey,
+  resolveToolDisplayLabel,
+} from "../utils/toolDisplayInfo";
+import { resolveTeamWorkspaceStableProcessingLabel } from "../utils/teamWorkspaceCopy";
 import type { CompatSubagentRuntimeSnapshot } from "../utils/compatSubagentRuntime";
 import type { TeamRoleDefinition } from "../utils/teamDefinitions";
 
@@ -211,15 +216,15 @@ function resolveSubagentRuntimeStatusLabel(
 ): string {
   switch (status) {
     case "queued":
-      return "排队中";
+      return "稍后开始";
     case "running":
-      return "运行中";
+      return "处理中";
     case "completed":
       return "已完成";
     case "failed":
       return "失败";
     case "aborted":
-      return "已中止";
+      return "已暂停";
     case "idle":
     default:
       return "待开始";
@@ -247,13 +252,36 @@ function resolveSubagentRuntimeStatusVariant(
 function resolveSubagentSessionTypeLabel(value?: string): string {
   switch (value) {
     case "sub_agent":
-      return "子代理";
+      return "协作成员";
     case "fork":
-      return "分支会话";
+      return "分支协作";
     case "user":
     default:
-      return value?.trim() || "会话";
+      return value?.trim() || "协作会话";
   }
+}
+
+function resolveFriendlyToolLabel(value?: string): string | null {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalizeToolNameKey(normalized) === "turnsummary") {
+    return "当前任务摘要";
+  }
+
+  return resolveToolDisplayLabel(normalized);
+}
+
+function joinDisplayParts(
+  parts: Array<string | null | undefined>,
+): string | undefined {
+  const normalized = parts
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part));
+
+  return normalized.length > 0 ? normalized.join(" · ") : undefined;
 }
 
 function summarizeChildSubagentSessions(
@@ -514,7 +542,7 @@ function describeApproval(item: ActionRequired): string | undefined {
   const hints: string[] = [];
 
   if (item.toolName?.trim()) {
-    hints.push(item.toolName.trim());
+    hints.push(resolveFriendlyToolLabel(item.toolName) || item.toolName.trim());
   }
 
   const path = pickPathFromArguments(item.arguments);
@@ -541,11 +569,11 @@ function formatRuntimePhaseLabel(
     case "preparing":
       return "准备中";
     case "routing":
-      return "建回合中";
+      return "处理中";
     case "context":
-      return "装载上下文";
+      return "整理信息";
     case "failed":
-      return "失败";
+      return "需要处理";
     default:
       return runtimeStatus.phase;
   }
@@ -562,7 +590,7 @@ function formatWriteSourceLabel(source?: string): string {
     case "message_content":
       return "消息流";
     default:
-      return source || "运行中";
+      return source || "处理中";
   }
 }
 
@@ -1191,7 +1219,7 @@ function CompatSubagentFallbackCard({
     : snapshot.isRunning
       ? snapshot.progress
         ? `${snapshot.progress.completed}/${snapshot.progress.total}`
-        : "运行中"
+        : "处理中"
       : snapshot.result
         ? "已结束"
         : `${snapshot.recentActivity.length} 条`;
@@ -1215,11 +1243,11 @@ function CompatSubagentFallbackCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <TerminalSquare className="h-4 w-4 text-muted-foreground" />
-            <div className="text-sm font-medium text-foreground">兼容回退</div>
-            <Badge variant="outline">Fallback</Badge>
+            <div className="text-sm font-medium text-foreground">兼容模式</div>
+            <Badge variant="outline">旧链路</Badge>
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            仅用于承接旧 scheduler 信号，不作为 Team 主事实源。
+            仅用于承接旧调度信号，不作为当前协作视图的主事实源。
           </div>
         </div>
         <Badge variant={statusVariant}>{statusLabel}</Badge>
@@ -1339,8 +1367,8 @@ export function HarnessStatusPanel({
   toolInventoryLoading = false,
   toolInventoryError = null,
   onRefreshToolInventory,
-  title = "Harness 运行面板",
-  description = "展示最近文件活动、工具输出、审批与上下文装载情况。",
+  title = "处理工作台",
+  description = "集中查看最新进展、文件变更、处理结果和待确认事项。",
   toggleLabel = "详情",
   leadContent,
   selectedTeamLabel = null,
@@ -1543,11 +1571,11 @@ export function HarnessStatusPanel({
     const sections: HarnessSectionNavItem[] = [];
 
     if (hasSelectedTeamConfig) {
-      sections.push({ key: "team_config", label: "当前 Team" });
+      sections.push({ key: "team_config", label: "协作设置" });
     }
 
     if (harnessState.runtimeStatus) {
-      sections.push({ key: "runtime", label: "当前阶段" });
+      sections.push({ key: "runtime", label: "任务进展" });
     }
     if (harnessState.activeFileWrites.length > 0) {
       sections.push({ key: "writes", label: "文件写入" });
@@ -1575,7 +1603,7 @@ export function HarnessStatusPanel({
       harnessState.delegatedTasks.length > 0 ||
       hasCompatSchedulerSignals
     ) {
-      sections.push({ key: "delegation", label: "子任务委派" });
+      sections.push({ key: "delegation", label: "协作成员" });
     }
     if (harnessState.latestContextTrace.length > 0) {
       sections.push({ key: "context", label: "上下文轨迹" });
@@ -1609,7 +1637,7 @@ export function HarnessStatusPanel({
     if (harnessState.runtimeStatus) {
       cards.push({
         sectionKey: "runtime",
-        title: "执行阶段",
+        title: "当前任务",
         value: formatRuntimePhaseLabel(harnessState.runtimeStatus),
         hint:
           harnessState.runtimeStatus.detail || harnessState.runtimeStatus.title,
@@ -1620,7 +1648,7 @@ export function HarnessStatusPanel({
     if (hasSelectedTeamConfig) {
       cards.push({
         sectionKey: "team_config",
-        title: "当前 Team",
+        title: "协作设置",
         value:
           selectedTeamLabel?.trim() ||
           `${selectedTeamRoles?.length || 0} 个角色`,
@@ -1628,7 +1656,7 @@ export function HarnessStatusPanel({
           selectedTeamSummary?.trim() ||
           ((selectedTeamRoles?.length || 0) > 0
             ? `已配置 ${selectedTeamRoles?.length || 0} 个角色`
-            : "当前回合已启用 Team 配置"),
+            : "本次已启用协作设置"),
         icon: Workflow,
       });
     }
@@ -1647,15 +1675,15 @@ export function HarnessStatusPanel({
     if (realTeamSummary.total > 0) {
       cards.push({
         sectionKey: "delegation",
-        title: "Team 会话",
+        title: "协作成员",
         value:
           realTeamSummary.active > 0
             ? `${realTeamSummary.active}/${realTeamSummary.total}`
             : `${realTeamSummary.total}`,
         hint:
           realTeamSummary.active > 0
-            ? `运行 ${realTeamSummary.running} · 排队 ${realTeamSummary.queued} · 已收敛 ${realTeamSummary.settled}`
-            : `已收敛 ${realTeamSummary.settled} · 失败 ${realTeamSummary.failed}`,
+            ? `处理中 ${realTeamSummary.running} · 等待中 ${realTeamSummary.queued} · 已完成 ${realTeamSummary.settled}`
+            : `已完成 ${realTeamSummary.settled} · 需处理 ${realTeamSummary.failed}`,
         icon: Workflow,
       });
     }
@@ -1972,7 +2000,7 @@ export function HarnessStatusPanel({
               {realTeamSummary.active > 0 ? (
                 <Badge variant="secondary" className="gap-1">
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  Team 运行中
+                  协作处理中
                 </Badge>
               ) : compatSubagentRuntime.isRunning ? (
                 <Badge variant="secondary" className="gap-1">
@@ -2089,7 +2117,7 @@ export function HarnessStatusPanel({
               {hasSelectedTeamConfig ? (
                 <Section
                   sectionKey="team_config"
-                  title="当前 Team 配置"
+                  title="当前协作设置"
                   badge={
                     selectedTeamRoles && selectedTeamRoles.length > 0
                       ? `${selectedTeamRoles.length} 个角色`
@@ -2101,7 +2129,7 @@ export function HarnessStatusPanel({
                     <div className="rounded-xl border border-sky-200/80 bg-sky-50/50 p-3">
                       <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                         <Workflow className="h-4 w-4 text-sky-600" />
-                        <span>{selectedTeamLabel || "当前已启用 Team"}</span>
+                        <span>{selectedTeamLabel || "当前已启用协作方案"}</span>
                       </div>
                       {selectedTeamSummary ? (
                         <div className="mt-2 text-sm text-muted-foreground">
@@ -2109,7 +2137,7 @@ export function HarnessStatusPanel({
                         </div>
                       ) : (
                         <div className="mt-2 text-sm text-muted-foreground">
-                          当前回合会优先参考所选 Team 的角色分工来决定是否委派子代理。
+                          本次会优先参考所选协作方案的角色分工，按需邀请协作成员一起处理。
                         </div>
                       )}
                     </div>
@@ -2127,12 +2155,12 @@ export function HarnessStatusPanel({
                               </div>
                               {role.profileId ? (
                                 <Badge variant="outline">
-                                  画像 {role.profileId}
+                                  模板 {role.profileId}
                                 </Badge>
                               ) : null}
                               {role.roleKey ? (
                                 <Badge variant="outline">
-                                  Role {role.roleKey}
+                                  职责 {role.roleKey}
                                 </Badge>
                               ) : null}
                             </div>
@@ -2161,7 +2189,7 @@ export function HarnessStatusPanel({
               {harnessState.runtimeStatus ? (
                 <Section
                   sectionKey="runtime"
-                  title="当前执行阶段"
+                  title="当前任务进展"
                   badge={formatRuntimePhaseLabel(harnessState.runtimeStatus)}
                   registerRef={registerSectionRef}
                 >
@@ -2409,7 +2437,10 @@ export function HarnessStatusPanel({
                                   onOpenPath={handleOpenPathValue}
                                 />
                               </div>
-                              <Badge variant="outline">{signal.toolName}</Badge>
+                              <Badge variant="outline">
+                                {resolveFriendlyToolLabel(signal.toolName) ||
+                                  signal.toolName}
+                              </Badge>
                             </div>
                             {signal.preview ? (
                               <div className="mt-2 rounded-lg bg-muted/50 p-2 text-xs text-muted-foreground">
@@ -3165,7 +3196,13 @@ export function HarnessStatusPanel({
                               onClick={() =>
                                 void openPreview({
                                   title: latestEvent.displayName,
-                                  description: `${describeAction(latestEvent.action)} · ${describeKind(group.kind)} · ${latestEvent.sourceToolName}`,
+                                  description: joinDisplayParts([
+                                    describeAction(latestEvent.action),
+                                    describeKind(group.kind),
+                                    resolveFriendlyToolLabel(
+                                      latestEvent.sourceToolName,
+                                    ) || latestEvent.sourceToolName,
+                                  ]),
                                   path: latestEvent.path,
                                   content: latestEvent.content,
                                   preview: latestEvent.preview,
@@ -3231,7 +3268,13 @@ export function HarnessStatusPanel({
                               onClick={() =>
                                 void openPreview({
                                   title: event.displayName,
-                                  description: `${describeAction(event.action)} · ${describeKind(event.kind)} · ${event.sourceToolName}`,
+                                  description: joinDisplayParts([
+                                    describeAction(event.action),
+                                    describeKind(event.kind),
+                                    resolveFriendlyToolLabel(
+                                      event.sourceToolName,
+                                    ) || event.sourceToolName,
+                                  ]),
                                   path: event.path,
                                   content: event.content,
                                   preview: event.preview,
@@ -3267,7 +3310,10 @@ export function HarnessStatusPanel({
                                 <Clock3 className="h-3.5 w-3.5" />
                                 <span>{formatTime(event.timestamp)}</span>
                                 <span>·</span>
-                                <span>{event.sourceToolName}</span>
+                                <span>
+                                  {resolveFriendlyToolLabel(event.sourceToolName) ||
+                                    event.sourceToolName}
+                                </span>
                               </div>
                               {event.preview ? (
                                 <div className="mt-2 rounded-lg bg-muted/50 p-2 text-xs text-muted-foreground">
@@ -3350,12 +3396,12 @@ export function HarnessStatusPanel({
               hasCompatSchedulerSignals ? (
                 <Section
                   sectionKey="delegation"
-                  title="子任务委派"
+                  title="协作成员"
                   badge={
                     realTeamSummary.active > 0
-                      ? `运行中 ${realTeamSummary.active}`
+                      ? `处理中 ${realTeamSummary.active}`
                       : realTeamSummary.total > 0
-                        ? `${realTeamSummary.total} 个会话`
+                        ? `${realTeamSummary.total} 个协作`
                         : harnessState.delegatedTasks.length > 0
                         ? `${harnessState.delegatedTasks.length} 条`
                         : undefined
@@ -3367,17 +3413,17 @@ export function HarnessStatusPanel({
                       <div className="rounded-xl border border-border bg-background p-3">
                         <div className="flex items-center justify-between gap-3">
                           <div className="text-sm font-medium text-foreground">
-                            当前 Team 会话
+                            当前协作会话
                           </div>
                           <Badge variant="outline">
                             {realTeamSummary.total} 个
                           </Badge>
                         </div>
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                          <span>运行中 {realTeamSummary.running}</span>
-                          <span>排队中 {realTeamSummary.queued}</span>
-                          <span>已收敛 {realTeamSummary.settled}</span>
-                          <span>失败 {realTeamSummary.failed}</span>
+                          <span>处理中 {realTeamSummary.running}</span>
+                          <span>等待中 {realTeamSummary.queued}</span>
+                          <span>已完成 {realTeamSummary.settled}</span>
+                          <span>需处理 {realTeamSummary.failed}</span>
                         </div>
                       </div>
                     ) : null}
@@ -3426,7 +3472,7 @@ export function HarnessStatusPanel({
                             {task.status === "completed"
                               ? "已完成"
                               : task.status === "running"
-                                ? "运行中"
+                                ? "处理中"
                                 : "失败"}
                           </Badge>
                         </div>
@@ -3436,7 +3482,7 @@ export function HarnessStatusPanel({
                     {childSubagentSessions.length > 0 ? (
                       <div className="space-y-3">
                         <div className="text-xs font-medium text-muted-foreground">
-                          真实 Team 会话
+                          实时协作会话
                         </div>
                         {childSubagentSessions.map((session) => (
                           <div
@@ -3476,8 +3522,28 @@ export function HarnessStatusPanel({
                                   {session.provider_name ? (
                                     <span>提供方：{session.provider_name}</span>
                                   ) : null}
+                                  {session.team_parallel_budget !== undefined &&
+                                  session.team_active_count !== undefined ? (
+                                    <span>
+                                      处理窗口：
+                                      {session.team_active_count}/
+                                      {session.team_parallel_budget}
+                                    </span>
+                                  ) : null}
+                                  {session.provider_parallel_budget === 1 &&
+                                  session.provider_concurrency_group ? (
+                                    <span>
+                                      {resolveTeamWorkspaceStableProcessingLabel()}：
+                                      当前服务按顺序处理
+                                    </span>
+                                  ) : null}
                                   {session.origin_tool ? (
-                                    <span>来源：{session.origin_tool}</span>
+                                    <span>
+                                      来源：
+                                      {resolveFriendlyToolLabel(
+                                        session.origin_tool,
+                                      ) || session.origin_tool}
+                                    </span>
                                   ) : null}
                                   <span>更新：{formatUnixTimestamp(session.updated_at)}</span>
                                 </div>
@@ -3487,6 +3553,11 @@ export function HarnessStatusPanel({
                                     className="mt-2 text-xs text-muted-foreground"
                                     onOpenUrl={handleOpenExternalLink}
                                   />
+                                ) : null}
+                                {session.queue_reason ? (
+                                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs leading-5 text-amber-900">
+                                    {session.queue_reason}
+                                  </div>
                                 ) : null}
                               </div>
                               {onOpenSubagentSession ? (
@@ -3498,7 +3569,7 @@ export function HarnessStatusPanel({
                                     onOpenSubagentSession(session.id)
                                   }
                                 >
-                                  打开会话
+                                  查看详情
                                 </Button>
                               ) : null}
                             </div>

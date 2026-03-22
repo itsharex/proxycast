@@ -19,6 +19,7 @@ const {
   mockToast,
   mockParseSkillSlashCommand,
   mockTryExecuteSlashSkillCommand,
+  mockWechatChannelSetRuntimeModel,
 } = vi.hoisted(() => ({
   mockInitAsterAgent: vi.fn(),
   mockSubmitAgentRuntimeTurn: vi.fn(),
@@ -42,6 +43,7 @@ const {
     (): { skillName: string; userInput: string } | null => null,
   ),
   mockTryExecuteSlashSkillCommand: vi.fn(async () => false),
+  mockWechatChannelSetRuntimeModel: vi.fn(async () => undefined),
 }));
 
 vi.mock("@/lib/api/agentRuntime", () => ({
@@ -72,6 +74,10 @@ vi.mock("sonner", () => ({
 vi.mock("./skillCommand", () => ({
   parseSkillSlashCommand: mockParseSkillSlashCommand,
   tryExecuteSlashSkillCommand: mockTryExecuteSlashSkillCommand,
+}));
+
+vi.mock("@/lib/api/channelsRuntime", () => ({
+  wechatChannelSetRuntimeModel: mockWechatChannelSetRuntimeModel,
 }));
 
 import { useAsterAgentChat } from "./useAsterAgentChat";
@@ -207,6 +213,7 @@ beforeEach(() => {
   mockSafeListen.mockReset();
   mockParseSkillSlashCommand.mockReset();
   mockTryExecuteSlashSkillCommand.mockReset();
+  mockWechatChannelSetRuntimeModel.mockReset();
   mockToast.success.mockReset();
   mockToast.error.mockReset();
   mockToast.info.mockReset();
@@ -1660,6 +1667,111 @@ describe("useAsterAgentChat action_required 渲染链路", () => {
             part.actionRequired.requestId === "req-ar-1",
         ),
       ).toBe(true);
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  it("收到带 scope 的 action_required 后应保留作用域，并在提交时透传 action_scope", async () => {
+    const workspaceId = "ws-action-required-scope";
+    seedSession(workspaceId, "session-action-required-scope");
+    const harness = mountHook(workspaceId);
+    const stream = captureTurnStream();
+
+    try {
+      await flushEffects();
+
+      await act(async () => {
+        await harness
+          .getValue()
+          .sendMessage("请继续", [], false, false, false, "react");
+      });
+
+      act(() => {
+        stream.emit({
+          type: "action_required",
+          request_id: "req-ar-scope-1",
+          action_type: "ask_user",
+          prompt: "请选择执行模式",
+          scope: {
+            session_id: "session-action-required-scope",
+            thread_id: "thread-action-required-scope",
+            turn_id: "turn-action-required-scope",
+          },
+          questions: [
+            {
+              question: "请选择执行模式",
+              options: ["自动执行", "确认后执行"],
+            },
+          ],
+        });
+      });
+
+      let assistantMessage = [...harness.getValue().messages]
+        .reverse()
+        .find((msg) => msg.role === "assistant");
+
+      expect(assistantMessage?.actionRequests?.[0]?.scope).toEqual({
+        sessionId: "session-action-required-scope",
+        threadId: "thread-action-required-scope",
+        turnId: "turn-action-required-scope",
+      });
+
+      await act(async () => {
+        await harness.getValue().confirmAction({
+          requestId: "req-ar-scope-1",
+          confirmed: true,
+          actionType: "ask_user",
+          response: '{"answer":"自动执行"}',
+        });
+      });
+
+      assistantMessage = [...harness.getValue().messages]
+        .reverse()
+        .find((msg) => msg.role === "assistant");
+
+      expect(mockRespondAgentRuntimeAction).toHaveBeenCalledWith({
+        session_id: "session-action-required-scope",
+        request_id: "req-ar-scope-1",
+        action_type: "ask_user",
+        confirmed: true,
+        response: '{"answer":"自动执行"}',
+        user_data: { answer: "自动执行" },
+        metadata: {
+          elicitation_context: {
+            source: "action_required",
+            mode: "runtime_protocol",
+            form_id: "req-ar-scope-1",
+            action_type: "ask_user",
+            field_count: 1,
+            prompt: "请选择执行模式",
+            entries: [
+              {
+                fieldId: "req-ar-scope-1_answer",
+                fieldKey: "answer",
+                label: "请选择执行模式",
+                value: "自动执行",
+                summary: "自动执行",
+              },
+            ],
+          },
+        },
+        event_name: stream.getEventName(),
+        action_scope: {
+          session_id: "session-action-required-scope",
+          thread_id: "thread-action-required-scope",
+          turn_id: "turn-action-required-scope",
+        },
+      });
+      expect(assistantMessage?.actionRequests?.[0]).toMatchObject({
+        requestId: "req-ar-scope-1",
+        status: "submitted",
+        scope: {
+          sessionId: "session-action-required-scope",
+          threadId: "thread-action-required-scope",
+          turnId: "turn-action-required-scope",
+        },
+      });
     } finally {
       harness.unmount();
     }

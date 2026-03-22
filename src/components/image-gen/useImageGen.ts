@@ -39,6 +39,7 @@ interface EndpointAttemptResult {
 
 interface EndpointRequestOptions {
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 interface BackfillImagesResult {
@@ -58,6 +59,7 @@ interface SaveImageToResourceResult {
 interface UseImageGenOptions {
   preferredProviderId?: string;
   preferredModelId?: string;
+  allowFallback?: boolean;
 }
 
 const IMAGE_REQUEST_TIMEOUT_MS = 180_000;
@@ -67,6 +69,7 @@ const FAL_QUEUE_POLL_INTERVAL_MS = 1500;
 const FAL_QUEUE_TIMEOUT_MS = 180_000;
 const IMAGE_GEN_MATERIAL_TAG = "image-gen";
 const IMAGE_MATERIAL_NAME_MAX_LENGTH = 48;
+export const IMAGE_GENERATION_CANCELED_MESSAGE = "已停止当前图片任务";
 
 function imageGenDebugLog(...args: unknown[]): void {
   if (!isDebugFlagEnabled(PROVIDER_DEBUG_KEY)) {
@@ -123,12 +126,170 @@ function ensureHttpProtocol(host: string): string {
   return `https://${host}`;
 }
 
+function createAbortError(message: string): Error {
+  try {
+    return new DOMException(message, "AbortError");
+  } catch {
+    const error = new Error(message);
+    error.name = "AbortError";
+    return error;
+  }
+}
+
+function isAbortLikeError(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === "AbortError";
+  }
+
+  if (error instanceof Error) {
+    return (
+      error.name === "AbortError" ||
+      /abort|aborted|cancelled|canceled/i.test(error.message)
+    );
+  }
+
+  return false;
+}
+
+function isGenerationCanceledError(error: unknown): boolean {
+  if (isAbortLikeError(error)) {
+    return true;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes(IMAGE_GENERATION_CANCELED_MESSAGE);
+}
+
+function bindAbortSignal(
+  controller: AbortController,
+  signal?: AbortSignal,
+): () => void {
+  if (!signal) {
+    return () => undefined;
+  }
+
+  if (signal.aborted) {
+    controller.abort(
+      signal.reason ?? createAbortError(IMAGE_GENERATION_CANCELED_MESSAGE),
+    );
+    return () => undefined;
+  }
+
+  const handleAbort = () => {
+    controller.abort(
+      signal.reason ?? createAbortError(IMAGE_GENERATION_CANCELED_MESSAGE),
+    );
+  };
+
+  signal.addEventListener("abort", handleAbort, { once: true });
+  return () => signal.removeEventListener("abort", handleAbort);
+}
+
+async function fetchWithManagedAbort(
+  input: string,
+  init: globalThis.RequestInit,
+  options?: EndpointRequestOptions,
+): Promise<Response> {
+  const timeoutMs = options?.timeoutMs ?? 0;
+  const abortController = new AbortController();
+  const cleanupExternalAbort = bindAbortSignal(abortController, options?.signal);
+  const timeoutHandle =
+    timeoutMs > 0
+      ? setTimeout(() => {
+          abortController.abort(createAbortError("请求超时"));
+        }, timeoutMs)
+      : null;
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: abortController.signal,
+    });
+  } finally {
+    cleanupExternalAbort();
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
+
+async function attemptFalQueueCancellation(
+  cancelUrl: string,
+  apiKey: string,
+): Promise<void> {
+  try {
+    const response = await fetchWithManagedAbort(
+      cancelUrl,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Key ${apiKey}`,
+        },
+      },
+      {
+        timeoutMs: 10_000,
+      },
+    );
+
+    if (response.ok || response.status === 404) {
+      return;
+    }
+
+    const rawText = await response.text();
+    console.warn(
+      `[ImageGen][fal/queue-cancel] cancel failed: ${response.status} - ${previewResponseText(rawText, 300)}`,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[ImageGen][fal/queue-cancel] cancel request failed: ${message}`);
+  }
+}
+
+function bindFalQueueCancellation(
+  cancelUrl: string | undefined,
+  apiKey: string,
+  signal?: AbortSignal,
+): () => void {
+  const normalizedCancelUrl = cancelUrl?.trim();
+  if (!normalizedCancelUrl || !signal) {
+    return () => undefined;
+  }
+
+  let cancelRequested = false;
+  const requestCancellation = () => {
+    if (cancelRequested) {
+      return;
+    }
+    cancelRequested = true;
+    void attemptFalQueueCancellation(normalizedCancelUrl, apiKey);
+  };
+
+  if (signal.aborted) {
+    requestCancellation();
+    return () => undefined;
+  }
+
+  signal.addEventListener("abort", requestCancellation, { once: true });
+  return () => signal.removeEventListener("abort", requestCancellation);
+}
+
 function normalizeFalApiHost(apiHost: string): string {
   const trimmed = (apiHost || "").trim().replace(/\/+$/, "");
   if (!trimmed) {
     return FAL_DEFAULT_API_HOST;
   }
-  return ensureHttpProtocol(trimmed);
+  const normalized = ensureHttpProtocol(trimmed);
+
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.hostname === "fal.run" || parsed.hostname === "queue.fal.run") {
+      return `${parsed.protocol}//${parsed.hostname}`;
+    }
+  } catch {
+    // noop
+  }
+
+  return normalized;
 }
 
 function normalizeFalModel(model: string): string {
@@ -209,17 +370,70 @@ function normalizeReferenceImages(referenceImages: string[]): string[] {
     .filter((url) => url.length > 0);
 }
 
+function stripFalEndpointSuffix(model: string): string {
+  return normalizeFalModel(model).replace(
+    /(\/(?:edit|text-to-image|text_to_image))$/i,
+    "",
+  );
+}
+
+function isFalNanoBananaModel(model: string): boolean {
+  const normalized = stripFalEndpointSuffix(model);
+  return (
+    normalized === "fal-ai/nano-banana" ||
+    normalized === "fal-ai/nano-banana-pro"
+  );
+}
+
+function isFalNanoBananaEditEndpoint(endpointModel: string): boolean {
+  const normalized = normalizeFalModel(endpointModel);
+  return /\/edit$/i.test(normalized);
+}
+
 function buildFalInput(
   prompt: string,
   referenceImages: string[],
   size: string,
+  endpointModel: string,
   includeOptionalFields = true,
 ): Record<string, unknown> {
   const cleanedReferences = normalizeReferenceImages(referenceImages);
+  const normalizedPrompt = (() => {
+    const trimmedPrompt = prompt.trim();
+    if (!trimmedPrompt) {
+      return trimmedPrompt;
+    }
+
+    if (isFalNanoBananaModel(endpointModel) && trimmedPrompt.length < 3) {
+      return cleanedReferences.length > 0
+        ? `请基于参考图围绕“${trimmedPrompt}”完成图像编辑`
+        : `请围绕“${trimmedPrompt}”生成一张图像`;
+    }
+
+    return trimmedPrompt;
+  })();
   const input: Record<string, unknown> = {
-    prompt,
+    prompt: normalizedPrompt,
     num_images: 1,
   };
+
+  if (isFalNanoBananaModel(endpointModel)) {
+    if (
+      cleanedReferences.length > 0 &&
+      isFalNanoBananaEditEndpoint(endpointModel)
+    ) {
+      input.image_urls = cleanedReferences;
+    }
+
+    const aspectRatio = sizeToAspectRatio(size);
+    if (aspectRatio) {
+      input.aspect_ratio = aspectRatio;
+    }
+
+    input.output_format = "png";
+    input.safety_tolerance = "4";
+    return input;
+  }
 
   if (cleanedReferences.length > 0) {
     input.image_urls = cleanedReferences;
@@ -252,6 +466,184 @@ function buildFalInput(
   }
 
   return input;
+}
+
+function resolveFalQueueResponseEndpoint(candidate: string): string {
+  const normalized = candidate.trim().replace(/\/+$/, "");
+  if (!normalized) {
+    return normalized;
+  }
+
+  if (/\/response(?:\?.*)?$/i.test(normalized)) {
+    return normalized;
+  }
+
+  if (/\/status(?:\/stream)?(?:\?.*)?$/i.test(normalized)) {
+    return normalized.replace(/\/status(?:\/stream)?(?:\?.*)?$/i, "/response");
+  }
+
+  return `${normalized}/response`;
+}
+
+function buildFalQueueResultCandidates(
+  responseUrl?: string,
+  statusUrl?: string,
+  fallbackRequestBase?: string,
+): string[] {
+  const candidates: string[] = [];
+  const pushCandidate = (candidate?: string) => {
+    const normalized = candidate?.trim();
+    if (!normalized || candidates.includes(normalized)) {
+      return;
+    }
+    candidates.push(normalized);
+  };
+
+  if (responseUrl) {
+    pushCandidate(responseUrl);
+    pushCandidate(resolveFalQueueResponseEndpoint(responseUrl));
+  }
+
+  if (statusUrl) {
+    const legacyBase = statusUrl.replace(
+      /\/status(?:\/stream)?(?:\?.*)?$/i,
+      "",
+    );
+    pushCandidate(resolveFalQueueResponseEndpoint(statusUrl));
+    pushCandidate(legacyBase);
+  }
+
+  if (fallbackRequestBase) {
+    pushCandidate(resolveFalQueueResponseEndpoint(fallbackRequestBase));
+    pushCandidate(fallbackRequestBase);
+  }
+
+  return candidates;
+}
+
+interface FalQueueResultFetch {
+  imageUrl: string | null;
+  error: string | null;
+  pending: boolean;
+}
+
+async function fetchFalQueueResult(
+  endpoint: string,
+  apiKey: string,
+  signal?: AbortSignal,
+): Promise<FalQueueResultFetch> {
+  let response: Response;
+  try {
+    response = await fetchWithManagedAbort(
+      endpoint,
+      {
+        headers: {
+          Authorization: `Key ${apiKey}`,
+        },
+      },
+      {
+        timeoutMs: IMAGE_REQUEST_TIMEOUT_MS,
+        signal,
+      },
+    );
+  } catch (error) {
+    if (signal?.aborted && isAbortLikeError(error)) {
+      throw new Error(IMAGE_GENERATION_CANCELED_MESSAGE);
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      imageUrl: null,
+      error: `Fal 队列结果获取异常: ${message}`,
+      pending: false,
+    };
+  }
+
+  const rawText = await response.text();
+  const payload = tryParseJson(rawText) as Record<string, unknown> | null;
+  const statusText =
+    typeof payload?.status === "string" ? payload.status.toUpperCase() : "";
+  const errorText =
+    typeof payload?.error === "string" ? payload.error.trim() : "";
+
+  if (statusText === "COMPLETED" && errorText) {
+    return {
+      imageUrl: null,
+      error: `Fal 队列任务失败: ${errorText}`,
+      pending: false,
+    };
+  }
+
+  if (
+    statusText === "FAILED" ||
+    statusText === "ERROR" ||
+    statusText === "CANCELLED"
+  ) {
+    return {
+      imageUrl: null,
+      error: `Fal 队列任务失败: ${errorText || previewResponseText(rawText, 300) || statusText}`,
+      pending: false,
+    };
+  }
+
+  if (
+    response.status === 202 ||
+    statusText === "IN_QUEUE" ||
+    statusText === "IN_PROGRESS"
+  ) {
+    return {
+      imageUrl: null,
+      error: null,
+      pending: true,
+    };
+  }
+
+  if (!response.ok) {
+    return {
+      imageUrl: null,
+      error: `Fal 队列结果获取失败: ${response.status} - ${previewResponseText(rawText, 300)}`,
+      pending: false,
+    };
+  }
+
+  const imageUrl = payload
+    ? extractImageUrlFromPayload(payload)
+    : extractImageUrlFromText(rawText);
+
+  if (imageUrl) {
+    return {
+      imageUrl,
+      error: null,
+      pending: false,
+    };
+  }
+
+  return {
+    imageUrl: null,
+    error: "Fal 队列结果中未找到图片地址",
+    pending: false,
+  };
+}
+
+function summarizeImageGenerationErrors(errors: string[]): string {
+  const normalizedErrors = Array.from(
+    new Set(errors.map((item) => item.trim()).filter(Boolean)),
+  );
+
+  if (normalizedErrors.length === 0) {
+    return "图片生成失败";
+  }
+
+  if (normalizedErrors.length === 1) {
+    return normalizedErrors[0];
+  }
+
+  const preview = normalizedErrors.slice(0, 3).join("；");
+  const suffix =
+    normalizedErrors.length > 3
+      ? `；另有 ${normalizedErrors.length - 3} 条错误`
+      : "";
+  return `全部图片生成失败：${preview}${suffix}`;
 }
 
 function wrapBase64AsDataUrl(value: string): string {
@@ -520,27 +912,29 @@ async function requestImageWithEndpoint(
   options?: EndpointRequestOptions,
 ): Promise<EndpointAttemptResult> {
   const timeoutMs = options?.timeoutMs ?? IMAGE_REQUEST_TIMEOUT_MS;
-  const abortController = new AbortController();
-  const timeoutHandle =
-    timeoutMs > 0
-      ? setTimeout(() => {
-          abortController.abort();
-        }, timeoutMs)
-      : null;
-
   let response: Response;
 
   try {
-    response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+    response = await fetchWithManagedAbort(
+      endpoint,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(payload),
-      signal: abortController.signal,
-    });
+      {
+        timeoutMs,
+        signal: options?.signal,
+      },
+    );
   } catch (error) {
+    if (options?.signal?.aborted && isAbortLikeError(error)) {
+      throw new Error(IMAGE_GENERATION_CANCELED_MESSAGE);
+    }
+
     const rawErrorMessage =
       error instanceof Error ? error.message : String(error);
     const loweredMessage = rawErrorMessage.toLowerCase();
@@ -562,10 +956,6 @@ async function requestImageWithEndpoint(
         : `请求异常: ${rawErrorMessage}`,
       assistantText: null,
     };
-  } finally {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-    }
   }
 
   const contentType = response.headers.get("content-type") || "";
@@ -993,6 +1383,7 @@ async function requestImageFromNewApi(
   prompt: string,
   referenceImages: string[],
   size: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const referenceText =
     referenceImages.length > 0
@@ -1017,6 +1408,7 @@ async function requestImageFromNewApi(
     imagesRequest,
     apiKey,
     "new-api/images",
+    { signal },
   );
 
   if (imageAttempt.imageUrl) {
@@ -1054,6 +1446,7 @@ async function requestImageFromNewApi(
     chatRequest,
     apiKey,
     "new-api/chat",
+    { signal },
   );
 
   if (chatAttempt.imageUrl) {
@@ -1106,6 +1499,7 @@ async function requestImageFromNewApi(
       },
       apiKey,
       "new-api/chat-retry",
+      { signal },
     );
 
     if (chatRetryAttempt.imageUrl) {
@@ -1130,6 +1524,7 @@ async function requestImageFromNewApi(
     responsesRequest,
     apiKey,
     "new-api/responses",
+    { signal },
   );
 
   if (responsesAttempt.imageUrl) {
@@ -1174,6 +1569,7 @@ async function requestImageFromNewApi(
     geminiNativeRequest,
     apiKey,
     "new-api/gemini-native",
+    { signal },
   );
 
   if (geminiNativeAttempt.imageUrl) {
@@ -1185,8 +1581,26 @@ async function requestImageFromNewApi(
   );
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(createAbortError(IMAGE_GENERATION_CANCELED_MESSAGE));
+      return;
+    }
+
+    const timeoutHandle = setTimeout(() => {
+      signal?.removeEventListener("abort", handleAbort);
+      resolve();
+    }, ms);
+
+    const handleAbort = () => {
+      clearTimeout(timeoutHandle);
+      signal?.removeEventListener("abort", handleAbort);
+      reject(createAbortError(IMAGE_GENERATION_CANCELED_MESSAGE));
+    };
+
+    signal?.addEventListener("abort", handleAbort, { once: true });
+  });
 }
 
 async function requestImageFromFalEndpoint(
@@ -1195,36 +1609,35 @@ async function requestImageFromFalEndpoint(
   apiKey: string,
   logTag: string,
   timeoutMs = IMAGE_REQUEST_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<EndpointAttemptResult> {
-  const abortController = new AbortController();
-  const timeoutHandle =
-    timeoutMs > 0
-      ? setTimeout(() => {
-          abortController.abort();
-        }, timeoutMs)
-      : null;
-
   let response: Response;
   try {
-    response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Key ${apiKey}`,
+    response = await fetchWithManagedAbort(
+      endpoint,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Key ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(payload),
-      signal: abortController.signal,
-    });
+      {
+        timeoutMs,
+        signal,
+      },
+    );
   } catch (error) {
+    if (signal?.aborted && isAbortLikeError(error)) {
+      throw new Error(IMAGE_GENERATION_CANCELED_MESSAGE);
+    }
+
     const message = error instanceof Error ? error.message : String(error);
     return {
       imageUrl: null,
       error: `请求异常: ${message}`,
     };
-  } finally {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-    }
   }
 
   const rawText = await response.text();
@@ -1263,19 +1676,28 @@ async function requestImageFromFalQueue(
   endpointModel: string,
   payload: Record<string, unknown>,
   apiKey: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const queueHost = resolveFalQueueHost(apiHost).replace(/\/+$/, "");
   const normalizedModel = endpointModel.replace(/^\/+/, "");
   const submitEndpoint = `${queueHost}/${normalizedModel}`;
+  let fallbackRequestBase = "";
 
-  const submitResponse = await fetch(submitEndpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Key ${apiKey}`,
+  const submitResponse = await fetchWithManagedAbort(
+    submitEndpoint,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Key ${apiKey}`,
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
+    {
+      timeoutMs: IMAGE_REQUEST_TIMEOUT_MS,
+      signal,
+    },
+  );
 
   const submitRaw = await submitResponse.text();
   const submitPayload = tryParseJson(submitRaw) as Record<
@@ -1301,14 +1723,21 @@ async function requestImageFromFalQueue(
     typeof submitPayload?.response_url === "string"
       ? submitPayload.response_url
       : undefined;
+  let cancelUrl =
+    typeof submitPayload?.cancel_url === "string"
+      ? submitPayload.cancel_url
+      : undefined;
 
   if (requestId) {
-    const fallbackRequestBase = `${queueHost}/${normalizedModel}/requests/${encodeURIComponent(requestId)}`;
+    fallbackRequestBase = `${queueHost}/${normalizedModel}/requests/${encodeURIComponent(requestId)}`;
     if (!statusUrl) {
       statusUrl = `${fallbackRequestBase}/status`;
     }
     if (!responseUrl) {
-      responseUrl = fallbackRequestBase;
+      responseUrl = resolveFalQueueResponseEndpoint(fallbackRequestBase);
+    }
+    if (!cancelUrl) {
+      cancelUrl = `${fallbackRequestBase}/cancel`;
     }
   }
 
@@ -1316,131 +1745,129 @@ async function requestImageFromFalQueue(
     throw new Error("Fal 队列提交成功，但返回中缺少状态查询地址");
   }
 
-  const startedAt = Date.now();
-  let queueStatus = "";
+  const cleanupQueueCancellation = bindFalQueueCancellation(
+    cancelUrl,
+    apiKey,
+    signal,
+  );
 
-  while (Date.now() - startedAt < FAL_QUEUE_TIMEOUT_MS) {
-    if (statusUrl) {
-      const statusResponse = await fetch(statusUrl, {
-        headers: {
-          Authorization: `Key ${apiKey}`,
-        },
-      });
-      const statusRaw = await statusResponse.text();
-      const statusPayload = tryParseJson(statusRaw) as Record<
-        string,
-        unknown
-      > | null;
+  try {
+    const startedAt = Date.now();
+    let queueStatus = "";
 
-      if (!statusResponse.ok) {
-        throw new Error(
-          `Fal 队列状态查询失败: ${statusResponse.status} - ${previewResponseText(statusRaw, 300)}`,
+    while (Date.now() - startedAt < FAL_QUEUE_TIMEOUT_MS) {
+      if (statusUrl) {
+        const statusResponse = await fetchWithManagedAbort(
+          statusUrl,
+          {
+            headers: {
+              Authorization: `Key ${apiKey}`,
+            },
+          },
+          {
+            timeoutMs: IMAGE_REQUEST_TIMEOUT_MS,
+            signal,
+          },
         );
-      }
+        const statusRaw = await statusResponse.text();
+        const statusPayload = tryParseJson(statusRaw) as Record<
+          string,
+          unknown
+        > | null;
 
-      if (typeof statusPayload?.response_url === "string") {
-        responseUrl = statusPayload.response_url;
-      }
-
-      queueStatus =
-        typeof statusPayload?.status === "string"
-          ? statusPayload.status.toUpperCase()
-          : "";
-
-      if (queueStatus === "COMPLETED") {
-        break;
-      }
-
-      if (
-        queueStatus === "FAILED" ||
-        queueStatus === "ERROR" ||
-        queueStatus === "CANCELLED"
-      ) {
-        const detail =
-          typeof statusPayload?.error === "string"
-            ? statusPayload.error
-            : previewResponseText(statusRaw, 200);
-        throw new Error(`Fal 队列任务失败: ${detail || queueStatus}`);
-      }
-    } else if (responseUrl) {
-      const pollingResponse = await fetch(responseUrl, {
-        headers: {
-          Authorization: `Key ${apiKey}`,
-        },
-      });
-      const pollingRaw = await pollingResponse.text();
-      const pollingPayload = tryParseJson(pollingRaw) as Record<
-        string,
-        unknown
-      > | null;
-
-      if (pollingResponse.ok) {
-        const imageUrl = pollingPayload
-          ? extractImageUrlFromPayload(pollingPayload)
-          : extractImageUrlFromText(pollingRaw);
-
-        if (imageUrl) {
-          return normalizeImageUrl(responseUrl, imageUrl);
+        if (!statusResponse.ok) {
+          throw new Error(
+            `Fal 队列状态查询失败: ${statusResponse.status} - ${previewResponseText(statusRaw, 300)}`,
+          );
         }
 
-        throw new Error("Fal 队列结果中未找到图片地址");
+        if (typeof statusPayload?.response_url === "string") {
+          responseUrl = statusPayload.response_url;
+        }
+
+        queueStatus =
+          typeof statusPayload?.status === "string"
+            ? statusPayload.status.toUpperCase()
+            : "";
+
+        const queueError =
+          typeof statusPayload?.error === "string"
+            ? statusPayload.error.trim()
+            : "";
+
+        if (queueStatus === "COMPLETED" && queueError) {
+          throw new Error(`Fal 队列任务失败: ${queueError}`);
+        }
+
+        if (queueStatus === "COMPLETED") {
+          break;
+        }
+
+        if (
+          queueStatus === "FAILED" ||
+          queueStatus === "ERROR" ||
+          queueStatus === "CANCELLED"
+        ) {
+          const detail =
+            typeof statusPayload?.error === "string"
+              ? statusPayload.error
+              : previewResponseText(statusRaw, 200);
+          throw new Error(`Fal 队列任务失败: ${detail || queueStatus}`);
+        }
+      } else if (responseUrl) {
+        const pollingResult = await fetchFalQueueResult(
+          responseUrl,
+          apiKey,
+          signal,
+        );
+        if (pollingResult.imageUrl) {
+          return normalizeImageUrl(responseUrl, pollingResult.imageUrl);
+        }
+        if (!pollingResult.pending && pollingResult.error) {
+          throw new Error(pollingResult.error);
+        }
       }
 
-      if (pollingResponse.status >= 500) {
-        throw new Error(
-          `Fal 队列结果获取失败: ${pollingResponse.status} - ${previewResponseText(pollingRaw, 300)}`,
-        );
-      }
+      await sleep(FAL_QUEUE_POLL_INTERVAL_MS, signal);
+    }
 
-      const statusText =
-        typeof pollingPayload?.status === "string"
-          ? pollingPayload.status.toUpperCase()
-          : "";
-      if (statusText === "FAILED" || statusText === "ERROR") {
-        throw new Error(
-          `Fal 队列任务失败: ${previewResponseText(pollingRaw, 300)}`,
-        );
+    if (Date.now() - startedAt >= FAL_QUEUE_TIMEOUT_MS) {
+      throw new Error("Fal 队列任务超时，请稍后重试");
+    }
+
+    const finalCandidates = buildFalQueueResultCandidates(
+      responseUrl,
+      statusUrl,
+      fallbackRequestBase || undefined,
+    );
+
+    if (finalCandidates.length === 0) {
+      throw new Error("Fal 队列任务完成后未返回结果地址");
+    }
+
+    const resultErrors: string[] = [];
+    for (const endpoint of finalCandidates) {
+      const result = await fetchFalQueueResult(endpoint, apiKey, signal);
+      if (result.imageUrl) {
+        return normalizeImageUrl(endpoint, result.imageUrl);
+      }
+      if (result.pending) {
+        resultErrors.push(`${endpoint}: 结果尚未就绪`);
+        continue;
+      }
+      if (result.error) {
+        resultErrors.push(`${endpoint}: ${result.error}`);
       }
     }
 
-    await sleep(FAL_QUEUE_POLL_INTERVAL_MS);
-  }
+    if (resultErrors.length > 0) {
+      throw new Error(resultErrors.join("; "));
+    }
 
-  if (Date.now() - startedAt >= FAL_QUEUE_TIMEOUT_MS) {
-    throw new Error("Fal 队列任务超时，请稍后重试");
-  }
-
-  const finalEndpoint =
-    responseUrl ||
-    (statusUrl ? statusUrl.replace(/\/status(?:\?.*)?$/, "") : "");
-
-  if (!finalEndpoint) {
-    throw new Error("Fal 队列任务完成后未返回结果地址");
-  }
-
-  const resultResponse = await fetch(finalEndpoint, {
-    headers: {
-      Authorization: `Key ${apiKey}`,
-    },
-  });
-  const resultRaw = await resultResponse.text();
-  const resultPayload = tryParseJson(resultRaw);
-
-  if (!resultResponse.ok) {
-    throw new Error(
-      `Fal 队列结果获取失败: ${resultResponse.status} - ${previewResponseText(resultRaw, 300)}`,
-    );
-  }
-
-  const imageUrl = resultPayload
-    ? extractImageUrlFromPayload(resultPayload)
-    : extractImageUrlFromText(resultRaw);
-
-  if (!imageUrl) {
     throw new Error("Fal 队列结果中未找到图片地址");
+  } finally {
+    cleanupQueueCancellation();
   }
-
-  return normalizeImageUrl(finalEndpoint, imageUrl);
 }
 
 async function requestImageFromFal(
@@ -1450,26 +1877,40 @@ async function requestImageFromFal(
   prompt: string,
   referenceImages: string[],
   size: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const cleanedReferences = normalizeReferenceImages(referenceImages);
   const endpointModels = resolveFalEndpointModelCandidates(
     model,
     cleanedReferences.length > 0,
   );
-
-  const primaryInput = buildFalInput(prompt, cleanedReferences, size, true);
-  const compactInput = buildFalInput(prompt, cleanedReferences, size, false);
   const errors: string[] = [];
-  const shouldTryCompact =
-    JSON.stringify(primaryInput) !== JSON.stringify(compactInput);
 
   for (const endpointModel of endpointModels) {
+    const primaryInput = buildFalInput(
+      prompt,
+      cleanedReferences,
+      size,
+      endpointModel,
+      true,
+    );
+    const compactInput = buildFalInput(
+      prompt,
+      cleanedReferences,
+      size,
+      endpointModel,
+      false,
+    );
+    const shouldTryCompact =
+      JSON.stringify(primaryInput) !== JSON.stringify(compactInput);
     const endpoint = buildFalEndpoint(apiHost, endpointModel);
     const primaryAttempt = await requestImageFromFalEndpoint(
       endpoint,
       primaryInput,
       apiKey,
       `fal/sync-primary/${endpointModel}`,
+      IMAGE_REQUEST_TIMEOUT_MS,
+      signal,
     );
 
     if (primaryAttempt.imageUrl) {
@@ -1486,6 +1927,8 @@ async function requestImageFromFal(
         compactInput,
         apiKey,
         `fal/sync-compact/${endpointModel}`,
+        IMAGE_REQUEST_TIMEOUT_MS,
+        signal,
       );
 
       if (compactAttempt.imageUrl) {
@@ -1501,10 +1944,15 @@ async function requestImageFromFal(
       return await requestImageFromFalQueue(
         apiHost,
         endpointModel,
-        compactInput,
+        shouldTryCompact ? compactInput : primaryInput,
         apiKey,
+        signal,
       );
     } catch (error) {
+      if (isGenerationCanceledError(error)) {
+        throw new Error(IMAGE_GENERATION_CANCELED_MESSAGE);
+      }
+
       const queueError = error instanceof Error ? error.message : String(error);
       errors.push(`${endpointModel}/queue: ${queueError}`);
     }
@@ -1524,10 +1972,26 @@ function isImageGenProvider(providerId: string, providerType: string): boolean {
   );
 }
 
+function isFalProviderLike(provider: {
+  id: string;
+  type: string;
+  api_host: string;
+}): boolean {
+  if (provider.id === "fal" || provider.type === "fal") {
+    return true;
+  }
+
+  const normalizedHost = provider.api_host.trim().toLowerCase();
+  return (
+    normalizedHost.includes("fal.run") || normalizedHost.includes("queue.fal.run")
+  );
+}
+
 export function useImageGen(options: UseImageGenOptions = {}) {
   const { providers, loading: providersLoading } = useApiKeyProvider();
   const preferredProviderId = options.preferredProviderId?.trim() || "";
   const preferredModelId = options.preferredModelId?.trim() || "";
+  const allowFallback = options.allowFallback ?? true;
 
   const [selectedProviderId, setSelectedProviderId] = useState<string>("");
   const [selectedModelId, setSelectedModelId] = useState<string>("");
@@ -1537,6 +2001,11 @@ export function useImageGen(options: UseImageGenOptions = {}) {
   const [generating, setGenerating] = useState(false);
   const [resourceSavingCount, setResourceSavingCount] = useState(0);
   const imagesRef = useRef<GeneratedImage[]>([]);
+  const generationAbortControllerRef = useRef<AbortController | null>(null);
+  const generationRunIdRef = useRef(0);
+  const syncedPreferredProviderIdRef = useRef("");
+  const syncedPreferredModelIdRef = useRef("");
+  const hasManualProviderSelectionRef = useRef(false);
 
   // 过滤出支持图片生成、启用且有 API Key 的 Provider
   const availableProviders = useMemo(() => {
@@ -1590,14 +2059,9 @@ export function useImageGen(options: UseImageGenOptions = {}) {
   // 自动选择可用 Provider，优先使用项目偏好
   useEffect(() => {
     if (availableProviders.length === 0) {
-      return;
-    }
-
-    const currentProviderAvailable = availableProviders.some(
-      (provider) => provider.id === selectedProviderId,
-    );
-
-    if (selectedProviderId && currentProviderAvailable) {
+      if (selectedProviderId) {
+        setSelectedProviderId("");
+      }
       return;
     }
 
@@ -1606,16 +2070,105 @@ export function useImageGen(options: UseImageGenOptions = {}) {
           (provider) => provider.id === preferredProviderId,
         )
       : null;
-    const nextProvider = preferredProvider ?? availableProviders[0];
+    const preferredProviderChanged =
+      syncedPreferredProviderIdRef.current !== preferredProviderId;
+    const currentProviderAvailable = availableProviders.some(
+      (provider) => provider.id === selectedProviderId,
+    );
+
+    if (preferredProviderChanged) {
+      syncedPreferredProviderIdRef.current = preferredProviderId;
+      if (preferredProvider && selectedProviderId !== preferredProvider.id) {
+        hasManualProviderSelectionRef.current = false;
+        setSelectedProviderId(preferredProvider.id);
+        return;
+      }
+    }
+
+    if (preferredProviderId && !preferredProvider && !allowFallback) {
+      if (
+        selectedProviderId &&
+        currentProviderAvailable &&
+        hasManualProviderSelectionRef.current
+      ) {
+        return;
+      }
+      if (selectedProviderId) {
+        hasManualProviderSelectionRef.current = false;
+        setSelectedProviderId("");
+      }
+      return;
+    }
+
+    if (selectedProviderId && currentProviderAvailable) {
+      return;
+    }
+
+    const nextProvider =
+      preferredProvider ?? (allowFallback ? availableProviders[0] : null);
 
     if (nextProvider) {
+      hasManualProviderSelectionRef.current = false;
       setSelectedProviderId(nextProvider.id);
     }
-  }, [availableProviders, preferredProviderId, selectedProviderId]);
+  }, [
+    allowFallback,
+    availableProviders,
+    preferredProviderId,
+    selectedProviderId,
+  ]);
 
   // 保存历史记录
   const saveHistory = useCallback((newImages: GeneratedImage[]) => {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(newImages.slice(0, 50)));
+  }, []);
+
+  const cancelGeneration = useCallback(() => {
+    generationRunIdRef.current += 1;
+    const activeController = generationAbortControllerRef.current;
+    generationAbortControllerRef.current = null;
+
+    if (activeController && !activeController.signal.aborted) {
+      activeController.abort(
+        createAbortError(IMAGE_GENERATION_CANCELED_MESSAGE),
+      );
+    }
+
+    setGenerating(false);
+    setImages((prev) => {
+      let changed = false;
+      const updated = prev.map((image) => {
+        if (image.status !== "generating") {
+          return image;
+        }
+        changed = true;
+        return {
+          ...image,
+          status: "error" as const,
+          error: IMAGE_GENERATION_CANCELED_MESSAGE,
+        };
+      });
+
+      if (!changed) {
+        return prev;
+      }
+
+      saveHistory(updated);
+      return updated;
+    });
+  }, [saveHistory]);
+
+  useEffect(() => {
+    return () => {
+      generationRunIdRef.current += 1;
+      const activeController = generationAbortControllerRef.current;
+      generationAbortControllerRef.current = null;
+      if (activeController && !activeController.signal.aborted) {
+        activeController.abort(
+          createAbortError(IMAGE_GENERATION_CANCELED_MESSAGE),
+        );
+      }
+    };
   }, []);
 
   const savingToResource = resourceSavingCount > 0;
@@ -1704,6 +2257,13 @@ export function useImageGen(options: UseImageGenOptions = {}) {
   const selectedProvider = useMemo(() => {
     return availableProviders.find((p) => p.id === selectedProviderId);
   }, [availableProviders, selectedProviderId]);
+  const preferredProviderUnavailable = useMemo(
+    () =>
+      Boolean(preferredProviderId) &&
+      !providersLoading &&
+      !availableProviders.some((provider) => provider.id === preferredProviderId),
+    [availableProviders, preferredProviderId, providersLoading],
+  );
 
   // 获取当前 Provider 支持的模型
   const availableModels = useMemo(() => {
@@ -1712,6 +2272,7 @@ export function useImageGen(options: UseImageGenOptions = {}) {
       selectedProvider.id,
       selectedProvider.type,
       selectedProvider.custom_models,
+      selectedProvider.api_host,
     );
   }, [selectedProvider]);
 
@@ -1723,6 +2284,21 @@ export function useImageGen(options: UseImageGenOptions = {}) {
   useEffect(() => {
     if (availableModels.length === 0) {
       return;
+    }
+
+    const preferredModelChanged =
+      syncedPreferredModelIdRef.current !== preferredModelId;
+
+    if (preferredModelChanged) {
+      syncedPreferredModelIdRef.current = preferredModelId;
+      if (
+        preferredModelId &&
+        availableModels.some((model) => model.id === preferredModelId) &&
+        selectedModelId !== preferredModelId
+      ) {
+        setSelectedModelId(preferredModelId);
+        return;
+      }
     }
 
     if (
@@ -1751,6 +2327,7 @@ export function useImageGen(options: UseImageGenOptions = {}) {
   // 切换 Provider 时更新模型
   const handleProviderChange = useCallback(
     (providerId: string) => {
+      hasManualProviderSelectionRef.current = true;
       setSelectedProviderId(providerId);
       const provider = availableProviders.find((p) => p.id === providerId);
       if (provider) {
@@ -1758,6 +2335,7 @@ export function useImageGen(options: UseImageGenOptions = {}) {
           provider.id,
           provider.type,
           provider.custom_models,
+          provider.api_host,
         );
         if (models.length > 0) {
           setSelectedModelId(models[0].id);
@@ -1769,8 +2347,16 @@ export function useImageGen(options: UseImageGenOptions = {}) {
 
   // 生成图片
   const generateImage = useCallback(
-    async (prompt: string, options?: GenerateImageOptions) => {
+    async (
+      prompt: string,
+      options?: GenerateImageOptions,
+    ): Promise<GeneratedImage[]> => {
       if (!selectedProvider) {
+        if (preferredProviderUnavailable && !allowFallback) {
+          throw new Error(
+            `当前默认图片服务不可用：${preferredProviderId}。请到媒体服务 > 图片服务中调整默认 Provider，或开启自动回退。`,
+          );
+        }
         throw new Error("请先在凭证管理中配置 API Key Provider");
       }
 
@@ -1781,6 +2367,39 @@ export function useImageGen(options: UseImageGenOptions = {}) {
       const requestSize = options?.size || selectedSize;
       const referenceImages = options?.referenceImages || [];
       const targetProjectId = options?.targetProjectId?.trim() || "";
+      const resolvedModelId =
+        selectedModel?.id || availableModels[0]?.id || selectedModelId;
+
+      if (!resolvedModelId) {
+        throw new Error(
+          "当前图片服务没有可用模型，请到媒体服务 > 图片服务中检查模型配置。",
+        );
+      }
+
+      if (
+        generationAbortControllerRef.current &&
+        !generationAbortControllerRef.current.signal.aborted
+      ) {
+        cancelGeneration();
+      }
+
+      const generationController = new AbortController();
+      const generationRunId = generationRunIdRef.current + 1;
+      generationRunIdRef.current = generationRunId;
+      generationAbortControllerRef.current = generationController;
+
+      const ensureGenerationStillActive = () => {
+        if (
+          generationRunIdRef.current !== generationRunId ||
+          generationController.signal.aborted
+        ) {
+          throw new Error(IMAGE_GENERATION_CANCELED_MESSAGE);
+        }
+      };
+
+      const canCommitGenerationState = () =>
+        generationRunIdRef.current === generationRunId &&
+        !generationController.signal.aborted;
 
       const baseId = Date.now();
       const generationItems: GeneratedImage[] = Array.from(
@@ -1789,7 +2408,7 @@ export function useImageGen(options: UseImageGenOptions = {}) {
           id: `img-${baseId}-${index}`,
           url: "",
           prompt,
-          model: selectedModelId,
+          model: resolvedModelId,
           size: requestSize,
           providerId: selectedProvider.id,
           providerName: selectedProvider.name,
@@ -1806,21 +2425,24 @@ export function useImageGen(options: UseImageGenOptions = {}) {
       setSelectedImageId(generationItems[0]?.id || null);
 
       setGenerating(true);
+      const completedResults: GeneratedImage[] = [];
+      const generationErrors: string[] = [];
 
       try {
         const isNewApi =
           selectedProvider.id === "new-api" ||
           selectedProvider.type === "new-api" ||
           selectedProvider.type === "NewApi";
-        const isFalProvider =
-          selectedProvider.id === "fal" || selectedProvider.type === "fal";
+        const isFalProvider = isFalProviderLike(selectedProvider);
 
         if (isNewApi) {
           for (const item of generationItems) {
             try {
+              ensureGenerationStillActive();
               const apiKey = await apiKeyProviderApi.getNextApiKey(
                 selectedProvider.id,
               );
+              ensureGenerationStillActive();
               if (!apiKey) {
                 throw new Error(
                   "该 Provider 没有可用的 API Key，请在凭证管理中添加",
@@ -1830,11 +2452,13 @@ export function useImageGen(options: UseImageGenOptions = {}) {
               const imageUrl = await requestImageFromNewApi(
                 selectedProvider.api_host,
                 apiKey,
-                selectedModelId,
+                resolvedModelId,
                 prompt,
                 referenceImages,
                 requestSize,
+                generationController.signal,
               );
+              ensureGenerationStillActive();
 
               const completedImage: GeneratedImage = {
                 ...item,
@@ -1844,6 +2468,9 @@ export function useImageGen(options: UseImageGenOptions = {}) {
               };
 
               setImages((prev) => {
+                if (!canCommitGenerationState()) {
+                  return prev;
+                }
                 const updated = prev.map((img) =>
                   img.id === item.id
                     ? {
@@ -1859,13 +2486,29 @@ export function useImageGen(options: UseImageGenOptions = {}) {
               });
 
               if (targetProjectId) {
+                ensureGenerationStillActive();
                 await saveImageToResource(completedImage, targetProjectId);
+                ensureGenerationStillActive();
               }
+
+              completedResults.push(completedImage);
             } catch (error) {
+              if (
+                isGenerationCanceledError(error) ||
+                generationRunIdRef.current !== generationRunId ||
+                generationController.signal.aborted
+              ) {
+                throw new Error(IMAGE_GENERATION_CANCELED_MESSAGE);
+              }
+
               const errorMessage =
                 error instanceof Error ? error.message : String(error);
+              generationErrors.push(errorMessage);
 
               setImages((prev) => {
+                if (!canCommitGenerationState()) {
+                  return prev;
+                }
                 const updated = prev.map((img) =>
                   img.id === item.id
                     ? { ...img, status: "error" as const, error: errorMessage }
@@ -1879,9 +2522,11 @@ export function useImageGen(options: UseImageGenOptions = {}) {
         } else if (isFalProvider) {
           for (const item of generationItems) {
             try {
+              ensureGenerationStillActive();
               const apiKey = await apiKeyProviderApi.getNextApiKey(
                 selectedProvider.id,
               );
+              ensureGenerationStillActive();
               if (!apiKey) {
                 throw new Error(
                   "该 Provider 没有可用的 API Key，请在凭证管理中添加",
@@ -1891,11 +2536,13 @@ export function useImageGen(options: UseImageGenOptions = {}) {
               const imageUrl = await requestImageFromFal(
                 selectedProvider.api_host,
                 apiKey,
-                selectedModelId,
+                resolvedModelId,
                 prompt,
                 referenceImages,
                 requestSize,
+                generationController.signal,
               );
+              ensureGenerationStillActive();
 
               const completedImage: GeneratedImage = {
                 ...item,
@@ -1905,6 +2552,9 @@ export function useImageGen(options: UseImageGenOptions = {}) {
               };
 
               setImages((prev) => {
+                if (!canCommitGenerationState()) {
+                  return prev;
+                }
                 const updated = prev.map((img) =>
                   img.id === item.id
                     ? {
@@ -1920,13 +2570,29 @@ export function useImageGen(options: UseImageGenOptions = {}) {
               });
 
               if (targetProjectId) {
+                ensureGenerationStillActive();
                 await saveImageToResource(completedImage, targetProjectId);
+                ensureGenerationStillActive();
               }
+
+              completedResults.push(completedImage);
             } catch (error) {
+              if (
+                isGenerationCanceledError(error) ||
+                generationRunIdRef.current !== generationRunId ||
+                generationController.signal.aborted
+              ) {
+                throw new Error(IMAGE_GENERATION_CANCELED_MESSAGE);
+              }
+
               const errorMessage =
                 error instanceof Error ? error.message : String(error);
+              generationErrors.push(errorMessage);
 
               setImages((prev) => {
+                if (!canCommitGenerationState()) {
+                  return prev;
+                }
                 const updated = prev.map((img) =>
                   img.id === item.id
                     ? { ...img, status: "error" as const, error: errorMessage }
@@ -1941,6 +2607,7 @@ export function useImageGen(options: UseImageGenOptions = {}) {
           const apiKey = await apiKeyProviderApi.getNextApiKey(
             selectedProvider.id,
           );
+          ensureGenerationStillActive();
           if (!apiKey) {
             throw new Error(
               "该 Provider 没有可用的 API Key，请在凭证管理中添加",
@@ -1948,7 +2615,7 @@ export function useImageGen(options: UseImageGenOptions = {}) {
           }
 
           const request: ImageGenRequest = {
-            model: selectedModelId,
+            model: resolvedModelId,
             prompt,
             n: generationCount,
             size: requestSize,
@@ -1959,18 +2626,26 @@ export function useImageGen(options: UseImageGenOptions = {}) {
             "/v1/images/generations",
           );
 
-          const response = await fetch(endpoint, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${apiKey}`,
+          const response = await fetchWithManagedAbort(
+            endpoint,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify(request),
             },
-            body: JSON.stringify(request),
-          });
+            {
+              timeoutMs: IMAGE_REQUEST_TIMEOUT_MS,
+              signal: generationController.signal,
+            },
+          );
 
           const contentType = response.headers.get("content-type") || "";
           const rawText = await response.text();
           const parsedJson = tryParseJson(rawText);
+          ensureGenerationStillActive();
 
           console.log(
             `[ImageGen][standard/images] endpoint=${endpoint}, status=${response.status}, content-type=${contentType}`,
@@ -2038,6 +2713,9 @@ export function useImageGen(options: UseImageGenOptions = {}) {
           );
 
           setImages((prev) => {
+            if (!canCommitGenerationState()) {
+              return prev;
+            }
             const updated = prev.map((img) => {
               const index = generationItems.findIndex(
                 (item) => item.id === img.id,
@@ -2068,43 +2746,83 @@ export function useImageGen(options: UseImageGenOptions = {}) {
 
           if (targetProjectId) {
             for (const image of completedImages) {
+              ensureGenerationStillActive();
               await saveImageToResource(image, targetProjectId);
+              ensureGenerationStillActive();
             }
           }
+
+          completedResults.push(...completedImages);
+        }
+
+        if (completedResults.length === 0 && generationErrors.length > 0) {
+          throw new Error(summarizeImageGenerationErrors(generationErrors));
         }
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
+        const canceled =
+          isGenerationCanceledError(error) ||
+          generationRunIdRef.current !== generationRunId ||
+          generationController.signal.aborted;
 
-        setImages((prev) => {
-          const updated = prev.map((img) =>
-            generationItems.some((item) => item.id === img.id) &&
-            img.status === "generating"
-              ? { ...img, status: "error" as const, error: errorMessage }
-              : img,
-          );
-          saveHistory(updated);
-          return updated;
-        });
-        throw error;
+        if (!canceled) {
+          setImages((prev) => {
+            if (!canCommitGenerationState()) {
+              return prev;
+            }
+            const updated = prev.map((img) =>
+              generationItems.some((item) => item.id === img.id) &&
+              img.status === "generating"
+                ? { ...img, status: "error" as const, error: errorMessage }
+                : img,
+            );
+            saveHistory(updated);
+            return updated;
+          });
+        }
+
+        throw canceled
+          ? new Error(IMAGE_GENERATION_CANCELED_MESSAGE)
+          : error;
       } finally {
-        setGenerating(false);
+        if (generationRunIdRef.current === generationRunId) {
+          generationAbortControllerRef.current = null;
+          setGenerating(false);
+        }
       }
+
+      ensureGenerationStillActive();
+      return completedResults;
     },
     [
+      allowFallback,
+      cancelGeneration,
+      preferredProviderId,
+      preferredProviderUnavailable,
       selectedProvider,
+      selectedModel,
       selectedModelId,
       selectedSize,
       saveHistory,
       saveImageToResource,
+      availableModels,
     ],
   );
 
   const backfillImagesToResource = useCallback(
-    async (targetProjectId: string): Promise<BackfillImagesResult> => {
+    async (
+      targetProjectId: string,
+      imageIds?: string[],
+    ): Promise<BackfillImagesResult> => {
       const normalizedTargetProjectId = targetProjectId.trim();
+      const imageIdSet =
+        imageIds && imageIds.length > 0 ? new Set(imageIds) : null;
       const completedImages = imagesRef.current.filter(
-        (image) => image.status === "complete" && !!image.url,
+        (image) =>
+          image.status === "complete" &&
+          !!image.url &&
+          (!imageIdSet || imageIdSet.has(image.id)),
       );
       const result: BackfillImagesResult = {
         total: completedImages.length,
@@ -2155,6 +2873,15 @@ export function useImageGen(options: UseImageGenOptions = {}) {
       return result;
     },
     [saveImageToResource],
+  );
+
+  const saveImagesToResource = useCallback(
+    async (
+      imageIds: string[],
+      targetProjectId: string,
+    ): Promise<BackfillImagesResult> =>
+      backfillImagesToResource(targetProjectId, imageIds),
+    [backfillImagesToResource],
   );
 
   // 删除图片
@@ -2209,6 +2936,7 @@ export function useImageGen(options: UseImageGenOptions = {}) {
     selectedProviderId,
     setSelectedProviderId: handleProviderChange,
     providersLoading,
+    preferredProviderUnavailable,
 
     // 模型相关
     availableModels,
@@ -2230,7 +2958,9 @@ export function useImageGen(options: UseImageGenOptions = {}) {
 
     // 操作
     generateImage,
+    cancelGeneration,
     backfillImagesToResource,
+    saveImagesToResource,
     deleteImage,
     newImage,
   };
@@ -2239,6 +2969,8 @@ export function useImageGen(options: UseImageGenOptions = {}) {
 export const __imageGenFalTestUtils = {
   resolveFalEndpointModelCandidates,
   buildFalEndpoint,
+  buildFalInput,
   resolveFalQueueHost,
+  requestImageFromFalQueue,
   requestImageFromFal,
 };

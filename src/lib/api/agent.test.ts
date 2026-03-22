@@ -198,6 +198,43 @@ describe("Agent API 治理护栏", () => {
     );
   });
 
+  it("respondAgentRuntimeAction 应透传 action_scope 以便精确恢复 ask/elicitation", async () => {
+    mockSafeInvoke.mockResolvedValueOnce(undefined);
+
+    await respondAgentRuntimeAction({
+      session_id: "session-runtime",
+      request_id: "req-runtime-scope",
+      action_type: "ask_user",
+      confirmed: true,
+      response: '{"answer":"自动执行"}',
+      user_data: { answer: "自动执行" },
+      action_scope: {
+        session_id: "session-runtime",
+        thread_id: "thread-runtime",
+        turn_id: "turn-runtime",
+      },
+    });
+
+    expect(mockSafeInvoke).toHaveBeenCalledWith(
+      "agent_runtime_respond_action",
+      {
+        request: {
+          session_id: "session-runtime",
+          request_id: "req-runtime-scope",
+          action_type: "ask_user",
+          confirmed: true,
+          response: '{"answer":"自动执行"}',
+          user_data: { answer: "自动执行" },
+          action_scope: {
+            session_id: "session-runtime",
+            thread_id: "thread-runtime",
+            turn_id: "turn-runtime",
+          },
+        },
+      },
+    );
+  });
+
   it("promoteAgentRuntimeQueuedTurn 应走统一 runtime promote 命令", async () => {
     mockSafeInvoke.mockResolvedValueOnce(true);
 

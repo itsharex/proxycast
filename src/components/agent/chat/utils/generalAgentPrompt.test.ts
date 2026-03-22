@@ -37,7 +37,7 @@ describe("generalAgentPrompt", () => {
     expect(prompt).toContain("不要把自己限制为编程助手");
     expect(prompt).toContain("不主动落盘");
     expect(prompt).toContain("需求澄清");
-    expect(prompt).toContain("本回合能力快照");
+    expect(prompt).toContain("当前能力开关");
     expect(prompt).toContain("执行车道");
     expect(prompt).toContain("后台任务：已开启");
     expect(prompt).toContain("多代理：已开启");
@@ -58,9 +58,10 @@ describe("generalAgentPrompt", () => {
     const prompt = buildGeneralAgentSystemPrompt("planning");
 
     expect(prompt).toContain("计划规划");
-    expect(prompt).toContain("阶段安排");
+    expect(prompt).toContain("执行节奏");
     expect(prompt).toContain("风险提醒");
     expect(prompt).toContain("验收标准");
+    expect(prompt).toContain("主对话负责解释分工");
   });
 
   it("theme workbench 场景应注入 harness 上下文", () => {

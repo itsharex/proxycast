@@ -60,6 +60,9 @@ describe("QueuedTurnsPanel", () => {
     const onPromoteQueuedTurn = vi.fn().mockResolvedValue(true);
     const container = renderQueuedTurnsPanel({ onPromoteQueuedTurn });
 
+    expect(container.textContent).toContain("稍后处理 1");
+    expect(container.textContent).toContain("会依次开始");
+
     const promoteButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
     ).find((button) => button.textContent?.includes("立即执行"));

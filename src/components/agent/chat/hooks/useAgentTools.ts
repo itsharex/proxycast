@@ -192,6 +192,7 @@ export function useAgentTools(options: UseAgentToolsOptions) {
             userData,
             metadata: submissionContext?.requestMetadata,
             eventName: activeEventName || undefined,
+            actionScope: metadataAction?.scope,
           });
         } else {
           await runtime.respondToAction({

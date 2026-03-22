@@ -124,6 +124,22 @@ pub struct ChildSubagentSession {
     pub latest_turn_status: Option<ChildSubagentRuntimeStatus>,
     #[serde(default, skip_serializing_if = "is_zero_usize")]
     pub queued_turn_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_phase: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_parallel_budget: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_active_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_queued_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_concurrency_group: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_parallel_budget: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queue_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub retryable_overload: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -176,6 +192,10 @@ pub enum ChildSubagentRuntimeStatus {
 
 fn is_zero_usize(value: &usize) -> bool {
     *value == 0
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -400,6 +420,14 @@ fn build_child_subagent_session_summary(
         runtime_status: None,
         latest_turn_status: None,
         queued_turn_count: 0,
+        team_phase: None,
+        team_parallel_budget: None,
+        team_active_count: None,
+        team_queued_count: None,
+        provider_concurrency_group: None,
+        provider_parallel_budget: None,
+        queue_reason: None,
+        retryable_overload: false,
     })
 }
 
@@ -412,6 +440,14 @@ fn apply_runtime_status_to_child_subagent_session(
         .latest_turn_status
         .and_then(map_child_subagent_runtime_status);
     summary.queued_turn_count = status.queued_turn_count;
+    summary.team_phase = status.team_phase;
+    summary.team_parallel_budget = status.team_parallel_budget;
+    summary.team_active_count = status.team_active_count;
+    summary.team_queued_count = status.team_queued_count;
+    summary.provider_concurrency_group = status.provider_concurrency_group;
+    summary.provider_parallel_budget = status.provider_parallel_budget;
+    summary.queue_reason = status.queue_reason;
+    summary.retryable_overload = status.retryable_overload;
 }
 
 fn build_child_subagent_session_summaries(
@@ -1471,6 +1507,14 @@ mod tests {
             runtime_status: None,
             latest_turn_status: None,
             queued_turn_count: 0,
+            team_phase: None,
+            team_parallel_budget: None,
+            team_active_count: None,
+            team_queued_count: None,
+            provider_concurrency_group: None,
+            provider_parallel_budget: None,
+            queue_reason: None,
+            retryable_overload: false,
         };
 
         apply_runtime_status_to_child_subagent_session(
@@ -1481,6 +1525,17 @@ mod tests {
                 latest_turn_id: Some("turn-queued".to_string()),
                 latest_turn_status: Some(SubagentRuntimeStatusKind::Completed),
                 queued_turn_count: 2,
+                team_phase: Some("queued".to_string()),
+                team_parallel_budget: Some(2),
+                team_active_count: Some(2),
+                team_queued_count: Some(1),
+                provider_concurrency_group: Some("zhipuai".to_string()),
+                provider_parallel_budget: Some(1),
+                queue_reason: Some(
+                    "为了避免当前模型通道因并发过多直接拒绝请求，系统已切换为低并发顺序处理。"
+                        .to_string(),
+                ),
+                retryable_overload: true,
                 closed: false,
             },
         );
@@ -1494,6 +1549,12 @@ mod tests {
             Some(ChildSubagentRuntimeStatus::Completed)
         );
         assert_eq!(summary.queued_turn_count, 2);
+        assert_eq!(summary.team_phase.as_deref(), Some("queued"));
+        assert_eq!(
+            summary.provider_concurrency_group.as_deref(),
+            Some("zhipuai")
+        );
+        assert!(summary.retryable_overload);
     }
 
     #[test]

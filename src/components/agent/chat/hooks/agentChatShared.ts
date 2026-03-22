@@ -3,7 +3,12 @@ import type {
   AsterSessionInfo,
   AutoContinueRequestPayload,
 } from "@/lib/api/agentRuntime";
-import type { Message, MessageImage, WriteArtifactContext } from "../types";
+import type {
+  AgentRuntimeStatus,
+  Message,
+  MessageImage,
+  WriteArtifactContext,
+} from "../types";
 import { normalizeExecutionStrategy } from "./agentChatCoreUtils";
 import { sanitizeMessageTextForPreview } from "../utils/internalImagePlaceholder";
 
@@ -50,10 +55,17 @@ export interface SendMessageObserver {
   onError?: (message: string) => void;
 }
 
+export interface AssistantDraftState {
+  content?: string;
+  initialRuntimeStatus?: AgentRuntimeStatus;
+  waitingRuntimeStatus?: AgentRuntimeStatus;
+}
+
 export interface SendMessageOptions {
   purpose?: Message["purpose"];
   observer?: SendMessageObserver;
   requestMetadata?: Record<string, unknown>;
+  assistantDraft?: AssistantDraftState;
 }
 
 export interface WorkspacePathMissingState {

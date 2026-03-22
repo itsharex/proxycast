@@ -4,7 +4,9 @@
 //! 用于前端实时显示流式响应
 
 use aster::agents::AgentEvent;
-use aster::conversation::message::{ActionRequiredData, Message, MessageContent};
+use aster::conversation::message::{
+    ActionRequiredData, ActionRequiredScope, Message, MessageContent,
+};
 use aster::session::{ItemRuntime, ItemRuntimePayload, ItemStatus, TurnRuntime, TurnStatus};
 use lime_core::database::dao::agent_timeline::{
     AgentThreadItem, AgentThreadItemPayload, AgentThreadTurn,
@@ -590,6 +592,8 @@ pub enum TauriAgentEvent {
         request_id: String,
         action_type: String,
         data: serde_json::Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        scope: Option<TauriActionRequiredScope>,
     },
 
     /// 模型变更
@@ -719,6 +723,8 @@ pub struct TauriRuntimeStatus {
     pub detail: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub checkpoints: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<std::collections::HashMap<String, serde_json::Value>>,
 }
 
 /// 简化的消息结构
@@ -729,6 +735,16 @@ pub struct TauriMessage {
     pub role: String,
     pub content: Vec<TauriMessageContent>,
     pub timestamp: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TauriActionRequiredScope {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<String>,
 }
 
 /// 简化的消息内容
@@ -766,6 +782,8 @@ pub enum TauriMessageContent {
         id: String,
         action_type: String,
         data: serde_json::Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        scope: Option<TauriActionRequiredScope>,
     },
 
     #[serde(rename = "image")]
@@ -820,6 +838,21 @@ pub fn convert_agent_event(event: AgentEvent) -> Vec<TauriAgentEvent> {
                 .collect(),
         }],
     }
+}
+
+fn convert_action_required_scope(
+    scope: Option<&ActionRequiredScope>,
+) -> Option<TauriActionRequiredScope> {
+    let scope = scope?;
+    if scope.session_id.is_none() && scope.thread_id.is_none() && scope.turn_id.is_none() {
+        return None;
+    }
+
+    Some(TauriActionRequiredScope {
+        session_id: scope.session_id.clone(),
+        thread_id: scope.thread_id.clone(),
+        turn_id: scope.turn_id.clone(),
+    })
 }
 
 fn convert_turn_status(
@@ -1071,6 +1104,7 @@ fn convert_message(message: Message) -> Vec<TauriAgentEvent> {
                 });
             }
             MessageContent::ActionRequired(action_required) => {
+                let scope = convert_action_required_scope(action_required.scope.as_ref());
                 let (request_id, action_type, data) = match &action_required.data {
                     ActionRequiredData::ToolConfirmation {
                         id,
@@ -1111,6 +1145,7 @@ fn convert_message(message: Message) -> Vec<TauriAgentEvent> {
                     request_id,
                     action_type,
                     data,
+                    scope,
                 });
             }
             MessageContent::SystemNotification(notification) => {
@@ -1132,6 +1167,7 @@ fn convert_message(message: Message) -> Vec<TauriAgentEvent> {
                         "arguments": req.arguments,
                         "prompt": req.prompt,
                     }),
+                    scope: None,
                 });
             }
             MessageContent::FrontendToolRequest(req) => match &req.tool_call {
@@ -1228,6 +1264,7 @@ fn convert_message_content(content: &MessageContent) -> Option<TauriMessageConte
             })
         }
         MessageContent::ActionRequired(action) => {
+            let scope = convert_action_required_scope(action.scope.as_ref());
             let (id, action_type, data) = match &action.data {
                 ActionRequiredData::ToolConfirmation {
                     id,
@@ -1265,6 +1302,7 @@ fn convert_message_content(content: &MessageContent) -> Option<TauriMessageConte
                 id,
                 action_type,
                 data,
+                scope,
             })
         }
         MessageContent::Image(image) => Some(TauriMessageContent::Image {
@@ -1290,6 +1328,75 @@ mod tests {
             &events[1],
             TauriAgentEvent::TextDelta { text } if text == "Hello, world!"
         ));
+    }
+
+    #[test]
+    fn test_convert_action_required_scope_for_event_and_message_content() {
+        let message = Message::assistant().with_content(MessageContent::ActionRequired(
+            aster::conversation::message::ActionRequired {
+                data: ActionRequiredData::Elicitation {
+                    id: "req-1".to_string(),
+                    message: "请补充发布渠道".to_string(),
+                    requested_schema: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "channel": { "type": "string" }
+                        }
+                    }),
+                },
+                scope: Some(ActionRequiredScope {
+                    session_id: Some("session-1".to_string()),
+                    thread_id: Some("thread-1".to_string()),
+                    turn_id: Some("turn-1".to_string()),
+                }),
+            },
+        ));
+
+        let tauri_message = convert_to_tauri_message(&message);
+        assert_eq!(tauri_message.content.len(), 1);
+        match &tauri_message.content[0] {
+            TauriMessageContent::ActionRequired {
+                id,
+                action_type,
+                data,
+                scope,
+            } => {
+                assert_eq!(id, "req-1");
+                assert_eq!(action_type, "elicitation");
+                assert_eq!(
+                    data.get("message").and_then(serde_json::Value::as_str),
+                    Some("请补充发布渠道")
+                );
+                let scope = scope.as_ref().expect("expected action scope");
+                assert_eq!(scope.session_id.as_deref(), Some("session-1"));
+                assert_eq!(scope.thread_id.as_deref(), Some("thread-1"));
+                assert_eq!(scope.turn_id.as_deref(), Some("turn-1"));
+            }
+            other => panic!("Expected ActionRequired message content, got {other:?}"),
+        }
+
+        let events = convert_message(message);
+        assert_eq!(events.len(), 2);
+        match &events[1] {
+            TauriAgentEvent::ActionRequired {
+                request_id,
+                action_type,
+                data,
+                scope,
+            } => {
+                assert_eq!(request_id, "req-1");
+                assert_eq!(action_type, "elicitation");
+                assert_eq!(
+                    data.get("message").and_then(serde_json::Value::as_str),
+                    Some("请补充发布渠道")
+                );
+                let scope = scope.as_ref().expect("expected action scope");
+                assert_eq!(scope.session_id.as_deref(), Some("session-1"));
+                assert_eq!(scope.thread_id.as_deref(), Some("thread-1"));
+                assert_eq!(scope.turn_id.as_deref(), Some("turn-1"));
+            }
+            other => panic!("Expected ActionRequired event, got {other:?}"),
+        }
     }
 
     #[test]

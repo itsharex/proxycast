@@ -997,6 +997,7 @@ fn build_web_search_synthesis_runtime_status(coverage_summary: Option<&str>) -> 
         detail: "已完成前置扩搜，正在基于已有 WebSearch 结果输出最终总结，不再重复检索。"
             .to_string(),
         checkpoints,
+        metadata: None,
     }
 }
 

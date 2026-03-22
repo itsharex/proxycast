@@ -8,6 +8,7 @@ import {
   resolveWorkspaceAgentPreferences,
   savePersisted,
 } from "./agentChatStorage";
+import { useWechatRuntimeModelSync } from "./useWechatRuntimeModelSync";
 
 function resolveExecutionStrategyStorageKey(
   projectId?: string | null,
@@ -45,6 +46,12 @@ export function useHomeShellAgentPreferences(projectId?: string | null) {
     useState<AsterExecutionStrategy>(() =>
       resolvePersistedExecutionStrategy(normalizedProjectId),
     );
+
+  useWechatRuntimeModelSync({
+    providerId: providerType,
+    modelId: model,
+    source: "home-shell",
+  });
 
   useEffect(() => {
     const scopedPreferences =

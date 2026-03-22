@@ -397,6 +397,7 @@ export function useAsterAgentChat(options: UseAsterAgentChatRuntimeOptions) {
     isConfigLoading: false,
 
     messages: session.messages,
+    setMessages: session.setMessages,
     currentThreadId: session.sessionId,
     currentTurnId: session.currentTurnId,
     turns: session.threadTurns,

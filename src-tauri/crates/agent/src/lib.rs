@@ -24,6 +24,7 @@ pub mod lsp_bridge;
 pub mod mcp_bridge;
 pub mod prompt;
 pub mod provider_continuation_state;
+pub mod provider_runtime_governor;
 mod provider_safety;
 pub mod queued_turn;
 pub mod request_tool_policy;
@@ -35,6 +36,7 @@ pub mod skill_execution;
 pub mod subagent_control;
 pub mod subagent_profiles;
 pub mod subagent_scheduler;
+pub mod team_runtime_governor;
 pub mod tool_io_offload;
 pub mod tools;
 pub mod turn_input_envelope;
@@ -69,6 +71,11 @@ pub use prompt::{
 };
 pub use provider_continuation_state::{
     ProviderContinuationCapability, ProviderContinuationCapable, ProviderContinuationState,
+};
+pub use provider_runtime_governor::{
+    acquire_provider_runtime_permit, preview_provider_runtime_wait_snapshot,
+    release_provider_runtime_permit, resolve_provider_runtime_parallel_budget,
+    snapshot_provider_runtime_lease, ProviderRuntimeGovernorSnapshot, ProviderRuntimePermit,
 };
 pub use queued_turn::QueuedTurnSnapshot;
 pub use request_tool_policy::{
@@ -115,6 +122,12 @@ pub use subagent_profiles::{
 };
 pub use subagent_scheduler::{
     LimeScheduler, LimeSubAgentExecutor, SchedulerEventEmitter, SubAgentProgressEvent, SubAgentRole,
+};
+pub use team_runtime_governor::{
+    acquire_team_runtime_permit, default_team_runtime_parallel_budget,
+    normalize_team_runtime_provider_group, preview_team_runtime_wait_snapshot,
+    release_team_runtime_permit, resolve_team_runtime_provider_parallel_budget,
+    snapshot_team_runtime_session, TeamRuntimeGovernorSnapshot, TeamRuntimePermit,
 };
 pub use tools::{BrowserAction, BrowserTool, BrowserToolError, BrowserToolResult};
 pub use turn_input_envelope::{

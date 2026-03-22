@@ -20,29 +20,26 @@ vi.mock("@/lib/api/agentRuntime", async () => {
   };
 });
 
-vi.mock("@/components/ui/badge", () => ({
-  Badge: ({
-    children,
-    className,
-  }: {
-    children: React.ReactNode;
-    className?: string;
-  }) => <span className={className}>{children}</span>,
-}));
-
 vi.mock("@/components/ui/button", () => ({
   Button: ({
     children,
     className,
     onClick,
     type = "button",
+    ...props
   }: {
     children: React.ReactNode;
     className?: string;
     onClick?: () => void;
     type?: "button" | "submit" | "reset";
+    [key: string]: unknown;
   }) => (
-    <button type={type} className={className} onClick={onClick}>
+    <button
+      type={type}
+      className={className}
+      onClick={onClick}
+      {...props}
+    >
       {children}
     </button>
   ),
@@ -56,6 +53,7 @@ beforeEach(() => {
       IS_REACT_ACT_ENVIRONMENT?: boolean;
     }
   ).IS_REACT_ACT_ENVIRONMENT = true;
+  window.localStorage.clear();
   mockGetAgentRuntimeSession.mockImplementation(async (sessionId: string) =>
     createSessionDetail(sessionId),
   );
@@ -70,6 +68,7 @@ afterEach(() => {
     });
     mounted.container.remove();
   }
+  window.localStorage.clear();
   vi.clearAllMocks();
 });
 
@@ -117,6 +116,122 @@ async function renderBoard(
   return container;
 }
 
+function getLaneMetrics(container: HTMLDivElement, laneId: string) {
+  const lane = container.querySelector<HTMLElement>(
+    `[data-testid="team-workspace-member-lane-${laneId}"]`,
+  );
+  expect(lane).toBeTruthy();
+
+  return {
+    lane,
+    x: Number(lane?.getAttribute("data-lane-x") ?? "0"),
+    y: Number(lane?.getAttribute("data-lane-y") ?? "0"),
+    width: Number(lane?.getAttribute("data-lane-width") ?? "0"),
+    height: Number(lane?.getAttribute("data-lane-height") ?? "0"),
+  };
+}
+
+function getViewportMetrics(container: HTMLDivElement) {
+  const viewport = container.querySelector<HTMLElement>(
+    '[data-testid="team-workspace-rail-list"]',
+  );
+  expect(viewport).toBeTruthy();
+
+  return {
+    viewport,
+    x: Number(viewport?.getAttribute("data-viewport-x") ?? "0"),
+    y: Number(viewport?.getAttribute("data-viewport-y") ?? "0"),
+    zoom: Number(viewport?.getAttribute("data-viewport-zoom") ?? "0"),
+  };
+}
+
+async function dragMouse(
+  target: Element,
+  options: {
+    start: { x: number; y: number };
+    end: { x: number; y: number };
+  },
+) {
+  await act(async () => {
+    target.dispatchEvent(
+      new MouseEvent("mousedown", {
+        bubbles: true,
+        clientX: options.start.x,
+        clientY: options.start.y,
+      }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mousemove", {
+        bubbles: true,
+        clientX: options.end.x,
+        clientY: options.end.y,
+      }),
+    );
+    window.dispatchEvent(
+      new MouseEvent("mouseup", {
+        bubbles: true,
+        clientX: options.end.x,
+        clientY: options.end.y,
+      }),
+    );
+    await Promise.resolve();
+  });
+}
+
+async function pressKey(
+  target: EventTarget,
+  options: {
+    key: string;
+    code: string;
+    type?: "keydown" | "keyup";
+    shiftKey?: boolean;
+  },
+) {
+  await act(async () => {
+    target.dispatchEvent(
+      new KeyboardEvent(options.type ?? "keydown", {
+        bubbles: true,
+        key: options.key,
+        code: options.code,
+        shiftKey: options.shiftKey,
+      }),
+    );
+    await Promise.resolve();
+  });
+}
+
+async function clickElement(target: Element | null) {
+  expect(target).toBeTruthy();
+  await act(async () => {
+    target?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+  });
+}
+
+async function expandLane(container: HTMLDivElement, laneId: string) {
+  const lane = container.querySelector(
+    `[data-testid="team-workspace-member-lane-${laneId}"]`,
+  );
+  await clickElement(lane);
+  await flushBoardEffects();
+  return lane as HTMLElement | null;
+}
+
+async function unmountBoard(container: HTMLDivElement) {
+  const mountedIndex = mountedRoots.findIndex(
+    (mounted) => mounted.container === container,
+  );
+  if (mountedIndex < 0) {
+    return;
+  }
+
+  const [mounted] = mountedRoots.splice(mountedIndex, 1);
+  act(() => {
+    mounted?.root.unmount();
+  });
+  mounted?.container.remove();
+}
+
 describe("TeamWorkspaceBoard", () => {
   it("仅打开 team shell 且尚未创建子会话时，应默认渲染紧凑状态条", async () => {
     const container = await renderBoard({
@@ -124,32 +239,32 @@ describe("TeamWorkspaceBoard", () => {
       childSubagentSessions: [],
     });
 
-    expect(container.textContent).toContain("Team Workspace");
-    expect(container.textContent).toContain("尚未出现真实团队成员");
-    expect(container.textContent).toContain("查看详情");
+    expect(container.textContent).toContain("创作协作");
+    expect(container.textContent).toContain("还没有协作成员加入");
+    expect(container.textContent).toContain("查看任务进展");
     expect(container.textContent).not.toContain("spawn_agent");
     expect(container.textContent).not.toContain("Explorer 槽位");
     expect(container.textContent).not.toContain("Executor 槽位");
   });
 
-  it("空 shell 态点击查看详情后，应展开完整 team 说明", async () => {
+  it("空 shell 态点击展开详情后，应展开完整 team 说明", async () => {
     const container = await renderBoard({
       shellVisible: true,
       childSubagentSessions: [],
     });
 
-    const expandButton = Array.from(container.querySelectorAll("button")).find(
-      (element) => element.textContent?.includes("查看详情"),
-    );
+    const expandButton = container.querySelector(
+      '[data-testid="team-workspace-detail-toggle"]',
+    ) as HTMLButtonElement | null;
     expect(expandButton).toBeTruthy();
 
     act(() => {
       expandButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(container.textContent).toContain("等待团队成员加入");
-    expect(container.textContent).toContain("分派成员");
-    expect(container.textContent).toContain("收起");
+    expect(container.textContent).toContain("需要时会自动加入协作成员");
+    expect(container.textContent).toContain("邀请协作成员");
+    expect(container.textContent).toContain("收起细节");
   });
 
   it("已选 Team 但尚无真实子会话时，应在主画布展示计划角色", async () => {
@@ -179,23 +294,20 @@ describe("TeamWorkspaceBoard", () => {
     });
 
     expect(container.textContent).toContain("临时修复 Team");
-    expect(container.textContent).toContain("2 个计划角色");
+    expect(container.textContent).toContain("2 个计划分工");
 
-    const expandButton = Array.from(container.querySelectorAll("button")).find(
-      (element) => element.textContent?.includes("查看详情"),
-    );
+    const expandButton = container.querySelector(
+      '[data-testid="team-workspace-detail-toggle"]',
+    ) as HTMLButtonElement | null;
     expect(expandButton).toBeTruthy();
 
     act(() => {
       expandButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(container.textContent).toContain("计划中的 Team 角色");
+    expect(container.textContent).toContain("计划中的协作分工");
     expect(container.textContent).toContain("分析");
     expect(container.textContent).toContain("执行");
-    expect(container.textContent).toContain("Role · explorer");
-    expect(container.textContent).toContain("Profile · code-explorer");
-    expect(container.textContent).toContain("Skill · repo-exploration");
   });
 
   it("主会话视角应展示团队成员、最近过程并支持打开焦点会话", async () => {
@@ -292,30 +404,37 @@ describe("TeamWorkspaceBoard", () => {
       ],
     });
 
-    expect(container.textContent).toContain("Team Workspace");
-    expect(container.textContent).toContain("角色执行画布");
-    expect(container.textContent).toContain(
-      "主对话只保留调度记录，每个角色在自己的泳道中输出过程与结果。",
-    );
+    expect(container.textContent).toContain("创作协作");
+    expect(container.textContent).toContain("2 位成员协作中");
     expect(container.textContent).toContain("研究员");
     expect(container.textContent).toContain("执行器");
-    expect(container.textContent).toContain("2 位成员已加入");
     expect(container.textContent).toContain("代码分析员");
     expect(container.textContent).toContain("代码排障团队");
     expect(container.textContent).toContain("仓库探索");
-    expect(container.textContent).toContain("最近 turn 运行中");
-    expect(container.textContent).toContain("最近过程");
+    expect(container.textContent).toContain("最近进展 处理中");
+    expect(
+      container.querySelector('[data-testid="team-workspace-member-detail-child-1"]'),
+    ).toBeFalsy();
+    expect(
+      container
+        .querySelector('[data-testid="team-workspace-member-lane-child-1"]')
+        ?.getAttribute("data-expanded"),
+    ).toBe("false");
+    expect(
+      container.querySelector('[data-testid="team-workspace-canvas-toolbar"]')
+        ?.textContent,
+    ).toContain("焦点 研究员");
+    expect(
+      container.querySelector('[data-testid="team-workspace-canvas-toolbar"]')
+        ?.textContent,
+    ).toContain("缩放 100%");
+    expect(container.textContent).toContain("最近进展");
     expect(container.textContent).toContain(
       "回复：已完成竞品摘要与数据来源梳理。",
     );
     expect(container.textContent).toContain(
       "计划：先整理落地步骤，再生成第一版实施清单。",
     );
-    expect(
-      container.querySelector('[data-testid="team-workspace-activity-feed"]'),
-    ).toBeTruthy();
-    expect(container.textContent).toContain("命令输出");
-    expect(container.textContent).toContain("已对 3 个来源完成去重校验。");
 
     const researcherLane = container.querySelector(
       '[data-testid="team-workspace-member-lane-child-1"]',
@@ -323,7 +442,7 @@ describe("TeamWorkspaceBoard", () => {
     const executorLane = container.querySelector(
       '[data-testid="team-workspace-member-lane-child-2"]',
     );
-    expect(researcherLane?.textContent).toContain("角色输出");
+    expect(researcherLane?.textContent).toContain("成员进展");
     expect(researcherLane?.textContent).toContain(
       "回复：已完成竞品摘要与数据来源梳理。",
     );
@@ -331,14 +450,26 @@ describe("TeamWorkspaceBoard", () => {
       "计划：先整理落地步骤，再生成第一版实施清单。",
     );
 
-    const openButton = Array.from(container.querySelectorAll("button")).find(
-      (element) => element.textContent?.includes("查看对话"),
-    );
-    expect(openButton).toBeTruthy();
+    await expandLane(container, "child-1");
 
-    act(() => {
-      openButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
+    expect(
+      container.querySelector('[data-testid="team-workspace-member-detail-child-1"]'),
+    ).toBeTruthy();
+    expect(
+      container
+        .querySelector('[data-testid="team-workspace-member-lane-child-1"]')
+        ?.getAttribute("data-expanded"),
+    ).toBe("true");
+    expect(
+      container.querySelector('[data-testid="team-workspace-activity-feed"]'),
+    ).toBeTruthy();
+    expect(container.textContent).toContain("命令输出");
+    expect(container.textContent).toContain("已对 3 个来源完成去重校验。");
+
+    const openButton = Array.from(container.querySelectorAll("button")).find(
+      (element) => element.textContent?.includes("打开对话"),
+    );
+    await clickElement(openButton ?? null);
 
     expect(onOpenSubagentSession).toHaveBeenCalledWith("child-1");
   });
@@ -408,15 +539,17 @@ describe("TeamWorkspaceBoard", () => {
     });
 
     const laneIds = Array.from(
-      container.querySelectorAll('[data-testid^="team-workspace-member-lane-"]'),
+      container.querySelectorAll(
+        '[data-testid^="team-workspace-member-lane-"][data-lane-x]',
+      ),
     ).map((element) => element.getAttribute("data-testid"));
 
     expect(laneIds).toEqual([
       "team-workspace-member-lane-child-explorer",
       "team-workspace-member-lane-child-executor",
     ]);
-    expect(container.textContent).toContain("蓝图 · 分析");
-    expect(container.textContent).toContain("蓝图 · 执行");
+    expect(container.textContent).toContain("分工 · 分析");
+    expect(container.textContent).toContain("分工 · 执行");
   });
 
   it("子线程视角应展示父会话、最近过程并支持切换 sibling", async () => {
@@ -514,21 +647,23 @@ describe("TeamWorkspaceBoard", () => {
     });
 
     expect(container.textContent).toContain("主线程总览");
-    expect(container.textContent).toContain("角色执行画布");
     expect(container.textContent).toContain("实现代理");
     expect(container.textContent).toContain("检索代理");
-    expect(container.textContent).toContain("队列 1");
-    expect(container.textContent).toContain("最近过程");
+    expect(container.textContent).toContain("等待中 1");
+    expect(
+      container.querySelector('[data-testid="team-workspace-member-detail-child-current"]'),
+    ).toBeFalsy();
+    expect(
+      container.querySelector('[data-testid="team-workspace-canvas-toolbar"]')
+        ?.textContent,
+    ).toContain("焦点 实现代理");
+    expect(
+      container.querySelector('[data-testid="team-workspace-canvas-toolbar"]')
+        ?.textContent,
+    ).toContain("缩放 100%");
+    expect(container.textContent).toContain("最近进展");
     expect(container.textContent).toContain(
       "推理：先检查 team runtime 的控制面状态，再决定是否等待。",
-    );
-    expect(
-      container.querySelector('[data-testid="team-workspace-activity-feed"]'),
-    ).toBeTruthy();
-    expect(container.textContent).toContain("检索结果");
-    expect(container.textContent).toContain("已汇总 5 条 roadmap 差异。");
-    expect(container.textContent).toContain(
-      "工具 browser_snapshot：页面已刷新为最新状态并生成差异截图。",
     );
 
     const currentLane = container.querySelector(
@@ -537,7 +672,7 @@ describe("TeamWorkspaceBoard", () => {
     const siblingLane = container.querySelector(
       '[data-testid="team-workspace-member-lane-child-sibling-1"]',
     );
-    expect(currentLane?.textContent).toContain("角色输出");
+    expect(currentLane?.textContent).toContain("成员进展");
     expect(currentLane?.textContent).toContain(
       "推理：先检查 team runtime 的控制面状态，再决定是否等待。",
     );
@@ -546,7 +681,7 @@ describe("TeamWorkspaceBoard", () => {
     );
 
     const returnButton = Array.from(container.querySelectorAll("button")).find(
-      (element) => element.textContent?.includes("返回父会话"),
+      (element) => element.textContent?.includes("返回主助手"),
     );
     expect(returnButton).toBeTruthy();
 
@@ -556,28 +691,27 @@ describe("TeamWorkspaceBoard", () => {
 
     expect(onReturnToParentSession).toHaveBeenCalledTimes(1);
 
-    const siblingCardButton = Array.from(
-      container.querySelectorAll("button"),
-    ).find((element) => element.textContent?.includes("检索代理"));
-    expect(siblingCardButton).toBeTruthy();
+    await expandLane(container, "child-sibling-1");
 
-    act(() => {
-      siblingCardButton?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
-    });
-    await flushBoardEffects();
-
+    expect(
+      container.querySelector(
+        '[data-testid="team-workspace-member-detail-child-sibling-1"]',
+      ),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('[data-testid="team-workspace-activity-feed"]'),
+    ).toBeTruthy();
+    expect(container.textContent).toContain("检索结果");
+    expect(container.textContent).toContain("已汇总 5 条 roadmap 差异。");
+    expect(container.textContent).toContain(
+      "工具 browser_snapshot：页面已刷新为最新状态并生成差异截图。",
+    );
     expect(container.textContent).toContain("等待父线程确认是否继续扩展范围。");
 
     const switchButton = Array.from(container.querySelectorAll("button")).find(
       (element) => element.textContent?.includes("切换"),
     );
-    expect(switchButton).toBeTruthy();
-
-    act(() => {
-      switchButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
+    await clickElement(switchButton ?? null);
 
     expect(onOpenSubagentSession).toHaveBeenCalledWith("child-sibling-1");
   });
@@ -618,9 +752,6 @@ describe("TeamWorkspaceBoard", () => {
     const railList = container.querySelector<HTMLElement>(
       '[data-testid="team-workspace-rail-list"]',
     );
-    const summary = container.querySelector<HTMLElement>(
-      '[data-testid="team-workspace-session-summary"]',
-    );
     const boardBody = container.querySelector<HTMLElement>(
       '[data-testid="team-workspace-board-body"]',
     );
@@ -631,11 +762,26 @@ describe("TeamWorkspaceBoard", () => {
     expect(embeddedShell?.className).toContain("flex-col");
     expect(embeddedShell?.className).not.toContain("backdrop-blur");
     expect(boardBody?.className).toContain("overflow-y-auto");
-    expect(railList?.className).toContain("md:grid-cols-2");
-    expect(summary?.textContent).toContain("整理竞品与数据来源");
+    expect(railList?.getAttribute("data-layout-kind")).toBe("free-canvas");
+    expect(
+      container.querySelector('[data-testid="team-workspace-inspector-overlay"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="team-workspace-member-detail-child-1"]'),
+    ).toBeNull();
+    expect(
+      container
+        .querySelector('[data-testid="team-workspace-member-lane-child-1"]')
+        ?.getAttribute("data-expanded"),
+    ).toBe("false");
+    expect(
+      container
+        .querySelector('[data-testid="team-workspace-member-lane-child-2"]')
+        ?.getAttribute("data-expanded"),
+    ).toBe("false");
   });
 
-  it("嵌入态真实 team 应支持收起并重新展开详情", async () => {
+  it("嵌入态真实 team 应在点击成员后切换卡内详情", async () => {
     const container = await renderBoard({
       embedded: true,
       childSubagentSessions: [
@@ -650,42 +796,60 @@ describe("TeamWorkspaceBoard", () => {
           task_summary: "整理竞品与数据来源，补齐关键差异点与证据链。",
           role_hint: "explorer",
         },
+        {
+          id: "child-collapse-2",
+          name: "执行器",
+          created_at: 1_710_000_010,
+          updated_at: 1_710_000_120,
+          session_type: "sub_agent",
+          runtime_status: "queued",
+          latest_turn_status: "queued",
+          task_summary: "整理执行步骤并准备提交方案。",
+          role_hint: "executor",
+        },
       ],
     });
 
     expect(
-      container.querySelector('[data-testid="team-workspace-detail-section"]'),
-    ).toBeTruthy();
-
-    const collapseButton = Array.from(container.querySelectorAll("button")).find(
-      (element) => element.textContent?.includes("收起详情"),
-    );
-    expect(collapseButton).toBeTruthy();
-
-    act(() => {
-      collapseButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-
-    expect(
-      container.querySelector('[data-testid="team-workspace-detail-section"]'),
+      container.querySelector('[data-testid="team-workspace-member-detail-child-collapse-1"]'),
     ).toBeFalsy();
     expect(
-      container.querySelector('[data-testid="team-workspace-compact-summary"]'),
-    ).toBeTruthy();
-    expect(container.textContent).toContain("紧凑视图");
-    expect(container.textContent).toContain("展开详情");
+      container.querySelector('[data-testid="team-workspace-member-detail-child-collapse-2"]'),
+    ).toBeFalsy();
+    expect(
+      container
+        .querySelector('[data-testid="team-workspace-member-lane-child-collapse-1"]')
+        ?.getAttribute("data-expanded"),
+    ).toBe("false");
+    expect(
+      container
+        .querySelector('[data-testid="team-workspace-member-lane-child-collapse-2"]')
+        ?.getAttribute("data-expanded"),
+    ).toBe("false");
 
-    const expandButton = Array.from(container.querySelectorAll("button")).find(
-      (element) => element.textContent?.includes("展开详情"),
-    );
-    expect(expandButton).toBeTruthy();
-
-    act(() => {
-      expandButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
+    await expandLane(container, "child-collapse-1");
 
     expect(
-      container.querySelector('[data-testid="team-workspace-detail-section"]'),
+      container.querySelector('[data-testid="team-workspace-member-detail-child-collapse-1"]'),
+    ).toBeTruthy();
+    expect(
+      container
+        .querySelector('[data-testid="team-workspace-member-lane-child-collapse-1"]')
+        ?.getAttribute("data-expanded"),
+    ).toBe("true");
+    expect(
+      container
+        .querySelector('[data-testid="team-workspace-member-lane-child-collapse-2"]')
+        ?.getAttribute("data-expanded"),
+    ).toBe("false");
+
+    await expandLane(container, "child-collapse-2");
+
+    expect(
+      container.querySelector('[data-testid="team-workspace-member-detail-child-collapse-1"]'),
+    ).toBeFalsy();
+    expect(
+      container.querySelector('[data-testid="team-workspace-member-detail-child-collapse-2"]'),
     ).toBeTruthy();
   });
 
@@ -734,13 +898,22 @@ describe("TeamWorkspaceBoard", () => {
       },
     });
 
-    const liveSessionCard = Array.from(container.querySelectorAll("button")).find(
-      (element) => element.textContent?.includes("实时代理"),
+    const liveSessionCard = container.querySelector<HTMLElement>(
+      '[data-testid="team-workspace-member-lane-child-live-1"]',
     );
 
     expect(liveSessionCard?.textContent).toContain("运行中");
-    expect(container.textContent).toContain("运行中 1");
-    expect(container.textContent).toContain("最近 turn 运行中");
+    expect(
+      container.querySelector('[data-testid="team-workspace-canvas-toolbar"]')
+        ?.textContent,
+    ).toContain("处理中");
+    expect(container.textContent).toContain("最近进展 处理中");
+    expect(
+      container.querySelector('[data-testid="team-workspace-member-detail-child-live-1"]'),
+    ).toBeFalsy();
+
+    await expandLane(container, "child-live-1");
+
     expect(container.textContent).toContain("状态切换");
     expect(container.textContent).toContain("已切换为运行中。");
     expect(
@@ -809,6 +982,491 @@ describe("TeamWorkspaceBoard", () => {
     expect(container.textContent).toContain("页面结构差异已提取完成。");
   });
 
+  it("拖动角色头部后，应更新对应 lane 的画布坐标", async () => {
+    const container = await renderBoard({
+      currentSessionId: "parent-drag-1",
+      childSubagentSessions: [
+        {
+          id: "child-drag-1",
+          name: "拖拽代理",
+          created_at: 1_710_000_000,
+          updated_at: 1_710_000_100,
+          session_type: "sub_agent",
+          runtime_status: "running",
+          latest_turn_status: "running",
+          task_summary: "验证自由画布拖拽行为",
+          role_hint: "explorer",
+        },
+      ],
+    });
+
+    const before = getLaneMetrics(container, "child-drag-1");
+    const header = container.querySelector(
+      '[data-testid="team-workspace-member-lane-header-child-drag-1"]',
+    );
+    expect(header).toBeTruthy();
+
+    await dragMouse(header as Element, {
+      start: { x: 120, y: 140 },
+      end: { x: 220, y: 235 },
+    });
+
+    const after = getLaneMetrics(container, "child-drag-1");
+    expect(after.x).toBe(before.x + 100);
+    expect(after.y).toBe(before.y + 95);
+    expect(after.width).toBe(before.width);
+    expect(after.height).toBe(before.height);
+  });
+
+  it("点击自动排布后，应将角色面板整理回规则布局并重置视口", async () => {
+    const container = await renderBoard({
+      currentSessionId: "parent-arrange-1",
+      childSubagentSessions: [
+        {
+          id: "child-arrange-1",
+          name: "分析代理",
+          created_at: 1_710_000_000,
+          updated_at: 1_710_000_100,
+          session_type: "sub_agent",
+          runtime_status: "running",
+          latest_turn_status: "running",
+          task_summary: "验证自动排布回正",
+          role_hint: "explorer",
+        },
+        {
+          id: "child-arrange-2",
+          name: "执行代理",
+          created_at: 1_710_000_010,
+          updated_at: 1_710_000_120,
+          session_type: "sub_agent",
+          runtime_status: "queued",
+          latest_turn_status: "queued",
+          task_summary: "验证自动排布顺序",
+          role_hint: "executor",
+        },
+      ],
+    });
+
+    const firstBefore = getLaneMetrics(container, "child-arrange-1");
+    const secondHeader = container.querySelector(
+      '[data-testid="team-workspace-member-lane-header-child-arrange-2"]',
+    );
+    expect(secondHeader).toBeTruthy();
+
+    await dragMouse(secondHeader as Element, {
+      start: { x: 420, y: 160 },
+      end: { x: 790, y: 430 },
+    });
+
+    const secondMoved = getLaneMetrics(container, "child-arrange-2");
+    expect(secondMoved.y).toBeGreaterThan(firstBefore.y);
+
+    const autoArrangeButton = container.querySelector(
+      '[data-testid="team-workspace-auto-arrange-button"]',
+    );
+    expect(autoArrangeButton).toBeTruthy();
+
+    act(() => {
+      autoArrangeButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+
+    const firstAfter = getLaneMetrics(container, "child-arrange-1");
+    const secondAfter = getLaneMetrics(container, "child-arrange-2");
+    const viewportAfter = getViewportMetrics(container);
+
+    expect(firstAfter.x).toBeGreaterThanOrEqual(64);
+    expect(firstAfter.y).toBeGreaterThanOrEqual(64);
+    expect(secondAfter.y).toBe(firstAfter.y);
+    expect(secondAfter.x).toBeGreaterThan(firstAfter.x);
+    expect(secondAfter.x).toBeLessThan(secondMoved.x);
+    expect(viewportAfter.x).toBe(56);
+    expect(viewportAfter.y).toBe(56);
+    expect(viewportAfter.zoom).toBe(1);
+  });
+
+  it("按下 A 快捷键时，应触发自动排布；焦点在输入框时不应误触发", async () => {
+    const onSendSubagentInput = vi.fn();
+    const container = await renderBoard({
+      currentSessionId: "parent-shortcut-arrange-1",
+      childSubagentSessions: [
+        {
+          id: "child-shortcut-arrange-1",
+          name: "分析代理",
+          created_at: 1_710_000_000,
+          updated_at: 1_710_000_100,
+          session_type: "sub_agent",
+          runtime_status: "running",
+          latest_turn_status: "running",
+          task_summary: "验证 A 快捷键",
+          role_hint: "explorer",
+        },
+        {
+          id: "child-shortcut-arrange-2",
+          name: "执行代理",
+          created_at: 1_710_000_010,
+          updated_at: 1_710_000_120,
+          session_type: "sub_agent",
+          runtime_status: "queued",
+          latest_turn_status: "queued",
+          task_summary: "验证输入态不误触发",
+          role_hint: "executor",
+        },
+      ],
+      onSendSubagentInput,
+    });
+
+    const secondHeader = container.querySelector(
+      '[data-testid="team-workspace-member-lane-header-child-shortcut-arrange-2"]',
+    );
+    expect(secondHeader).toBeTruthy();
+
+    await dragMouse(secondHeader as Element, {
+      start: { x: 420, y: 160 },
+      end: { x: 760, y: 420 },
+    });
+
+    const moved = getLaneMetrics(container, "child-shortcut-arrange-2");
+    await expandLane(container, "child-shortcut-arrange-1");
+    const textarea = container.querySelector<HTMLTextAreaElement>(
+      '[data-testid="team-workspace-send-input-textarea"]',
+    );
+    expect(textarea).toBeTruthy();
+
+    textarea?.focus();
+    await pressKey(textarea as EventTarget, {
+      key: "a",
+      code: "KeyA",
+    });
+
+    const afterTextareaKey = getLaneMetrics(
+      container,
+      "child-shortcut-arrange-2",
+    );
+    expect(afterTextareaKey.x).toBe(moved.x);
+    expect(afterTextareaKey.y).toBe(moved.y);
+
+    await pressKey(window, {
+      key: "a",
+      code: "KeyA",
+    });
+
+    const arranged = getLaneMetrics(container, "child-shortcut-arrange-2");
+    expect(arranged.x).toBeLessThan(moved.x);
+    expect(arranged.y).toBeGreaterThanOrEqual(64);
+  });
+
+  it("按下方向键时，应平移画布视口；焦点在输入框时不应误触发", async () => {
+    const onSendSubagentInput = vi.fn();
+    const container = await renderBoard({
+      currentSessionId: "parent-shortcut-pan-1",
+      childSubagentSessions: [
+        {
+          id: "child-shortcut-pan-1",
+          name: "分析代理",
+          created_at: 1_710_000_000,
+          updated_at: 1_710_000_100,
+          session_type: "sub_agent",
+          runtime_status: "running",
+          latest_turn_status: "running",
+          task_summary: "验证方向键平移",
+          role_hint: "explorer",
+        },
+      ],
+      onSendSubagentInput,
+    });
+
+    const viewportBefore = getViewportMetrics(container);
+    await expandLane(container, "child-shortcut-pan-1");
+    const textarea = container.querySelector<HTMLTextAreaElement>(
+      '[data-testid="team-workspace-send-input-textarea"]',
+    );
+    expect(textarea).toBeTruthy();
+
+    textarea?.focus();
+    await pressKey(textarea as EventTarget, {
+      key: "ArrowRight",
+      code: "ArrowRight",
+    });
+
+    const afterTextareaKey = getViewportMetrics(container);
+    expect(afterTextareaKey.x).toBe(viewportBefore.x);
+    expect(afterTextareaKey.y).toBe(viewportBefore.y);
+
+    await pressKey(window, {
+      key: "ArrowRight",
+      code: "ArrowRight",
+    });
+    await pressKey(window, {
+      key: "ArrowDown",
+      code: "ArrowDown",
+    });
+
+    const afterPan = getViewportMetrics(container);
+    expect(afterPan.x).toBe(viewportBefore.x - 72);
+    expect(afterPan.y).toBe(viewportBefore.y - 72);
+
+    await pressKey(window, {
+      key: "ArrowLeft",
+      code: "ArrowLeft",
+    });
+    await pressKey(window, {
+      key: "ArrowUp",
+      code: "ArrowUp",
+    });
+
+    const afterResetPan = getViewportMetrics(container);
+    expect(afterResetPan.x).toBe(viewportBefore.x);
+    expect(afterResetPan.y).toBe(viewportBefore.y);
+  });
+
+  it("按下 Shift + 方向键时，应使用更大步长平移画布", async () => {
+    const container = await renderBoard({
+      currentSessionId: "parent-shortcut-fast-pan-1",
+      childSubagentSessions: [
+        {
+          id: "child-shortcut-fast-pan-1",
+          name: "分析代理",
+          created_at: 1_710_000_000,
+          updated_at: 1_710_000_100,
+          session_type: "sub_agent",
+          runtime_status: "running",
+          latest_turn_status: "running",
+          task_summary: "验证 Shift 方向键快移",
+          role_hint: "explorer",
+        },
+      ],
+    });
+
+    const viewportBefore = getViewportMetrics(container);
+
+    await pressKey(window, {
+      key: "ArrowRight",
+      code: "ArrowRight",
+      shiftKey: true,
+    });
+    await pressKey(window, {
+      key: "ArrowDown",
+      code: "ArrowDown",
+      shiftKey: true,
+    });
+
+    const afterFastPan = getViewportMetrics(container);
+    expect(afterFastPan.x).toBe(viewportBefore.x - 216);
+    expect(afterFastPan.y).toBe(viewportBefore.y - 216);
+  });
+
+  it("自由画布应隐藏 minimap 入口，避免占用主视图", async () => {
+    const container = await renderBoard({
+      currentSessionId: "parent-minimap-1",
+      childSubagentSessions: [
+        {
+          id: "child-minimap-1",
+          name: "分析代理",
+          created_at: 1_710_000_000,
+          updated_at: 1_710_000_100,
+          session_type: "sub_agent",
+          runtime_status: "running",
+          latest_turn_status: "running",
+          task_summary: "验证 minimap 定位能力",
+          role_hint: "explorer",
+        },
+        {
+          id: "child-minimap-2",
+          name: "执行代理",
+          created_at: 1_710_000_010,
+          updated_at: 1_710_000_120,
+          session_type: "sub_agent",
+          runtime_status: "queued",
+          latest_turn_status: "queued",
+          task_summary: "验证 minimap 可见区域框",
+          role_hint: "executor",
+        },
+      ],
+    });
+
+    expect(
+      container.querySelector('[data-testid="team-workspace-minimap"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="team-workspace-toggle-minimap"]'),
+    ).toBeNull();
+  });
+
+  it("按住 Space 时应进入画布拖拽模式，并允许直接拖动画布视口", async () => {
+    const container = await renderBoard({
+      currentSessionId: "parent-space-pan-1",
+      childSubagentSessions: [
+        {
+          id: "child-space-pan-1",
+          name: "分析代理",
+          created_at: 1_710_000_000,
+          updated_at: 1_710_000_100,
+          session_type: "sub_agent",
+          runtime_status: "running",
+          latest_turn_status: "running",
+          task_summary: "验证 Space 拖动画布",
+          role_hint: "explorer",
+        },
+      ],
+    });
+
+    const laneBefore = getLaneMetrics(container, "child-space-pan-1");
+    const viewportBefore = getViewportMetrics(container);
+    const laneElement = container.querySelector(
+      '[data-testid="team-workspace-member-lane-child-space-pan-1"]',
+    );
+    expect(laneElement).toBeTruthy();
+
+    await pressKey(window, {
+      key: " ",
+      code: "Space",
+    });
+
+    const viewportInPanMode = container.querySelector<HTMLElement>(
+      '[data-testid="team-workspace-rail-list"]',
+    );
+    expect(viewportInPanMode?.getAttribute("data-pan-mode")).toBe("active");
+
+    await dragMouse(laneElement as Element, {
+      start: { x: 180, y: 180 },
+      end: { x: 250, y: 235 },
+    });
+
+    const laneAfter = getLaneMetrics(container, "child-space-pan-1");
+    const viewportAfter = getViewportMetrics(container);
+
+    expect(laneAfter.x).toBe(laneBefore.x);
+    expect(laneAfter.y).toBe(laneBefore.y);
+    expect(viewportAfter.x).toBe(viewportBefore.x + 70);
+    expect(viewportAfter.y).toBe(viewportBefore.y + 55);
+
+    await pressKey(window, {
+      key: " ",
+      code: "Space",
+      type: "keyup",
+    });
+
+    expect(viewportInPanMode?.getAttribute("data-pan-mode")).toBe("idle");
+  });
+
+  it("空白画布区域应支持直接拖动画布视口，无需先按住 Space", async () => {
+    const container = await renderBoard({
+      currentSessionId: "parent-manual-pan-1",
+      childSubagentSessions: [
+        {
+          id: "child-manual-pan-1",
+          name: "分析代理",
+          created_at: 1_710_000_000,
+          updated_at: 1_710_000_100,
+          session_type: "sub_agent",
+          runtime_status: "running",
+          latest_turn_status: "running",
+          task_summary: "验证手动拖动画布",
+          role_hint: "explorer",
+        },
+      ],
+    });
+
+    const laneBefore = getLaneMetrics(container, "child-manual-pan-1");
+    const viewportBefore = getViewportMetrics(container);
+    const panSurface = container.querySelector(
+      '[data-testid="team-workspace-canvas-pan-surface"]',
+    );
+    expect(panSurface).toBeTruthy();
+
+    await dragMouse(panSurface as Element, {
+      start: { x: 220, y: 220 },
+      end: { x: 290, y: 268 },
+    });
+
+    const laneAfter = getLaneMetrics(container, "child-manual-pan-1");
+    const viewportAfter = getViewportMetrics(container);
+
+    expect(laneAfter.x).toBe(laneBefore.x);
+    expect(laneAfter.y).toBe(laneBefore.y);
+    expect(viewportAfter.x).toBe(viewportBefore.x + 70);
+    expect(viewportAfter.y).toBe(viewportBefore.y + 48);
+  });
+
+  it("拖动 resize handle 后，应更新对应 lane 的宽高", async () => {
+    const container = await renderBoard({
+      currentSessionId: "parent-resize-1",
+      childSubagentSessions: [
+        {
+          id: "child-resize-1",
+          name: "缩放代理",
+          created_at: 1_710_000_000,
+          updated_at: 1_710_000_100,
+          session_type: "sub_agent",
+          runtime_status: "running",
+          latest_turn_status: "running",
+          task_summary: "验证自由画布改尺寸行为",
+          role_hint: "executor",
+        },
+      ],
+    });
+
+    const before = getLaneMetrics(container, "child-resize-1");
+    const resizeHandle = container.querySelector(
+      '[data-testid="team-workspace-member-lane-resize-child-resize-1-se"]',
+    );
+    expect(resizeHandle).toBeTruthy();
+
+    await dragMouse(resizeHandle as Element, {
+      start: { x: 380, y: 280 },
+      end: { x: 455, y: 340 },
+    });
+
+    const after = getLaneMetrics(container, "child-resize-1");
+    expect(after.x).toBe(before.x);
+    expect(after.y).toBe(before.y);
+    expect(after.width).toBe(before.width + 75);
+    expect(after.height).toBe(before.height + 60);
+  });
+
+  it("同一会话重新挂载后，应恢复上次保存的 lane 布局", async () => {
+    const boardProps: Partial<React.ComponentProps<typeof TeamWorkspaceBoard>> = {
+      currentSessionId: "parent-persist-1",
+      childSubagentSessions: [
+        {
+          id: "child-persist-1",
+          name: "持久化代理",
+          created_at: 1_710_000_000,
+          updated_at: 1_710_000_100,
+          session_type: "sub_agent",
+          runtime_status: "running",
+          latest_turn_status: "running",
+          task_summary: "验证会话级画布持久化",
+          role_hint: "reviewer",
+        },
+      ],
+    };
+
+    const firstContainer = await renderBoard(boardProps);
+    const firstHeader = firstContainer.querySelector(
+      '[data-testid="team-workspace-member-lane-header-child-persist-1"]',
+    );
+    expect(firstHeader).toBeTruthy();
+
+    await dragMouse(firstHeader as Element, {
+      start: { x: 130, y: 150 },
+      end: { x: 290, y: 260 },
+    });
+
+    const moved = getLaneMetrics(firstContainer, "child-persist-1");
+    await unmountBoard(firstContainer);
+
+    const secondContainer = await renderBoard(boardProps);
+    const restored = getLaneMetrics(secondContainer, "child-persist-1");
+
+    expect(restored.x).toBe(moved.x);
+    expect(restored.y).toBe(moved.y);
+    expect(restored.width).toBe(moved.width);
+    expect(restored.height).toBe(moved.height);
+  });
+
   it("选中运行中的子代理时应展示停止操作，停止后触发回调", async () => {
     const onCloseSubagentSession = vi.fn();
     const container = await renderBoard({
@@ -828,12 +1486,14 @@ describe("TeamWorkspaceBoard", () => {
       onCloseSubagentSession,
     });
 
-    expect(container.textContent).toContain(
-      "停止会中断当前执行并保留会话，可稍后恢复。",
-    );
+    await expandLane(container, "child-close-1");
+
+    expect(
+      container.querySelector('[data-testid="team-workspace-member-detail-child-close-1"]'),
+    ).toBeTruthy();
 
     const closeButton = Array.from(container.querySelectorAll("button")).find(
-      (element) => element.textContent?.includes("停止成员"),
+      (element) => element.textContent?.includes("暂停处理"),
     );
     expect(closeButton).toBeTruthy();
 
@@ -864,13 +1524,15 @@ describe("TeamWorkspaceBoard", () => {
       onResumeSubagentSession,
     });
 
+    await expandLane(container, "child-resume-1");
+
     const resumeButton = Array.from(container.querySelectorAll("button")).find(
-      (element) => element.textContent?.includes("恢复成员"),
+      (element) => element.textContent?.includes("继续处理"),
     );
     expect(resumeButton).toBeTruthy();
-    expect(container.textContent).toContain(
-      "停止会中断当前执行并保留会话，可稍后恢复。",
-    );
+    expect(
+      container.querySelector('[data-testid="team-workspace-member-detail-child-resume-1"]'),
+    ).toBeTruthy();
 
     await act(async () => {
       resumeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -898,6 +1560,8 @@ describe("TeamWorkspaceBoard", () => {
       ],
       onWaitSubagentSession,
     });
+
+    await expandLane(container, "child-wait-1");
 
     const waitButton = Array.from(container.querySelectorAll("button")).find(
       (element) => element.textContent?.includes("等待结果 30 秒"),
@@ -953,11 +1617,11 @@ describe("TeamWorkspaceBoard", () => {
       onWaitActiveTeamSessions,
     });
 
-    expect(container.textContent).toContain("等待任一活跃成员");
-    expect(container.textContent).toContain("2 位活跃成员可统一等待");
+    expect(container.textContent).toContain("等待任一成员结果");
+    expect(container.textContent).toContain("2 位处理中");
 
     const waitAnyButton = Array.from(container.querySelectorAll("button")).find(
-      (element) => element.textContent?.includes("等待任一活跃成员"),
+      (element) => element.textContent?.includes("等待任一成员结果"),
     );
     expect(waitAnyButton).toBeTruthy();
 
@@ -1012,9 +1676,10 @@ describe("TeamWorkspaceBoard", () => {
     );
 
     expect(operations).toBeTruthy();
-    expect(operations?.textContent).toContain("等待命中");
-    expect(operations?.textContent).toContain("最近一次统一等待命中 执行器");
-    expect(operations?.textContent).toContain("已进入已完成状态");
+    expect(operations?.className).toContain("overflow-x-auto");
+    expect(operations?.textContent).toContain("收到结果");
+    expect(operations?.textContent).toContain("刚才等到 执行器 返回了新结果");
+    expect(operations?.textContent).toContain("当前状态为已完成");
     expect(container.textContent).toContain("输出落地方案");
   });
 
@@ -1101,9 +1766,9 @@ describe("TeamWorkspaceBoard", () => {
     );
 
     expect(operations).toBeTruthy();
-    expect(operations?.textContent).toContain("级联停止");
+    expect(operations?.textContent).toContain("暂停处理");
     expect(operations?.textContent).toContain(
-      "最近一次停止操作已级联停止 2 位成员",
+      "刚才已暂停 2 位协作成员的处理",
     );
   });
 
@@ -1156,7 +1821,7 @@ describe("TeamWorkspaceBoard", () => {
     expect(summary?.textContent).toContain("输出落地方案");
 
     const controlEntry = Array.from(container.querySelectorAll("button")).find(
-      (element) => element.textContent?.includes("级联停止"),
+      (element) => element.textContent?.includes("暂停处理"),
     );
     expect(controlEntry).toBeTruthy();
 
@@ -1213,12 +1878,12 @@ describe("TeamWorkspaceBoard", () => {
       onCloseCompletedTeamSessions,
     });
 
-    expect(container.textContent).toContain("清理已完成成员");
-    expect(container.textContent).toContain("2 位已完成成员可清理");
+    expect(container.textContent).toContain("收起已完成成员");
+    expect(container.textContent).toContain("2 位已完成");
 
     const closeCompletedButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((element) => element.textContent?.includes("清理已完成成员"));
+    ).find((element) => element.textContent?.includes("收起已完成成员"));
     expect(closeCompletedButton).toBeTruthy();
 
     await act(async () => {
@@ -1254,6 +1919,8 @@ describe("TeamWorkspaceBoard", () => {
       onSendSubagentInput,
     });
 
+    await expandLane(container, "child-send-1");
+
     const textarea = container.querySelector<HTMLTextAreaElement>(
       '[data-testid="team-workspace-send-input-textarea"]',
     );
@@ -1274,11 +1941,11 @@ describe("TeamWorkspaceBoard", () => {
     });
 
     const sendButton = Array.from(container.querySelectorAll("button")).find(
-      (element) => element.textContent?.includes("发送补充说明"),
+      (element) => element.textContent?.includes("发送说明"),
     );
     const interruptButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((element) => element.textContent?.includes("中断并发送"));
+    ).find((element) => element.textContent?.includes("立即插入说明"));
     expect(sendButton).toBeTruthy();
     expect(interruptButton).toBeTruthy();
 
@@ -1362,13 +2029,13 @@ describe("TeamWorkspaceBoard", () => {
       },
     });
 
-    expect(container.textContent).toContain("正在准备本轮 Team");
-    expect(container.textContent).toContain("组建中");
-    expect(container.textContent).toContain("Team · 排障 Team");
-    expect(container.textContent).toContain("参考蓝图 · 代码排障团队");
+    expect(container.textContent).toContain("正在准备协作分工");
+    expect(container.textContent).toContain("准备中");
+    expect(container.textContent).toContain("协作方案 · 排障 Team");
+    expect(container.textContent).toContain("参考方案 · 代码排障团队");
   });
 
-  it("本轮 Team 已就绪时，应在无真实子会话下展示当前成员", async () => {
+  it("本轮协作方案已就绪时，应在无真实子会话下展示当前成员", async () => {
     const container = await renderBoard({
       shellVisible: true,
       defaultShellExpanded: true,
@@ -1418,11 +2085,10 @@ describe("TeamWorkspaceBoard", () => {
     expect(
       container.querySelector('[data-testid="team-workspace-runtime-members"]'),
     ).toBeTruthy();
-    expect(container.textContent).toContain("本轮 Team 已就绪");
+    expect(container.textContent).toContain("协作分工已准备好");
     expect(container.textContent).toContain("分析");
     expect(container.textContent).toContain("执行");
-    expect(container.textContent).toContain("Skill · repo-exploration");
-    expect(container.textContent).toContain("参考蓝图角色");
+    expect(container.textContent).toContain("参考分工");
   });
 
   it("本轮 Team 准备失败时，应展示失败原因", async () => {
@@ -1441,7 +2107,7 @@ describe("TeamWorkspaceBoard", () => {
       },
     });
 
-    expect(container.textContent).toContain("Team 生成失败");
+    expect(container.textContent).toContain("协作准备失败");
     expect(container.textContent).toContain(
       "Provider 认证失败，无法生成 Team。",
     );

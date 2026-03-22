@@ -312,7 +312,7 @@ function resolvePendingItemOverview(item: AgentThreadItem): string {
     }
   }
 
-  return "当前回合暂停在待确认步骤，处理后会继续后续流程。";
+  return "当前阶段在等待你确认，完成后会继续后续处理。";
 }
 
 function resolveItemStatusLabel(status: AgentThreadItem["status"]): string {
@@ -364,17 +364,17 @@ function resolveOverviewText(
 
   if (turn.status === "running") {
     return actionableCount > 0
-      ? "正在处理你的请求，执行轨迹会持续更新。"
-      : "正在准备执行上下文。";
+      ? "正在处理你的请求，最新进展会持续更新。"
+      : "正在准备处理内容。";
   }
 
   if (turn.status === "failed") {
-    return turn.error_message || "本回合执行失败，请查看下方异常分组。";
+    return turn.error_message || "当前阶段处理失败，请查看下方异常记录。";
   }
 
   return actionableCount > 0
-    ? "已整理本回合的关键执行过程。"
-    : "本回合没有记录额外的执行轨迹。";
+    ? "已整理当前阶段的关键进展。"
+    : "当前阶段没有额外记录。";
 }
 
 function resolveTurnStatusMeta(params: {
@@ -405,7 +405,7 @@ function resolveTurnStatusMeta(params: {
           "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200",
         overviewText:
           pendingAction.detail?.trim() ||
-          "正在建立浏览器会话，连接成功后会继续当前回合。",
+          "正在建立浏览器会话，连接成功后会继续当前阶段。",
       };
     }
 
@@ -442,7 +442,7 @@ function resolveTurnStatusMeta(params: {
         "bg-amber-100 text-amber-900 dark:bg-amber-500/15 dark:text-amber-200",
       overviewText:
         pendingAction.prompt?.trim() ||
-        "当前回合暂停在待确认步骤，处理后会继续后续流程。",
+        "当前阶段在等待你确认，完成后会继续后续处理。",
     };
   }
 
@@ -469,14 +469,14 @@ function resolveTurnStatusMeta(params: {
         label: "失败",
         badgeVariant: "destructive",
         overviewText:
-          turn.error_message || "本回合执行失败，请查看下方异常分组。",
+          turn.error_message || "当前阶段处理失败，请查看下方异常记录。",
       };
     case "aborted":
       return {
         label: "已暂停",
         badgeVariant: "outline",
         overviewText:
-          turn.error_message || "本回合已暂停，你可以继续处理或发起下一轮。",
+          turn.error_message || "当前阶段已暂停，你可以继续处理或开始下一步。",
       };
     case "completed":
     default:
@@ -663,6 +663,40 @@ function renderGroupItemDetails(
   const toolCall = toToolCallState(item);
   const actionRequest = toActionRequired(item);
   const timestamp = formatTimestamp(item.completed_at || item.updated_at);
+  const resolveArtifactSourceLabel = (source: string): string => {
+    switch (source) {
+      case "tool_result":
+        return "处理结果";
+      case "tool_start":
+        return "开始处理";
+      case "message_content":
+        return "消息内容";
+      case "artifact_snapshot":
+        return "快照同步";
+      default:
+        return source;
+    }
+  };
+  const resolveSubagentStatusLabel = (
+    statusLabel: string | undefined,
+    status: AgentThreadItem["status"],
+  ): string => {
+    const normalized = statusLabel?.trim().toLowerCase();
+    switch (normalized) {
+      case "queued":
+        return "稍后开始";
+      case "running":
+        return "处理中";
+      case "completed":
+        return "已完成";
+      case "failed":
+        return "失败";
+      case "aborted":
+        return "已暂停";
+      default:
+        return statusLabel || resolveItemStatusLabel(status);
+    }
+  };
 
   if (actionRequest) {
     if (isActionRequestA2UICompatible(actionRequest)) {
@@ -705,7 +739,7 @@ function renderGroupItemDetails(
         <div className="flex items-center gap-2">
           <div className="text-sm font-medium text-foreground">{item.path}</div>
           <Badge variant={resolveStatusBadgeVariant(item.status)} className="ml-auto">
-            {item.source}
+            {resolveArtifactSourceLabel(item.source)}
           </Badge>
           {timestamp ? (
             <span className="text-xs text-muted-foreground">{timestamp}</span>
@@ -727,7 +761,7 @@ function renderGroupItemDetails(
   if (item.type === "subagent_activity") {
     const subagentSessionId = item.session_id?.trim();
     const displayTitle =
-      resolveInternalImageTaskDisplayName(item.title) || "子代理协作";
+      resolveInternalImageTaskDisplayName(item.title) || "协作成员处理";
 
     return (
       <SurfaceCard
@@ -735,7 +769,7 @@ function renderGroupItemDetails(
         title={displayTitle}
         badge={
           <Badge variant={resolveStatusBadgeVariant(item.status)}>
-            {item.status_label}
+            {resolveSubagentStatusLabel(item.status_label, item.status)}
           </Badge>
         }
         timestamp={timestamp}
@@ -757,7 +791,7 @@ function renderGroupItemDetails(
               variant="outline"
               onClick={() => onOpenSubagentSession(subagentSessionId)}
             >
-              打开子会话
+              查看协作详情
             </Button>
           </div>
         ) : null}
@@ -812,9 +846,9 @@ function isCompactTechnicalBlock(block: AgentThreadOrderedBlock): boolean {
 function resolveCompactTechnicalSummary(block: AgentThreadOrderedBlock): string {
   const firstPreview = block.previewLines[0];
   if (firstPreview) {
-    return `已收纳 ${block.items.length} 项低优先级技术细节，最近一项：${firstPreview}`;
+    return `已收起 ${block.items.length} 条次要执行记录，最近一条：${firstPreview}`;
   }
-  return `已收纳 ${block.items.length} 项低优先级技术细节。`;
+  return `已收起 ${block.items.length} 条次要执行记录。`;
 }
 
 function resolveActiveBlockIndex(blocks: AgentThreadOrderedBlock[]): number {
@@ -1014,7 +1048,7 @@ function resolveLatestThinkingPreview(
 
     return {
       text: latestPreview || resolveFocusInlineText(block),
-      stageLabel: `阶段 ${String(index + 1).padStart(2, "0")}`,
+      stageLabel: `步骤 ${String(index + 1).padStart(2, "0")}`,
     };
   }
 
@@ -1094,9 +1128,9 @@ function resolveCollapsedProcessSnapshot(params: {
 
   const detailText =
     shortenInlineText(
-      distinctDetail || "执行轨迹已收起，点击查看完整过程。",
+      distinctDetail || "执行过程已收起，点击查看完整过程。",
       compactTone === "running" ? 88 : 78,
-    ) || "执行轨迹已收起，点击查看完整过程。";
+    ) || "执行过程已收起，点击查看完整过程。";
   const segments = [turnStatusMeta.label];
   if (stageLabel) {
     segments.push(stageLabel);
@@ -1211,7 +1245,7 @@ function TimelineBlockCard({
   const isCompact = isCompactTechnicalBlock(block);
   const isActive = emphasis === "active";
   const isQuiet = emphasis === "quiet";
-  const stageLabel = `阶段 ${String(index + 1).padStart(2, "0")}`;
+  const stageLabel = `步骤 ${String(index + 1).padStart(2, "0")}`;
   const detailEntries = block.items.flatMap((item) => {
     const content =
       block.kind === "thinking"
@@ -1328,7 +1362,7 @@ function TimelineBlockCard({
                 </div>
               ) : (
                 <div className="mt-2 text-sm text-muted-foreground">
-                  已归档该分组的执行细节。
+                  该分组记录已收起，可按需展开查看。
                 </div>
               )}
             </div>
@@ -1394,7 +1428,7 @@ function TimelineBlockCard({
                 </div>
               ) : (
                 <div className="mt-2 text-sm text-muted-foreground">
-                  已归档该分组的执行细节。
+                  该分组记录已收起，可按需展开查看。
                 </div>
               )}
             </div>
@@ -1451,7 +1485,7 @@ export const AgentThreadTimeline: React.FC<AgentThreadTimelineProps> = ({
     focusBlockIndex >= 0 ? displayModel.orderedBlocks[focusBlockIndex] : null;
   const focusBlockStageLabel =
     focusBlockIndex >= 0
-      ? `阶段 ${String(focusBlockIndex + 1).padStart(2, "0")}`
+      ? `步骤 ${String(focusBlockIndex + 1).padStart(2, "0")}`
       : null;
   const promptPreview = shortenInlineText(turn.prompt_text, 78);
   const turnStatusMeta = resolveTurnStatusMeta({
@@ -1491,10 +1525,10 @@ export const AgentThreadTimeline: React.FC<AgentThreadTimelineProps> = ({
   }
 
   const toggleActionLabel = detailsExpanded
-    ? "收起执行细节"
+    ? "收起执行过程"
     : isCurrentTurn
-      ? "查看当前回合执行细节"
-      : "展开回合执行细节";
+      ? "查看当前进展细节"
+      : "展开执行过程";
   const compactTone = resolveCompactTone({ turn, turnStatusMeta });
   const collapsedProcess = resolveCollapsedProcessSnapshot({
     compactTone,
@@ -1572,7 +1606,7 @@ export const AgentThreadTimeline: React.FC<AgentThreadTimelineProps> = ({
               {turnStatusMeta.label}
             </Badge>
             <span className="text-xs text-muted-foreground">
-              {isCurrentTurn ? "当前回合" : "历史回合"}
+              {isCurrentTurn ? "当前任务" : "历史记录"}
             </span>
             <span className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
               <Clock3 className="h-3.5 w-3.5" />
@@ -1615,7 +1649,7 @@ export const AgentThreadTimeline: React.FC<AgentThreadTimelineProps> = ({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                     <span className="font-medium tracking-wide text-slate-500">
-                      流程轨迹
+                      执行过程
                     </span>
                     <span className="rounded-full border border-border/60 bg-background/70 px-2 py-0.5">
                       {flowBlockCount} 段
@@ -1646,8 +1680,8 @@ export const AgentThreadTimeline: React.FC<AgentThreadTimelineProps> = ({
               </div>
 
               <div className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                <span>展开流程</span>
-                <ChevronDown className="h-3.5 w-3.5 transition-transform duration-200" />
+                <span>查看细节</span>
+                    <ChevronDown className="h-3.5 w-3.5 transition-transform duration-200" />
               </div>
             </button>
           </CollapsibleTrigger>
@@ -1673,17 +1707,17 @@ export const AgentThreadTimeline: React.FC<AgentThreadTimelineProps> = ({
                   className="flex flex-wrap items-center gap-2"
                   data-testid="agent-thread-summary-header"
                 >
-                  <div className="text-xs font-medium tracking-wide text-muted-foreground">
-                    {isCurrentTurn ? "当前回合摘要" : "回合摘要"}
+                    <div className="text-xs font-medium tracking-wide text-muted-foreground">
+                    {isCurrentTurn ? "当前任务摘要" : "任务摘要"}
                   </div>
                   <button
                     type="button"
-                    aria-label="收起流程"
+                    aria-label="收起细节"
                     onClick={() => setDetailsExpanded(false)}
                     className="ml-auto inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/70 px-2.5 py-1 text-xs text-muted-foreground transition hover:border-border hover:bg-background hover:text-foreground"
                     data-testid="agent-thread-summary-collapse"
                   >
-                    <span>收起流程</span>
+                    <span>收起细节</span>
                     <ChevronDown className="h-3.5 w-3.5 rotate-180" />
                   </button>
                   <div className="inline-flex items-center gap-1 text-xs text-muted-foreground">

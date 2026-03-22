@@ -174,6 +174,8 @@ export interface PosterCanvasProps {
   contentId?: string | null;
   /** 返回首页回调 */
   onBackHome?: () => void;
+  /** 添加图片动作 */
+  onAddImage?: () => Promise<void> | void;
   /** 关闭画布回调 */
   onClose: () => void;
 }

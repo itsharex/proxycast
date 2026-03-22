@@ -19,7 +19,10 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useImageGen } from "../useImageGen";
+import {
+  IMAGE_GENERATION_CANCELED_MESSAGE,
+  useImageGen,
+} from "../useImageGen";
 import type { GeneratedImage } from "../types";
 import { useProject } from "@/hooks/useProject";
 import { useProjects } from "@/hooks/useProjects";
@@ -1221,12 +1224,14 @@ export function AiImageGenTab({ projectId, onNavigate }: AiImageGenTabProps) {
     generating,
     savingToResource,
     generateImage,
+    cancelGeneration,
     backfillImagesToResource,
     deleteImage,
     newImage,
   } = useImageGen({
     preferredProviderId: effectiveImagePreference.preferredProviderId,
     preferredModelId: effectiveImagePreference.preferredModelId,
+    allowFallback: effectiveImagePreference.allowFallback,
   });
 
   const { projects, defaultProject, loading: projectsLoading } = useProjects();
@@ -1434,8 +1439,20 @@ export function AiImageGenTab({ projectId, onNavigate }: AiImageGenTabProps) {
       setPrompt("");
       clearActiveSkill();
     } catch (error) {
-      console.error("图片生成失败:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (errorMessage !== IMAGE_GENERATION_CANCELED_MESSAGE) {
+        console.error("图片生成失败:", error);
+      }
     }
+  };
+
+  const handleCancelGeneration = () => {
+    if (!generating) {
+      return;
+    }
+    cancelGeneration();
+    toast.info(IMAGE_GENERATION_CANCELED_MESSAGE);
   };
 
   const handleBackfillToResource = async () => {
@@ -1894,17 +1911,17 @@ export function AiImageGenTab({ projectId, onNavigate }: AiImageGenTabProps) {
               onChange={(event) => setPrompt(event.target.value)}
               onKeyDown={handlePromptKeyDown}
               placeholder="描述你想要生成的内容"
-              disabled={!selectedProvider || !selectedModelId || generating}
+              disabled={!selectedProvider || !selectedModelId}
             />
             <GenerateButton
-              $disabled={!canGenerate}
-              onClick={handleGenerate}
-              disabled={!canGenerate}
-              aria-label={generating ? "生成中" : "生成图片"}
-              title={generating ? "生成中" : "开始生成"}
+              $disabled={generating ? false : !canGenerate}
+              onClick={generating ? handleCancelGeneration : handleGenerate}
+              disabled={generating ? false : !canGenerate}
+              aria-label={generating ? "停止生成" : "生成图片"}
+              title={generating ? "停止当前任务" : "开始生成"}
             >
               {generating ? (
-                <Loader2 size={18} className="animate-spin" />
+                <X size={18} />
               ) : (
                 <Send size={18} />
               )}

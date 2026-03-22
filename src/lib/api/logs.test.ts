@@ -39,4 +39,10 @@ describe("logs API", () => {
     await expect(clearLogs()).resolves.toBeUndefined();
     await expect(clearDiagnosticLogHistory()).resolves.toBeUndefined();
   });
+
+  it("后端报错时应向上传递异常", async () => {
+    vi.mocked(safeInvoke).mockRejectedValueOnce(new Error("boom"));
+
+    await expect(getPersistedLogsTail(200)).rejects.toThrow("boom");
+  });
 });

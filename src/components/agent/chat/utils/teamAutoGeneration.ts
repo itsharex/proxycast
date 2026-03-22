@@ -62,17 +62,18 @@ function buildTeamGenerationPrompt(
     : null;
 
   return [
-    "请根据下面的任务，为 GUI Team 模式生成一个“本轮 Team 配置”。",
+    "请根据下面的任务，为 GUI Team 模式生成一份“当前协作方案”。",
     "要求：",
     "1. 仅输出 JSON，不要 Markdown，不要代码块，不要额外解释。",
     "2. 生成 2~4 个角色，角色名称与职责用中文。",
-    "3. roleKey 优先从以下集合中选择：explorer、executor、verifier、researcher、planner、reviewer、writer。",
-    "4. profileId 仅可使用以下值：code-explorer、code-executor、code-verifier、research-analyst、doc-writer、content-ideator、content-reviewer。",
-    "5. skillIds 仅可使用以下值：repo-exploration、bounded-implementation、verification-report、source-grounding、structured-writing。",
-    "6. 输出结构必须满足：",
+    "3. label 要像产品里可直接展示的团队名称，不要出现“本轮 Team”这类内部说法。",
+    "4. roleKey 优先从以下集合中选择：explorer、executor、verifier、researcher、planner、reviewer、writer。",
+    "5. profileId 仅可使用以下值：code-explorer、code-executor、code-verifier、research-analyst、doc-writer、content-ideator、content-reviewer。",
+    "6. skillIds 仅可使用以下值：repo-exploration、bounded-implementation、verification-report、source-grounding、structured-writing。",
+    "7. 输出结构必须满足：",
     JSON.stringify(
       {
-        label: "本轮 Team 名称",
+        label: "当前协作名称",
         description: "一句话描述适用场景",
         roles: [
           {
@@ -90,8 +91,8 @@ function buildTeamGenerationPrompt(
     ),
     `当前主题：${activeTheme?.trim() || "general"}`,
     blueprintPayload
-      ? "7. 如果下面提供了“参考蓝图 Team”，请把它视为偏好与约束来源；你可以按当前任务动态调整角色结构，但不要完全脱离参考蓝图。"
-      : "7. 如果没有参考蓝图，请直接围绕当前任务组织最合适的本轮 Team。",
+      ? "8. 如果下面提供了“参考蓝图 Team”，请把它视为偏好与约束来源；你可以按当前任务动态调整角色结构，但不要完全脱离参考蓝图。"
+      : "8. 如果没有参考蓝图，请直接围绕当前任务组织最合适的当前协作方案。",
     blueprintPayload
       ? `参考蓝图 Team：${JSON.stringify(blueprintPayload, null, 2)}`
       : "参考蓝图 Team：无",

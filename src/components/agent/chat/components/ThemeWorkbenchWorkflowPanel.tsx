@@ -302,8 +302,8 @@ function formatRunIdShort(runId?: string): string | null {
 }
 
 function formatRunStatusLabel(status: AgentRun["status"]): string {
-  if (status === "queued") return "排队中";
-  if (status === "running") return "运行中";
+  if (status === "queued") return "稍后开始";
+  if (status === "running") return "处理中";
   if (status === "success") return "成功";
   if (status === "error") return "失败";
   if (status === "canceled") return "已取消";

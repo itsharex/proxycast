@@ -1,4 +1,5 @@
 use crate::aster_runtime_support::{list_aster_runtime_queued_turns, load_aster_runtime_snapshot};
+use crate::team_runtime_governor::snapshot_team_runtime_session;
 use aster::session::extension_data::{ExtensionData, ExtensionState};
 use aster::session::{
     list_subagent_sessions_with_metadata, require_shared_session_runtime_queue_service,
@@ -94,6 +95,22 @@ pub struct SubagentRuntimeStatus {
     pub latest_turn_status: Option<SubagentRuntimeStatusKind>,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub queued_turn_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_phase: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_parallel_budget: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_active_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_queued_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_concurrency_group: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_parallel_budget: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue_reason: Option<String>,
+    #[serde(default)]
+    pub retryable_overload: bool,
     #[serde(default)]
     pub closed: bool,
 }
@@ -106,6 +123,14 @@ impl SubagentRuntimeStatus {
             latest_turn_id: None,
             latest_turn_status: None,
             queued_turn_count: 0,
+            team_phase: None,
+            team_parallel_budget: None,
+            team_active_count: None,
+            team_queued_count: None,
+            provider_concurrency_group: None,
+            provider_parallel_budget: None,
+            queue_reason: None,
+            retryable_overload: false,
             closed: false,
         }
     }
@@ -261,22 +286,62 @@ pub async fn load_subagent_runtime_status(
     };
 
     let queued_turn_count = list_aster_runtime_queued_turns(session_id).await?.len();
+    let governor_snapshot = snapshot_team_runtime_session(session_id).await;
+    let effective_queued_turn_count = queued_turn_count.max(
+        governor_snapshot
+            .as_ref()
+            .and_then(|snapshot| (snapshot.team_phase == "queued").then_some(1))
+            .unwrap_or(0),
+    );
     let has_active_turn = require_shared_session_runtime_queue_service()
         .map_err(|error| format!("读取 runtime queue service 失败: {error}"))?
         .has_active_turn(session_id);
-    let kind = derive_subagent_runtime_status_kind(SubagentRuntimeStatusInput {
-        closed: control_state.closed,
-        has_active_turn,
-        queued_turn_count,
-        latest_turn_status: latest_turn.as_ref().map(|turn| turn.status),
-    });
+    let kind = if governor_snapshot
+        .as_ref()
+        .map(|snapshot| snapshot.team_phase == "queued")
+        .unwrap_or(false)
+    {
+        SubagentRuntimeStatusKind::Queued
+    } else {
+        derive_subagent_runtime_status_kind(SubagentRuntimeStatusInput {
+            closed: control_state.closed,
+            has_active_turn,
+            queued_turn_count: effective_queued_turn_count,
+            latest_turn_status: latest_turn.as_ref().map(|turn| turn.status),
+        })
+    };
 
     Ok(SubagentRuntimeStatus {
         session_id: session_id.to_string(),
         kind,
         latest_turn_id: latest_turn.as_ref().map(|turn| turn.turn_id.clone()),
         latest_turn_status: latest_turn.map(|turn| map_turn_status(turn.status)),
-        queued_turn_count,
+        queued_turn_count: effective_queued_turn_count,
+        team_phase: governor_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.team_phase.clone()),
+        team_parallel_budget: governor_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.team_parallel_budget),
+        team_active_count: governor_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.team_active_count),
+        team_queued_count: governor_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.team_queued_count),
+        provider_concurrency_group: governor_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.provider_concurrency_group.clone()),
+        provider_parallel_budget: governor_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.provider_parallel_budget),
+        queue_reason: governor_snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.queue_reason.clone()),
+        retryable_overload: governor_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.retryable_overload)
+            .unwrap_or(false),
         closed: control_state.closed,
     })
 }

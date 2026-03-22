@@ -1,5 +1,5 @@
 import React from "react";
-import { User, Zap } from "lucide-react";
+import { ImagePlus, User, Zap } from "lucide-react";
 import {
   Command,
   CommandGroup,
@@ -9,14 +9,17 @@ import {
 } from "@/components/ui/command";
 import type { Character } from "@/lib/api/memory";
 import type { Skill } from "@/lib/api/skills";
+import type { BuiltinInputCommand } from "./builtinCommands";
 
 interface CharacterMentionPanelProps {
   mentionQuery: string;
+  builtinCommands: BuiltinInputCommand[];
   filteredCharacters: Character[];
   installedSkills: Skill[];
   availableSkills: Skill[];
   commandRef: React.RefObject<HTMLDivElement>;
   onQueryChange: (query: string) => void;
+  onSelectBuiltinCommand: (command: BuiltinInputCommand) => void;
   onSelectCharacter: (character: Character) => void;
   onSelectInstalledSkill: (skill: Skill) => void;
   onSelectAvailableSkill: (skill: Skill) => void;
@@ -25,17 +28,20 @@ interface CharacterMentionPanelProps {
 
 export const CharacterMentionPanel: React.FC<CharacterMentionPanelProps> = ({
   mentionQuery,
+  builtinCommands,
   filteredCharacters,
   installedSkills,
   availableSkills,
   commandRef,
   onQueryChange,
+  onSelectBuiltinCommand,
   onSelectCharacter,
   onSelectInstalledSkill,
   onSelectAvailableSkill,
   onNavigateToSettings,
 }) => {
   const hasFilteredResults =
+    builtinCommands.length > 0 ||
     filteredCharacters.length > 0 ||
     installedSkills.length > 0 ||
     availableSkills.length > 0;
@@ -62,6 +68,25 @@ export const CharacterMentionPanel: React.FC<CharacterMentionPanelProps> = ({
               </button>
             ) : null}
           </div>
+        ) : null}
+        {builtinCommands.length > 0 ? (
+          <CommandGroup heading="内建命令">
+            {builtinCommands.map((command) => (
+              <CommandItem
+                key={command.key}
+                onSelect={() => onSelectBuiltinCommand(command)}
+                className="cursor-pointer"
+              >
+                <ImagePlus className="mr-2 h-4 w-4 text-sky-600" />
+                <div className="flex-1">
+                  <div className="font-medium">{command.commandPrefix}</div>
+                  <div className="text-xs text-muted-foreground line-clamp-1">
+                    {command.description}
+                  </div>
+                </div>
+              </CommandItem>
+            ))}
+          </CommandGroup>
         ) : null}
         {filteredCharacters.length > 0 ? (
           <CommandGroup heading="角色">

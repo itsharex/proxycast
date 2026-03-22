@@ -44,6 +44,7 @@ import {
   type OpenClawSyncModelEntry,
   type OpenClawUpdateInfo,
 } from "@/lib/api/openclaw";
+import { wechatChannelSetRuntimeModel } from "@/lib/api/channelsRuntime";
 import { getOrCreateDefaultProject } from "@/lib/api/project";
 import { cn } from "@/lib/utils";
 
@@ -599,6 +600,7 @@ export function OpenClawPage({
   const [switchingRuntime, setSwitchingRuntime] = useState(false);
   const [cleaningTemp, setCleaningTemp] = useState(false);
   const [handingOffToAgent, setHandingOffToAgent] = useState(false);
+  const lastWechatRuntimeModelSyncRef = useRef<string | null>(null);
   const [operationState, setOperationState] = useState<OpenClawOperationState>({
     kind: null,
     target: null,
@@ -975,6 +977,39 @@ export function OpenClawPage({
     selectedProviderId,
     setSelectedModelId,
   ]);
+
+  useEffect(() => {
+    const providerId = selectedProvider?.key?.trim() || "";
+    const modelId = selectedModelId.trim();
+    const selectionKey =
+      providerId && modelId ? `${providerId}/${modelId}` : null;
+
+    if (!selectionKey) {
+      lastWechatRuntimeModelSyncRef.current = null;
+      return;
+    }
+
+    if (lastWechatRuntimeModelSyncRef.current === selectionKey) {
+      return;
+    }
+
+    let cancelled = false;
+    void wechatChannelSetRuntimeModel({ providerId, modelId })
+      .then(() => {
+        if (!cancelled) {
+          lastWechatRuntimeModelSyncRef.current = selectionKey;
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.warn("[OpenClaw] 同步微信运行时模型失败:", error);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedModelId, selectedProvider?.key]);
 
   useEffect(() => {
     let active = true;

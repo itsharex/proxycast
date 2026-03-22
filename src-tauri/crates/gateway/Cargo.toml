@@ -7,10 +7,16 @@ repository.workspace = true
 
 [dependencies]
 lime-core.workspace = true
+lime-agent.workspace = true
 lime-websocket.workspace = true
 
 serde.workspace = true
 serde_json.workspace = true
+base64.workspace = true
+rand.workspace = true
+dirs.workspace = true
+md5.workspace = true
+hex.workspace = true
 
 tokio.workspace = true
 tokio-util.workspace = true
@@ -21,6 +27,9 @@ chrono.workspace = true
 uuid.workspace = true
 axum.workspace = true
 urlencoding.workspace = true
+rusqlite.workspace = true
+aes = "0.8"
+ecb = "0.1"
 
 [dev-dependencies]
 proptest.workspace = true

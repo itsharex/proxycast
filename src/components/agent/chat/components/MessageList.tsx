@@ -603,7 +603,7 @@ const MessageListInner: React.FC<MessageListProps> = ({
                 className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
               >
                 <span className="inline-flex items-center rounded-full border border-slate-200/80 bg-white/90 px-2.5 py-1 font-medium text-slate-700 shadow-sm shadow-slate-950/5 dark:border-slate-700/80 dark:bg-slate-900/80 dark:text-slate-200">
-                  回合 {formatGroupNumber(groupIndex)}
+                  阶段 {formatGroupNumber(groupIndex)}
                 </span>
                 <span>{formatTime(group.startedAt)}</span>
                 {group.endedAt.getTime() !== group.startedAt.getTime() ? (

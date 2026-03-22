@@ -168,7 +168,7 @@ function clickTimelineToggle(container: HTMLElement) {
 }
 
 describe("AgentThreadTimeline", () => {
-  it("应渲染本回合概览与按时序组织的分组块", () => {
+  it("应渲染当前阶段概览与按时序组织的分组块", () => {
     const items: AgentThreadItem[] = [
       {
         ...createBaseItem("plan-1", 1),
@@ -248,7 +248,7 @@ describe("AgentThreadTimeline", () => {
     expect(
       container.querySelector('[data-testid="agent-thread-summary-collapse"]'),
     ).not.toBeNull();
-    expect(container.textContent).toContain("当前回合摘要");
+    expect(container.textContent).toContain("当前任务摘要");
     expect(
       container.querySelector('[data-testid="agent-thread-summary-header"]')
         ?.textContent,
@@ -274,7 +274,7 @@ describe("AgentThreadTimeline", () => {
     expect(container.textContent).toContain("思考与计划");
     expect(container.textContent).toContain("浏览器操作");
     expect(container.textContent).toContain("需要你处理");
-    expect(container.textContent).toContain("技术细节");
+    expect(container.textContent).toContain("执行过程");
   });
 
   it("展开后应在摘要头提供收起入口，并恢复折叠态头部", () => {
@@ -321,7 +321,7 @@ describe("AgentThreadTimeline", () => {
     ).not.toBeNull();
   });
 
-  it("审批块应默认展开，技术细节块默认折叠", () => {
+  it("审批块应默认展开，处理记录块默认折叠", () => {
     const items: AgentThreadItem[] = [
       {
         ...createBaseItem("approval-1", 1),
@@ -368,7 +368,7 @@ describe("AgentThreadTimeline", () => {
         '[data-testid="agent-thread-block:2:other:details"]',
       ),
     ).not.toBeNull();
-    expect(container.textContent).toContain("低优先级技术细节");
+    expect(container.textContent).toContain("次要执行记录");
   });
 
   it("应按真实发生顺序渲染思考与工具块", () => {
@@ -444,7 +444,7 @@ describe("AgentThreadTimeline", () => {
     expect(
       container.querySelector('[data-testid="agent-thread-details-stage"]')
         ?.textContent,
-    ).toContain("阶段 02");
+    ).toContain("步骤 02");
     expect(
       container.querySelector('[data-testid="agent-thread-details-inline-text"]')
         ?.textContent,
@@ -534,7 +534,7 @@ describe("AgentThreadTimeline", () => {
     expect(
       container.querySelector('[data-testid="agent-thread-overview"]'),
     ).toBeNull();
-    expect(container.textContent).toContain("当前回合摘要");
+    expect(container.textContent).toContain("当前任务摘要");
   });
 
   it("浏览器前置等待时不应显示已中断，而应显示待继续", () => {
@@ -736,7 +736,7 @@ describe("AgentThreadTimeline", () => {
     expect(container.querySelector('[data-testid="decision-panel"]')).toBeNull();
   });
 
-  it("真实子代理 item 应支持打开子会话", () => {
+  it("真实协作成员 item 应支持查看协作详情", () => {
     const onOpenSubagentSession = vi.fn();
     const items: AgentThreadItem[] = [
       {
@@ -763,7 +763,7 @@ describe("AgentThreadTimeline", () => {
 
     const button = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((element) => element.textContent?.includes("打开子会话"));
+    ).find((element) => element.textContent?.includes("查看协作详情"));
 
     expect(button).toBeTruthy();
 

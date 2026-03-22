@@ -13,6 +13,7 @@ import type { WorkspaceTheme } from "@/types/page";
 export function WorkbenchRightRailExpandedPanel({
   onCollapse,
   projectId,
+  contentId,
   onCreateContentFromPrompt,
   initialExpandedActionKey,
   onInitialExpandedActionConsumed,
@@ -27,6 +28,7 @@ export function WorkbenchRightRailExpandedPanel({
 }: {
   onCollapse: () => void;
   projectId?: string | null;
+  contentId?: string | null;
   onCreateContentFromPrompt?: WorkbenchRightRailProps["onCreateContentFromPrompt"];
   initialExpandedActionKey?: string | null;
   onInitialExpandedActionConsumed?: () => void;
@@ -41,6 +43,7 @@ export function WorkbenchRightRailExpandedPanel({
 }) {
   const controller = useWorkbenchRightRailCapabilityController({
     projectId,
+    contentId,
     initialExpandedActionKey,
     onInitialExpandedActionConsumed,
     initialStyleGuideDialogOpen,

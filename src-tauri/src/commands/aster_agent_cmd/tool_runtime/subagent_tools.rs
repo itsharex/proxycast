@@ -469,6 +469,14 @@ impl Tool for SubAgentTaskTool {
                 latest_turn_id: None,
                 latest_turn_status: None,
                 queued_turn_count: 0,
+                team_phase: None,
+                team_parallel_budget: None,
+                team_active_count: None,
+                team_queued_count: None,
+                provider_concurrency_group: None,
+                provider_parallel_budget: None,
+                queue_reason: None,
+                retryable_overload: false,
                 closed: false,
             });
 
@@ -575,11 +583,11 @@ impl Tool for SpawnAgentTool {
                 },
                 "blueprintRoleId": {
                     "type": "string",
-                    "description": "可选本轮 Team 蓝图角色 id；当 GUI 已预编队 Team 时，优先传入对应角色 id，便于真实成员接管画布泳道"
+                    "description": "可选当前 Team 蓝图角色 id；当 GUI 已提前准备协作分工时，优先传入对应角色 id，便于真实成员接管画布泳道"
                 },
                 "blueprintRoleLabel": {
                     "type": "string",
-                    "description": "可选本轮 Team 蓝图角色标签，例如 分析 / 执行 / 验证"
+                    "description": "可选当前 Team 蓝图角色标签，例如 分析 / 执行 / 验证"
                 },
                 "profileId": {
                     "type": "string",

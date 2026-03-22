@@ -215,6 +215,49 @@ export interface ChannelsConfig {
   telegram: TelegramBotConfig;
   discord: DiscordBotConfig;
   feishu: FeishuBotConfig;
+  wechat: WechatBotConfig;
+}
+
+export interface WechatBotConfig {
+  enabled: boolean;
+  bot_token: string;
+  base_url: string;
+  cdn_base_url: string;
+  account_id?: string;
+  scanner_user_id?: string;
+  default_model?: string;
+  default_account?: string;
+  accounts?: Record<string, WechatAccountConfig>;
+  dm_policy?: string;
+  allow_from?: string[];
+  group_policy?: string;
+  group_allow_from?: string[];
+  groups?: Record<string, WechatGroupConfig>;
+  streaming?: string;
+  reply_to_mode?: string;
+}
+
+export interface WechatAccountConfig {
+  enabled?: boolean;
+  name?: string;
+  base_url?: string;
+  cdn_base_url?: string;
+  bot_token?: string;
+  scanner_user_id?: string;
+  default_model?: string;
+  dm_policy?: string;
+  allow_from?: string[];
+  group_policy?: string;
+  group_allow_from?: string[];
+  groups?: Record<string, WechatGroupConfig>;
+  streaming?: string;
+  reply_to_mode?: string;
+}
+
+export interface WechatGroupConfig {
+  enabled?: boolean;
+  group_policy?: string;
+  allow_from?: string[];
 }
 
 export interface TelegramGatewayAccountStatus {
@@ -269,9 +312,55 @@ export interface DiscordGatewayStatus {
   accounts: DiscordGatewayAccountStatus[];
 }
 
+export interface WechatGatewayAccountStatus {
+  accountId: string;
+  running: boolean;
+  startedAt?: string | null;
+  lastError?: string | null;
+  lastUpdateAt?: string | null;
+  lastMessageAt?: string | null;
+  syncBufPresent: boolean;
+}
+
+export interface WechatGatewayStatus {
+  running_accounts: number;
+  accounts: WechatGatewayAccountStatus[];
+}
+
 export interface GatewayChannelStatusResponse {
   channel: string;
   status: unknown;
+}
+
+export interface WechatProbeResult {
+  accountId: string;
+  ok: boolean;
+  message: string;
+}
+
+export interface WechatLoginStartResult {
+  sessionKey: string;
+  qrcodeUrl: string;
+  message: string;
+}
+
+export interface WechatLoginWaitResult {
+  connected: boolean;
+  botToken?: string;
+  accountId?: string;
+  baseUrl?: string;
+  userId?: string;
+  message: string;
+}
+
+export interface WechatConfiguredAccount {
+  accountId: string;
+  enabled: boolean;
+  name?: string;
+  baseUrl?: string;
+  cdnBaseUrl?: string;
+  hasToken: boolean;
+  scannerUserId?: string;
 }
 
 export interface TelegramProbeResult {

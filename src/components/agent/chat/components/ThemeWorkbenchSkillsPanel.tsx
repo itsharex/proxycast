@@ -397,7 +397,7 @@ export function ThemeWorkbenchSkillsPanel({
           ) : null}
           <div className="mt-3 text-[11px] leading-5 text-slate-500">
             {disabled
-              ? "当前有任务执行中，建议等待本轮完成后再触发新的技能。"
+              ? "当前有任务执行中，建议等当前处理完成后再触发新的技能。"
               : "先看推荐动作，再按需要选择更多能力，避免重复操作。"}
           </div>
         </div>
@@ -419,7 +419,7 @@ export function ThemeWorkbenchSkillsPanel({
                       {skill.name}
                     </div>
                     <div className="mt-1 text-[12px] leading-5 text-slate-500">
-                      {skill.description || "使用当前能力继续推进本轮工作台任务。"}
+                      {skill.description || "使用当前能力继续推进当前工作台任务。"}
                     </div>
                     <span className="mt-2 inline-flex min-h-6 items-center rounded-full border border-emerald-200 bg-emerald-50/90 px-2.5 text-[10px] font-semibold text-emerald-700">
                       推荐优先执行

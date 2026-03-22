@@ -97,7 +97,7 @@ describe("ToolCallDisplay", () => {
     expect(document.body.textContent).toContain("https://example.com/xinhua");
 
     const collapseButton = document.body.querySelector(
-      'button[title="收起详情"]',
+      'button[title="收起结果"]',
     ) as HTMLButtonElement | null;
 
     act(() => {
@@ -109,7 +109,7 @@ describe("ToolCallDisplay", () => {
     );
 
     const expandButton = document.body.querySelector(
-      'button[title="展开详情"]',
+      'button[title="查看结果"]',
     ) as HTMLButtonElement | null;
 
     act(() => {
@@ -237,7 +237,7 @@ describe("ToolCallDisplay", () => {
 
     act(() => {
       const toggle = container.querySelector(
-        'button[title="展开详情"]',
+        'button[title="查看结果"]',
       ) as HTMLButtonElement | null;
       toggle?.click();
     });
@@ -318,7 +318,7 @@ describe("ToolCallDisplay", () => {
     mountedRoots.push({ container, root });
 
     expect(container.textContent).toContain("已打开 https://example.com/docs");
-    expect(container.textContent).toContain("正在委派 修复登录页");
+    expect(container.textContent).toContain("协作中 修复登录页");
     expect(container.textContent).toContain("已读取输出 video-task-1");
     expect(container.textContent).toContain("已加载技能 lime-governance");
     expect(container.textContent).toContain("已列出 src/**/*.tsx");

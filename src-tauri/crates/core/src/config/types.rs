@@ -3613,6 +3613,8 @@ pub struct ChannelsConfig {
     pub discord: DiscordBotConfig,
     #[serde(default)]
     pub feishu: FeishuBotConfig,
+    #[serde(default)]
+    pub wechat: WechatBotConfig,
 }
 
 /// Telegram Bot 配置
@@ -4427,6 +4429,172 @@ impl Default for FeishuBotConfig {
             reply_to_mode: default_feishu_reply_to_mode(),
         }
     }
+}
+
+/// 微信 Bot 配置
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WechatBotConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// 兼容旧配置：单账号 token
+    #[serde(default)]
+    pub bot_token: String,
+    /// 兼容旧配置：单账号 baseUrl
+    #[serde(default)]
+    pub base_url: String,
+    /// 兼容旧配置：单账号 cdnBaseUrl
+    #[serde(default)]
+    pub cdn_base_url: String,
+    /// 兼容旧配置：单账号 accountId
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    /// 兼容旧配置：扫码用户 ID
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scanner_user_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+    /// 默认账号 ID（多账号启用时）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_account: Option<String>,
+    /// 多账号配置
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub accounts: HashMap<String, WechatAccountConfig>,
+    /// DM 策略：pairing | allowlist | open | disabled
+    #[serde(default = "default_wechat_dm_policy")]
+    pub dm_policy: String,
+    /// DM 允许列表（支持 "*"）
+    #[serde(
+        default = "default_wechat_allow_from",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub allow_from: Vec<String>,
+    /// 群组策略：allowlist | open | disabled
+    #[serde(default = "default_wechat_group_policy")]
+    pub group_policy: String,
+    /// 群组发送者允许列表（为空时回退 allow_from）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub group_allow_from: Vec<String>,
+    /// 群组配置（key 为 group_id 或 "*"）
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub groups: HashMap<String, WechatGroupConfig>,
+    /// 流式模式：off | partial | block
+    #[serde(default = "default_wechat_streaming_mode")]
+    pub streaming: String,
+    /// 回复模式：off | first | all
+    #[serde(default = "default_wechat_reply_to_mode")]
+    pub reply_to_mode: String,
+}
+
+impl Default for WechatBotConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            bot_token: String::new(),
+            base_url: String::new(),
+            cdn_base_url: String::new(),
+            account_id: None,
+            scanner_user_id: None,
+            default_model: None,
+            default_account: None,
+            accounts: HashMap::new(),
+            dm_policy: default_wechat_dm_policy(),
+            allow_from: default_wechat_allow_from(),
+            group_policy: default_wechat_group_policy(),
+            group_allow_from: Vec::new(),
+            groups: HashMap::new(),
+            streaming: default_wechat_streaming_mode(),
+            reply_to_mode: default_wechat_reply_to_mode(),
+        }
+    }
+}
+
+/// 微信多账号配置
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WechatAccountConfig {
+    #[serde(default = "default_wechat_account_enabled")]
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cdn_base_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scanner_user_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dm_policy: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allow_from: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_policy: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub group_allow_from: Vec<String>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub groups: HashMap<String, WechatGroupConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub streaming: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to_mode: Option<String>,
+}
+
+impl Default for WechatAccountConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            name: None,
+            base_url: None,
+            cdn_base_url: None,
+            bot_token: None,
+            scanner_user_id: None,
+            default_model: None,
+            dm_policy: None,
+            allow_from: Vec::new(),
+            group_policy: None,
+            group_allow_from: Vec::new(),
+            groups: HashMap::new(),
+            streaming: None,
+            reply_to_mode: None,
+        }
+    }
+}
+
+fn default_wechat_account_enabled() -> bool {
+    true
+}
+
+/// 微信群组配置
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct WechatGroupConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_policy: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allow_from: Vec<String>,
+}
+
+fn default_wechat_dm_policy() -> String {
+    "pairing".to_string()
+}
+
+fn default_wechat_allow_from() -> Vec<String> {
+    Vec::new()
+}
+
+fn default_wechat_group_policy() -> String {
+    "allowlist".to_string()
+}
+
+fn default_wechat_streaming_mode() -> String {
+    "off".to_string()
+}
+
+fn default_wechat_reply_to_mode() -> String {
+    "off".to_string()
 }
 
 /// 飞书多账号配置

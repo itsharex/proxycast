@@ -133,7 +133,11 @@ pub struct AgentRunParams {
     /// 会话 ID（可选，用于连续对话）
     pub session_id: Option<String>,
     /// 用户消息
+    #[serde(default)]
     pub message: String,
+    /// 结构化输入块（可选）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inputs: Option<Vec<AgentInputBlock>>,
     /// 模型名称（可选）
     pub model: Option<String>,
     /// 系统提示词（可选）
@@ -147,6 +151,37 @@ pub struct AgentRunParams {
     /// 是否流式响应
     #[serde(default)]
     pub stream: bool,
+}
+
+/// Agent 输入块
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AgentInputBlock {
+    Text { text: String },
+    Media(AgentInputMedia),
+}
+
+/// Agent 媒体输入
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInputMedia {
+    pub media_type: String,
+    pub source_type: AgentInputSourceType,
+    pub path_or_data: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+}
+
+/// Agent 输入源类型
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentInputSourceType {
+    LocalPath,
+    DataUrl,
 }
 
 /// Agent 等待参数

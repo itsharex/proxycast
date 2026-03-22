@@ -124,9 +124,9 @@ const TOOL_STATUS_ACTIONS = {
     running: "创建任务中",
   },
   subagent: {
-    failed: "委派失败",
+    failed: "协作失败",
     completed: "协作完成",
-    running: "正在委派",
+    running: "协作中",
   },
   vision: {
     failed: "分析失败",
@@ -711,10 +711,10 @@ const EXACT_TOOL_CONFIGS = new Map<string, ToolDisplayConfig>([
     "spawnagent",
     {
       family: "subagent",
-      label: "子代理委派",
-      verb: "委派",
+      label: "邀请协作成员",
+      verb: "邀请",
       icon: Globe,
-      groupTitle: "子代理",
+      groupTitle: "协作",
       actionKey: "subagent",
     },
   ],
@@ -722,10 +722,10 @@ const EXACT_TOOL_CONFIGS = new Map<string, ToolDisplayConfig>([
     "sendinput",
     {
       family: "subagent",
-      label: "子代理消息",
+      label: "补充说明",
       verb: "发送",
       icon: Globe,
-      groupTitle: "子代理",
+      groupTitle: "协作",
       actionKey: "subagent",
     },
   ],
@@ -733,10 +733,10 @@ const EXACT_TOOL_CONFIGS = new Map<string, ToolDisplayConfig>([
     "waitagent",
     {
       family: "subagent",
-      label: "等待子代理",
-      verb: "等待",
+      label: "查看任务进展",
+      verb: "查看",
       icon: Globe,
-      groupTitle: "子代理",
+      groupTitle: "协作",
       actionKey: "subagent",
     },
   ],
@@ -744,10 +744,10 @@ const EXACT_TOOL_CONFIGS = new Map<string, ToolDisplayConfig>([
     "resumeagent",
     {
       family: "subagent",
-      label: "恢复子代理",
-      verb: "恢复",
+      label: "继续处理",
+      verb: "继续",
       icon: Globe,
-      groupTitle: "子代理",
+      groupTitle: "协作",
       actionKey: "subagent",
     },
   ],
@@ -755,10 +755,10 @@ const EXACT_TOOL_CONFIGS = new Map<string, ToolDisplayConfig>([
     "closeagent",
     {
       family: "subagent",
-      label: "结束子代理",
-      verb: "结束",
+      label: "暂停处理",
+      verb: "暂停",
       icon: Globe,
-      groupTitle: "子代理",
+      groupTitle: "协作",
       actionKey: "subagent",
     },
   ],
@@ -766,10 +766,10 @@ const EXACT_TOOL_CONFIGS = new Map<string, ToolDisplayConfig>([
     "subagenttask",
     {
       family: "subagent",
-      label: "子代理协作",
-      verb: "委派",
+      label: "协作分工",
+      verb: "分工",
       icon: Globe,
-      groupTitle: "子代理",
+      groupTitle: "协作",
       actionKey: "subagent",
     },
   ],
@@ -1262,7 +1262,7 @@ export const resolveToolPrimarySubject = (
   if (normalizedName === "sendinput") {
     return (
       resolveToolArgumentPreview(args, ["message", "id", "agent_id"]) ||
-      "目标子代理"
+      "目标协作成员"
     );
   }
 
@@ -1602,10 +1602,10 @@ export const buildToolGroupHeadline = (toolCalls: ToolCallState[]): string => {
 
   if (info.family === "subagent") {
     return failed
-      ? `子代理失败 ${toolCalls.length} 项`
+      ? `协作失败 ${toolCalls.length} 项`
       : running
-        ? `子代理进行中 ${toolCalls.length} 项`
-        : `已完成 ${toolCalls.length} 项子代理操作`;
+        ? `协作进行中 ${toolCalls.length} 项`
+        : `已完成 ${toolCalls.length} 项协作操作`;
   }
 
   if (info.family === "task") {

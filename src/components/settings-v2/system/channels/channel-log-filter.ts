@@ -1,12 +1,19 @@
 import type { LogEntry } from "@/lib/api/logs";
 
-export type ChannelLogPreset = "all" | "telegram" | "rpc" | "feishu" | "custom";
+export type ChannelLogPreset =
+  | "all"
+  | "telegram"
+  | "wechat"
+  | "rpc"
+  | "feishu"
+  | "custom";
 
 const PRESET_PATTERNS: Record<
   Exclude<ChannelLogPreset, "all" | "custom">,
   string
 > = {
   telegram: "TelegramGateway",
+  wechat: "WechatGateway",
   rpc: "\\bRPC\\b|agent\\.run|cron\\.run",
   feishu: "FeishuGateway",
 };

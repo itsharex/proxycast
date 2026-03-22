@@ -3,16 +3,19 @@
 //! 负责执行调度任务。
 
 use super::types::ScheduledTask;
+use aster::conversation::message::Message;
 use async_trait::async_trait;
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use lime_agent::credential_bridge::CredentialBridge;
 #[cfg(test)]
 use lime_agent::request_tool_policy::REQUEST_TOOL_POLICY_MARKER;
 use lime_agent::request_tool_policy::{
     merge_system_prompt_with_request_tool_policy, resolve_request_tool_policy,
-    stream_reply_with_policy,
+    stream_message_reply_with_policy,
 };
 use lime_agent::{merge_system_prompt_with_runtime_agents, AsterAgentState, SessionConfigBuilder};
 use lime_core::database::DbConnection;
+use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -60,6 +63,35 @@ impl Default for AgentExecutor {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum TaskInputBlock {
+    Text { text: String },
+    Media(TaskInputMedia),
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct TaskInputMedia {
+    media_type: String,
+    source_type: TaskInputSourceType,
+    path_or_data: String,
+    #[serde(default)]
+    mime_type: Option<String>,
+    #[serde(default)]
+    file_name: Option<String>,
+    #[allow(dead_code)]
+    #[serde(default)]
+    metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum TaskInputSourceType {
+    LocalPath,
+    DataUrl,
 }
 
 #[async_trait]
@@ -155,6 +187,186 @@ impl AgentExecutor {
             .map(|value| value.to_string())
     }
 
+    fn resolve_prompt_text(task: &ScheduledTask) -> Option<String> {
+        task.params
+            .get("raw_message")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_string())
+            .or_else(|| {
+                task.params
+                    .get("prompt")
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(|value| value.to_string())
+            })
+    }
+
+    fn resolve_inputs(task: &ScheduledTask) -> Result<Vec<TaskInputBlock>, String> {
+        let Some(value) = task.params.get("inputs") else {
+            return Ok(Vec::new());
+        };
+        if value.is_null() {
+            return Ok(Vec::new());
+        }
+        serde_json::from_value::<Vec<TaskInputBlock>>(value.clone())
+            .map_err(|error| format!("解析 inputs 失败: {error}"))
+    }
+
+    fn build_user_message(
+        prompt_text: Option<&str>,
+        inputs: &[TaskInputBlock],
+    ) -> Result<Message, String> {
+        let mut message = Message::user();
+        let mut text_segments = inputs
+            .iter()
+            .filter_map(|input| match input {
+                TaskInputBlock::Text { text } => {
+                    let trimmed = text.trim();
+                    (!trimmed.is_empty()).then(|| trimmed.to_string())
+                }
+                TaskInputBlock::Media(_) => None,
+            })
+            .collect::<Vec<_>>();
+
+        if text_segments.is_empty() {
+            if let Some(prompt) = prompt_text.map(str::trim).filter(|value| !value.is_empty()) {
+                text_segments.push(prompt.to_string());
+            }
+        }
+
+        for text in text_segments {
+            message = message.with_text(text);
+        }
+
+        for input in inputs {
+            if let TaskInputBlock::Media(media) = input {
+                message = Self::append_media_input(message, media)?;
+            }
+        }
+
+        if message.content.is_empty() {
+            return Err("缺少可执行的 prompt 或 inputs".to_string());
+        }
+
+        Ok(message)
+    }
+
+    fn append_media_input(message: Message, media: &TaskInputMedia) -> Result<Message, String> {
+        if !Self::is_image_media(media) {
+            return Ok(message.with_text(Self::build_attachment_description(media)));
+        }
+
+        let (data, mime_type) = Self::resolve_image_payload(media)?;
+        Ok(message.with_image(data, mime_type))
+    }
+
+    fn is_image_media(media: &TaskInputMedia) -> bool {
+        media
+            .media_type
+            .trim()
+            .to_ascii_lowercase()
+            .starts_with("image")
+            || media
+                .mime_type
+                .as_deref()
+                .map(str::trim)
+                .map(|value| value.to_ascii_lowercase().starts_with("image/"))
+                .unwrap_or(false)
+    }
+
+    fn build_attachment_description(media: &TaskInputMedia) -> String {
+        let mut description = format!("[附件: type={}]", media.media_type.trim());
+        if let Some(file_name) = media
+            .file_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            description.push_str(&format!(" file={file_name}"));
+        }
+        if let Some(mime_type) = media
+            .mime_type
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            description.push_str(&format!(" mime={mime_type}"));
+        }
+        description
+    }
+
+    fn resolve_image_payload(media: &TaskInputMedia) -> Result<(String, String), String> {
+        match media.source_type {
+            TaskInputSourceType::LocalPath => {
+                let path = media.path_or_data.trim();
+                if path.is_empty() {
+                    return Err("图片输入缺少本地路径".to_string());
+                }
+                let bytes = std::fs::read(path)
+                    .map_err(|error| format!("读取图片失败 path={path}: {error}"))?;
+                let mime_type = media
+                    .mime_type
+                    .clone()
+                    .filter(|value| value.trim().starts_with("image/"))
+                    .or_else(|| Self::guess_image_mime_from_path(path))
+                    .unwrap_or_else(|| "image/png".to_string());
+                Ok((BASE64_STANDARD.encode(bytes), mime_type))
+            }
+            TaskInputSourceType::DataUrl => Self::parse_data_url_image(media),
+        }
+    }
+
+    fn parse_data_url_image(media: &TaskInputMedia) -> Result<(String, String), String> {
+        let data_url = media.path_or_data.trim();
+        if let Some((header, data)) = data_url.split_once(',') {
+            if let Some(rest) = header.strip_prefix("data:") {
+                let mut segments = rest.split(';');
+                let mime_type = segments.next().unwrap_or("image/png").trim();
+                let is_base64 =
+                    segments.any(|segment| segment.trim().eq_ignore_ascii_case("base64"));
+                if !is_base64 {
+                    return Err("暂不支持非 base64 的 data URL 图片输入".to_string());
+                }
+                if !mime_type.starts_with("image/") {
+                    return Err(format!("不支持的图片 MIME 类型: {mime_type}"));
+                }
+                if data.trim().is_empty() {
+                    return Err("图片 data URL 缺少数据体".to_string());
+                }
+                return Ok((data.trim().to_string(), mime_type.to_string()));
+            }
+        }
+
+        let mime_type = media
+            .mime_type
+            .clone()
+            .filter(|value| value.trim().starts_with("image/"))
+            .unwrap_or_else(|| "image/png".to_string());
+        if media.path_or_data.trim().is_empty() {
+            return Err("图片 data URL 为空".to_string());
+        }
+        Ok((media.path_or_data.trim().to_string(), mime_type))
+    }
+
+    fn guess_image_mime_from_path(path: &str) -> Option<String> {
+        let extension = std::path::Path::new(path)
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(|value| value.trim().to_ascii_lowercase())?;
+        match extension.as_str() {
+            "png" => Some("image/png".to_string()),
+            "jpg" | "jpeg" => Some("image/jpeg".to_string()),
+            "gif" => Some("image/gif".to_string()),
+            "webp" => Some("image/webp".to_string()),
+            "bmp" => Some("image/bmp".to_string()),
+            "svg" => Some("image/svg+xml".to_string()),
+            _ => None,
+        }
+    }
+
     /// 执行 Agent 对话任务
     async fn execute_agent_chat(
         &self,
@@ -162,15 +374,22 @@ impl AgentExecutor {
         db: &DbConnection,
         _aster_config: &lime_agent::credential_bridge::AsterProviderConfig,
     ) -> Result<serde_json::Value, String> {
-        // 从任务参数中提取对话内容
-        let prompt = task
-            .params
-            .get("prompt")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "缺少 prompt 参数".to_string())?;
+        let prompt_text = Self::resolve_prompt_text(task);
+        let inputs = Self::resolve_inputs(task)?;
+        let user_message = Self::build_user_message(prompt_text.as_deref(), &inputs)?;
 
-        tracing::info!("[AgentExecutor] 执行 Agent 对话: {}", prompt);
+        tracing::info!(
+            "[AgentExecutor] 执行 Agent 对话: text_chars={} input_blocks={} has_image={}",
+            user_message.as_concat_text().chars().count(),
+            inputs.len(),
+            inputs.iter().any(
+                |input| matches!(input, TaskInputBlock::Media(media) if Self::is_image_media(media))
+            )
+        );
 
+        let response_prompt = prompt_text
+            .clone()
+            .unwrap_or_else(|| user_message.as_concat_text());
         let session_id = Self::resolve_agent_session_id(task);
         let request_tool_policy =
             resolve_request_tool_policy(Self::resolve_bool_param(task, "web_search"), false);
@@ -219,9 +438,9 @@ impl AgentExecutor {
             session_builder = session_builder.system_prompt(system_prompt);
         }
         let session_config = session_builder.build();
-        let execution = stream_reply_with_policy(
+        let execution = stream_message_reply_with_policy(
             agent,
-            prompt,
+            user_message,
             None,
             session_config,
             None,
@@ -264,7 +483,7 @@ impl AgentExecutor {
 
         Ok(serde_json::json!({
             "type": "agent_chat",
-            "prompt": prompt,
+            "prompt": response_prompt,
             "response": response,
             "status": "success"
         }))
@@ -298,6 +517,7 @@ impl AgentExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aster::conversation::message::MessageContent;
     use chrono::Utc;
     use rusqlite::Connection;
     use std::sync::{Arc, Mutex};
@@ -391,5 +611,61 @@ mod tests {
         assert!(merged.contains("你是助手"));
         assert!(merged.contains(REQUEST_TOOL_POLICY_MARKER));
         assert!(merged.contains("WebSearch"));
+    }
+
+    #[test]
+    fn test_build_user_message_uses_image_data_url_inputs() {
+        let message = AgentExecutor::build_user_message(
+            Some("忽略这条 fallback"),
+            &[
+                TaskInputBlock::Text {
+                    text: "看看这张图".to_string(),
+                },
+                TaskInputBlock::Media(TaskInputMedia {
+                    media_type: "image".to_string(),
+                    source_type: TaskInputSourceType::DataUrl,
+                    path_or_data: "data:image/png;base64,aGVsbG8=".to_string(),
+                    mime_type: Some("image/png".to_string()),
+                    file_name: Some("demo.png".to_string()),
+                    metadata: None,
+                }),
+            ],
+        )
+        .expect("message should build");
+
+        assert_eq!(message.as_concat_text(), "看看这张图");
+        assert!(
+            message
+                .content
+                .iter()
+                .any(|content| matches!(content, MessageContent::Image(image) if image.mime_type == "image/png" && image.data == "aGVsbG8="))
+        );
+    }
+
+    #[test]
+    fn test_build_user_message_falls_back_to_prompt_when_inputs_missing_text() {
+        let message = AgentExecutor::build_user_message(Some("请分析截图"), &[])
+            .expect("fallback prompt should be used");
+        assert_eq!(message.as_concat_text(), "请分析截图");
+    }
+
+    #[test]
+    fn test_build_user_message_keeps_non_image_media_as_text_description() {
+        let message = AgentExecutor::build_user_message(
+            None,
+            &[TaskInputBlock::Media(TaskInputMedia {
+                media_type: "file".to_string(),
+                source_type: TaskInputSourceType::LocalPath,
+                path_or_data: "/tmp/demo.pdf".to_string(),
+                mime_type: Some("application/pdf".to_string()),
+                file_name: Some("demo.pdf".to_string()),
+                metadata: None,
+            })],
+        )
+        .expect("non-image media should degrade to text description");
+
+        assert!(message
+            .as_concat_text()
+            .contains("[附件: type=file] file=demo.pdf mime=application/pdf"));
     }
 }

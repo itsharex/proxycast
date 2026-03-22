@@ -26,6 +26,7 @@ rusqlite = { workspace = true }
 # 时间和 UUID
 chrono = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
+base64 = { workspace = true }
 
 # 项目内依赖
 lime-core = { workspace = true }

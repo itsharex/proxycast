@@ -121,7 +121,7 @@ describe("harnessRequestMetadata", () => {
     ]);
   });
 
-  it("应写入本轮 Team 决策与预编队蓝图", () => {
+  it("应写入当前 Team 决策与预编队蓝图", () => {
     const metadata = buildHarnessRequestMetadata({
       theme: "general",
       creationMode: "guided",
@@ -134,7 +134,7 @@ describe("harnessRequestMetadata", () => {
       turnTeamDecision: "team_prepared",
       turnTeamReason: "runtime_team_prepared",
       turnTeamBlueprint: {
-        label: "本轮调试 Team",
+        label: "当前调试 Team",
         description: "先分析，再实现，最后验证。",
         roles: [
           {
@@ -158,7 +158,7 @@ describe("harnessRequestMetadata", () => {
       turn_team_decision: "team_prepared",
       turn_team_reason: "runtime_team_prepared",
       turn_team_blueprint: {
-        label: "本轮调试 Team",
+        label: "当前调试 Team",
         description: "先分析，再实现，最后验证。",
         roles: [
           {

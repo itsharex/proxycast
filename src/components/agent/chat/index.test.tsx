@@ -449,7 +449,7 @@ vi.mock("./components/TeamWorkspaceDock", () => ({
             onActivateWorkbench();
           }}
         >
-          打开 Team Workbench
+          打开创作协作
         </button>
       ) : null}
     </div>
@@ -1513,14 +1513,14 @@ describe("AgentChatPage 通用工作台", () => {
     ) as HTMLDivElement | null;
     expect(navbar?.dataset.showHarnessToggle).toBe("true");
     expect(navbar?.dataset.harnessToggleLabel).toBe("工作台");
-    expect(document.body.textContent).not.toContain("Agent 工作台");
-    expect(document.body.textContent).not.toContain("通用 Agent");
+    expect(document.body.textContent).not.toContain("处理工作台");
+    expect(document.body.textContent).not.toContain("通用助手");
 
     clickButton(container, "toggle-harness");
     await flushEffects();
 
-    expect(document.body.textContent).toContain("Agent 工作台");
-    expect(document.body.textContent).toContain("通用 Agent");
+    expect(document.body.textContent).toContain("处理工作台");
+    expect(document.body.textContent).toContain("通用助手");
   });
 
   it("窄屏工作台切到 stacked 时应自动收起话题列表，恢复 split 后重新展示", async () => {
@@ -1660,7 +1660,7 @@ describe("AgentChatPage 通用工作台", () => {
       },
       {
         role: "assistant",
-        content: "本轮已进入 Team 调度，正在组建成员…",
+        content: "我会先安排协作分工，再把关键进展和结果汇总给你。",
         runtimeTitle: "正在组建 Team",
       },
     ]);
@@ -1723,6 +1723,21 @@ describe("AgentChatPage 通用工作台", () => {
           | undefined
       )?.teamView?.triggerState?.label,
     ).toBe("已就绪");
+    const updatedMessageListProps = mockMessageList.mock.calls.at(-1)?.[0] as
+      | {
+          messages?: Array<{
+            role: string;
+            content: string;
+            runtimeStatus?: { title?: string };
+          }>;
+        }
+      | undefined;
+    expect(updatedMessageListProps?.messages?.at(-1)?.content).toContain(
+      "我已经为这项任务准备了「修复 Team」。",
+    );
+    expect(updatedMessageListProps?.messages?.at(-1)?.content).toContain(
+      "1. 分析：负责定位问题边界。",
+    );
   });
 
   it("用户手动切回聊天后，同一轮 Team 组建与真实成员到达都不应再次抢焦点", async () => {
@@ -2035,7 +2050,7 @@ describe("AgentChatPage 通用工作台", () => {
     clickButton(container, "toggle-harness");
     await flushEffects();
 
-    expect(document.body.textContent).toContain("Agent 工作台");
+    expect(document.body.textContent).toContain("处理工作台");
     expect(document.body.textContent).not.toContain("已激活技能");
     expect(
       document.body.querySelector('button[aria-label="跳转到已激活技能"]'),

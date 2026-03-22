@@ -57,8 +57,8 @@ export const QueuedTurnsPanel: React.FC<QueuedTurnsPanelProps> = ({
   return (
     <div className="px-3 pb-2">
       <div className="mb-2 flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-        <span>已排队 {queuedTurns.length}</span>
-        <span>按顺序执行</span>
+        <span>稍后处理 {queuedTurns.length}</span>
+        <span>会依次开始</span>
       </div>
       <div className="flex flex-col gap-2">
         {queuedTurns.map((item) => {

@@ -1,16 +1,10 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { apiKeyProviderApi } from "@/lib/api/apiKeyProvider";
 import {
-  findImageProviderById,
-  findImageProviderForSelection,
-  getImageModelIdsForProvider,
-  isImageProvider,
-  pickImageModelBySelection,
-} from "@/lib/imageGeneration";
-import { resolveMediaGenerationPreference } from "@/lib/mediaGeneration";
-import { useGlobalMediaGenerationDefaults } from "@/hooks/useGlobalMediaGenerationDefaults";
+  emitImageWorkbenchFocus,
+  emitImageWorkbenchRequest,
+} from "@/lib/imageWorkbenchEvents";
 import type { GeneratedOutputItem } from "./workbenchRightRailGeneratedOutputs";
 import type {
   CoverCountType,
@@ -21,28 +15,26 @@ import type {
 } from "./workbenchRightRailCreationConfig";
 import {
   COVER_PLATFORM_OPTIONS,
-  mapCoverPlatformToResolution,
-  mapImageSizeTypeToResolution,
+  IMAGE_MODEL_OPTIONS,
+  mapCoverPlatformToAspectRatio,
+  mapImageSizeTypeToAspectRatio,
   SEARCH_RESOURCE_OPTIONS,
 } from "./workbenchRightRailCreationConfig";
 import {
-  buildProviderEndpoint,
-  extractImageUrlsFromResponse,
   getOptionLabel,
-  ImageProviderOption,
-  loadWorkbenchProject,
-  tryParseJsonText,
   type WebImageSearchResponseForRail,
 } from "./workbenchRightRailCapabilityShared";
 
 interface UseWorkbenchRightRailImageTasksParams {
   projectId?: string | null;
+  contentId?: string | null;
   appendGeneratedOutput: (item: GeneratedOutputItem) => void;
   handleSubmitPrompt: (prompt: string) => Promise<boolean>;
 }
 
 export function useWorkbenchRightRailImageTasks({
   projectId,
+  contentId,
   appendGeneratedOutput,
   handleSubmitPrompt,
 }: UseWorkbenchRightRailImageTasksParams) {
@@ -63,156 +55,63 @@ export function useWorkbenchRightRailImageTasks({
   const [coverDescription, setCoverDescription] = useState("");
   const [imageSubmitting, setImageSubmitting] = useState(false);
   const [coverSubmitting, setCoverSubmitting] = useState(false);
-  const { mediaDefaults } = useGlobalMediaGenerationDefaults();
 
-  const resolveImageProviderAndModel = async (modelType: ImageModelType) => {
-    const [allProviders, project] = await Promise.all([
-      apiKeyProviderApi.getProviders(),
-      loadWorkbenchProject(projectId),
-    ]);
-    const imageProviders: ImageProviderOption[] = allProviders
-      .filter(
-        (provider) =>
-          provider.enabled &&
-          provider.api_key_count > 0 &&
-          isImageProvider(provider.id, provider.type),
-      )
-      .map((provider) => ({
-        id: provider.id,
-        type: provider.type,
-        apiHost: provider.api_host,
-        customModels: provider.custom_models ?? [],
-      }));
-
-    const imagePreference = resolveMediaGenerationPreference(
-      project?.settings?.imageGeneration,
-      mediaDefaults.image,
-    );
-    const preferredProviderId =
-      imagePreference.preferredProviderId?.trim() || "";
-    const preferredModelId = imagePreference.preferredModelId?.trim() || "";
-    const allowFallback = imagePreference.allowFallback;
-    const preferenceSourceLabel =
-      imagePreference.source === "project" ? "项目" : "全局默认";
-
-    if (preferredProviderId) {
-      const preferredProvider = findImageProviderById(
-        imageProviders,
-        preferredProviderId,
-      );
-
-      if (!preferredProvider) {
-        if (!allowFallback) {
-          throw new Error(
-            `${preferenceSourceLabel}已指定图片服务 ${preferredProviderId}，但当前不可用，请前往设置调整`,
-          );
-        }
-      } else {
-        const preferredProviderModels = getImageModelIdsForProvider(
-          preferredProvider.id,
-          preferredProvider.type,
-          preferredProvider.customModels,
-        );
-        const preferredModel =
-          preferredModelId ||
-          pickImageModelBySelection(preferredProviderModels, modelType);
-        const preferredApiKey = await apiKeyProviderApi.getNextApiKey(
-          preferredProvider.id,
-        );
-
-        if (preferredApiKey) {
-          return {
-            provider: preferredProvider,
-            model: preferredModel,
-            apiKey: preferredApiKey,
-          };
-        }
-
-        if (!allowFallback) {
-          throw new Error(
-            `${preferenceSourceLabel}已指定图片服务 ${preferredProviderId}，但当前没有可用 API Key，请前往设置或凭证池调整`,
-          );
-        }
-      }
-    }
-
-    const provider = findImageProviderForSelection(imageProviders, modelType);
-    if (!provider) {
-      throw new Error("未找到可用图片服务，请先在设置中配置 Provider");
-    }
-
-    const model = pickImageModelBySelection(
-      getImageModelIdsForProvider(
-        provider.id,
-        provider.type,
-        provider.customModels,
-      ),
-      modelType,
-    );
-    if (!model) {
-      throw new Error("未能解析图片模型，请检查 Provider 模型配置");
-    }
-
-    const apiKey = await apiKeyProviderApi.getNextApiKey(provider.id);
-    if (!apiKey) {
-      throw new Error("该图片服务没有可用 API Key，请先在凭证池中添加");
-    }
-
-    return { provider, model, apiKey };
-  };
-
-  const requestImageGeneration = async ({
-    provider,
-    apiKey,
-    model,
-    prompt,
-    size,
-    count,
-  }: {
-    provider: ImageProviderOption;
-    apiKey: string;
-    model: string;
+  const submitImageWorkbenchRequest = async (params: {
     prompt: string;
-    size: string;
-    count: number;
-  }): Promise<string[]> => {
-    const endpoint = buildProviderEndpoint(
-      provider.apiHost,
-      "/v1/images/generations",
-    );
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        prompt,
-        n: Math.max(1, Math.min(count, 4)),
-        size,
-      }),
-    });
-    const rawText = await response.text();
-    const payload = tryParseJsonText(rawText);
-
-    if (!response.ok) {
-      const messageFromPayload = (
-        payload?.error as { message?: string } | undefined
-      )?.message;
-      const message =
-        typeof messageFromPayload === "string" &&
-        messageFromPayload.trim().length > 0
-          ? messageFromPayload
-          : rawText.slice(0, 200);
-      throw new Error(message || `请求失败: ${response.status}`);
+    target: "generate" | "cover";
+    aspectRatio: string;
+    count?: number;
+    modelPreset: ImageModelType;
+    outputTitle: string;
+    outputDetail: string;
+  }) => {
+    const normalizedPrompt = params.prompt.trim();
+    if (!normalizedPrompt) {
+      return false;
     }
 
-    const imageUrls = extractImageUrlsFromResponse(payload);
-    if (imageUrls.length === 0) {
-      throw new Error("图片服务返回成功但没有可用图片");
+    if (contentId) {
+      emitImageWorkbenchRequest({
+        source: "workspace-right-rail",
+        projectId: projectId ?? null,
+        contentId,
+        prompt: normalizedPrompt,
+        target: params.target,
+        aspectRatio: params.aspectRatio,
+        count: params.count,
+        modelPreset: params.modelPreset,
+      });
+      appendGeneratedOutput({
+        id: `image-workbench-${Date.now()}`,
+        title: params.outputTitle,
+        detail: params.outputDetail,
+        actionLabel: "查看画布",
+        onAction: () => {
+          emitImageWorkbenchFocus({
+            source: "workspace-right-rail",
+            projectId: projectId ?? null,
+            contentId,
+          });
+        },
+      });
+      toast.success("已提交到图片工作台");
+      return true;
     }
-    return imageUrls;
+
+    const command = [
+      `@配图 生成 ${normalizedPrompt}`,
+      params.aspectRatio ? `，${params.aspectRatio}` : "",
+      params.count && params.count > 1 ? `，出 ${params.count} 张` : "",
+    ].join("");
+    const submitted = await handleSubmitPrompt(command);
+    if (submitted) {
+      appendGeneratedOutput({
+        id: `image-workbench-${Date.now()}`,
+        title: params.outputTitle,
+        detail: `${params.outputDetail} 已转为工作区创建请求。`,
+      });
+    }
+    return submitted;
   };
 
   const handleSubmitSearchMaterial = async () => {
@@ -285,28 +184,23 @@ ${titleRequirement.trim()}`);
 
     setImageSubmitting(true);
     try {
-      const { provider, model, apiKey } =
-        await resolveImageProviderAndModel(imageModel);
-      const size = mapImageSizeTypeToResolution(imageSize);
-      const images = await requestImageGeneration({
-        provider,
-        apiKey,
-        model,
+      const aspectRatio = mapImageSizeTypeToAspectRatio(imageSize);
+      const modelLabel = getOptionLabel(IMAGE_MODEL_OPTIONS, imageModel);
+      const submitted = await submitImageWorkbenchRequest({
         prompt: normalizedPrompt,
-        size,
+        target: "generate",
+        aspectRatio,
         count: 1,
+        modelPreset: imageModel,
+        outputTitle: "图片任务已提交",
+        outputDetail: `${modelLabel} · ${aspectRatio} · ${normalizedPrompt}`,
       });
-      appendGeneratedOutput({
-        id: `image-${Date.now()}`,
-        title: "图片生成成功",
-        detail: `${provider.id} · ${model} · ${size}`,
-        assetType: "image",
-        assetUrl: images[0],
-      });
-      toast.success(`图片已生成（${provider.id} · ${model}）`);
+      if (submitted) {
+        setImagePrompt("");
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      toast.error(`图片生成失败：${message}`);
+      toast.error(`图片任务提交失败：${message}`);
     } finally {
       setImageSubmitting(false);
     }
@@ -320,35 +214,31 @@ ${titleRequirement.trim()}`);
 
     setCoverSubmitting(true);
     try {
-      const { provider, model, apiKey } =
-        await resolveImageProviderAndModel(imageModel);
-      const size = mapCoverPlatformToResolution(coverPlatform);
       const imageCount = Number.parseInt(coverCount, 10);
-      const coverPrompt = `请生成${getOptionLabel(
+      const platformLabel = getOptionLabel(
         COVER_PLATFORM_OPTIONS,
         coverPlatform,
-      )}平台封面图。要求：${normalizedPrompt}`;
-      const images = await requestImageGeneration({
-        provider,
-        apiKey,
-        model,
-        prompt: coverPrompt,
-        size,
-        count: Number.isFinite(imageCount) ? imageCount : 1,
-      });
-      appendGeneratedOutput({
-        id: `cover-${Date.now()}`,
-        title: "封面生成成功",
-        detail: `${provider.id} · ${model} · ${size} · ${images.length} 张`,
-        assetType: "image",
-        assetUrl: images[0],
-      });
-      toast.success(
-        `封面已生成 ${images.length} 张（${provider.id} · ${model}）`,
       );
+      const aspectRatio = mapCoverPlatformToAspectRatio(coverPlatform);
+      const coverPrompt = `请生成${platformLabel}平台封面图。要求：${normalizedPrompt}`;
+      const modelLabel = getOptionLabel(IMAGE_MODEL_OPTIONS, imageModel);
+      const submitted = await submitImageWorkbenchRequest({
+        prompt: coverPrompt,
+        target: "cover",
+        aspectRatio,
+        count: Number.isFinite(imageCount) ? imageCount : 1,
+        modelPreset: imageModel,
+        outputTitle: "封面任务已提交",
+        outputDetail: `${platformLabel} · ${modelLabel} · ${aspectRatio} · ${
+          Number.isFinite(imageCount) ? imageCount : 1
+        } 张`,
+      });
+      if (submitted) {
+        setCoverDescription("");
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      toast.error(`封面生成失败：${message}`);
+      toast.error(`封面任务提交失败：${message}`);
     } finally {
       setCoverSubmitting(false);
     }

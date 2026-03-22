@@ -197,7 +197,7 @@ describe("ChatSidebar", () => {
       block: "start",
       behavior: "smooth",
     });
-    expect(container.textContent).toContain("已收起 · 1 个子代理 · 1 个运行中");
+    expect(container.textContent).toContain("已收起 · 1 个子代理 · 1 个处理中");
     expect(container.textContent).not.toContain("代码审查代理");
   });
 
@@ -557,7 +557,7 @@ describe("ChatSidebar", () => {
     expect(container.textContent).toContain("Team Runtime");
     expect(container.textContent).toContain("代码审查代理");
     expect(container.textContent).toContain("文档校对代理");
-    expect(container.textContent).toContain("运行中");
+    expect(container.textContent).toContain("处理中");
     expect(container.textContent).toContain("已完成");
 
     const sessionButton = Array.from(container.querySelectorAll("button")).find(
@@ -610,7 +610,7 @@ describe("ChatSidebar", () => {
       collapseButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(container.textContent).toContain("已收起 · 2 个子代理 · 1 个运行中 · 1 个已完成");
+    expect(container.textContent).toContain("已收起 · 2 个子代理 · 1 个处理中 · 1 个已完成");
     expect(container.textContent).not.toContain("代码审查代理");
     expect(container.textContent).not.toContain("文档校对代理");
 
@@ -674,7 +674,7 @@ describe("ChatSidebar", () => {
     });
 
     expect(container.textContent).toContain(
-      "已收起 · 4 个子代理 · 2 个运行中 · 1 个排队中 · 1 个已完成",
+      "已收起 · 4 个子代理 · 2 个处理中 · 1 个稍后开始 · 1 个已完成",
     );
     expect(container.textContent).not.toContain("代码审查代理");
     expect(container.textContent).not.toContain("文档校对代理");
@@ -779,7 +779,7 @@ describe("ChatSidebar", () => {
     });
 
     expect(container.textContent).toContain(
-      "已收起 · 3 个同级子代理 · 1 个运行中 · 1 个排队中 · 1 个已完成",
+      "已收起 · 3 个同级子代理 · 1 个处理中 · 1 个稍后开始 · 1 个已完成",
     );
     expect(container.textContent).not.toContain("研究代理");
     expect(container.textContent).not.toContain("验证代理");
@@ -841,7 +841,7 @@ describe("ChatSidebar", () => {
     expect(container.textContent).toContain("当前子代理");
     expect(container.textContent).toContain("实现 team sidebar");
     expect(container.textContent).toContain("研究代理");
-    expect(container.textContent).toContain("排队中");
+    expect(container.textContent).toContain("稍后开始");
 
     const returnButton = Array.from(container.querySelectorAll("button")).find(
       (element) => element.textContent?.includes("主线程"),

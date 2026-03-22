@@ -18,6 +18,7 @@ export interface ImageProviderCandidate {
 
 export interface ImageProviderModelCandidate extends ImageProviderCandidate {
   customModels?: string[];
+  apiHost?: string;
 }
 
 function normalizeProviderSignature(providerId: string, providerType: string): string {
@@ -27,6 +28,7 @@ function normalizeProviderSignature(providerId: string, providerType: string): s
 export function isImageProvider(providerId: string, providerType: string): boolean {
   const normalized = normalizeProviderSignature(providerId, providerType);
   return (
+    normalized.includes("fal") ||
     normalized.includes("new-api") ||
     normalized.includes("openai") ||
     normalized.includes("doubao") ||
@@ -108,12 +110,67 @@ export function pickImageModelBySelection(
   return models[0] ?? "gpt-image-1";
 }
 
+function isFalLikeProvider(
+  providerId: string,
+  providerType: string,
+  apiHost?: string,
+): boolean {
+  const normalizedSignature = normalizeProviderSignature(providerId, providerType);
+  const normalizedHost = (apiHost || "").trim().toLowerCase();
+  return (
+    normalizedSignature.includes("fal") ||
+    normalizedHost.includes("fal.run") ||
+    normalizedHost.includes("queue.fal.run")
+  );
+}
+
+function isLikelyFalImageModel(modelId: string): boolean {
+  const normalized = modelId.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  if (normalized.startsWith("fal-ai/")) {
+    return true;
+  }
+
+  return /(image|flux|banana|seedream|kontext|recraft|ideogram|sdxl|stable-diffusion|wanx)/.test(
+    normalized,
+  );
+}
+
 export function getImageModelsForProvider(
   providerId: string,
   providerType: string,
   customModels?: string[],
+  apiHost?: string,
 ): ImageGenModel[] {
+  const builtinModels =
+    IMAGE_GEN_MODELS[providerId] ?? IMAGE_GEN_MODELS[providerType] ?? [];
+
   if (customModels && customModels.length > 0) {
+    const nextCustomModels = isFalLikeProvider(providerId, providerType, apiHost)
+      ? customModels.filter((modelId) => isLikelyFalImageModel(modelId))
+      : customModels;
+
+    if (nextCustomModels.length > 0) {
+      return nextCustomModels.map((modelId) => ({
+        id: modelId,
+        name: modelId,
+        supportedSizes: [
+          "1024x1024",
+          "768x1344",
+          "1344x768",
+          "1792x1024",
+          "1024x1792",
+        ],
+      }));
+    }
+
+    if (builtinModels.length > 0) {
+      return builtinModels;
+    }
+
     return customModels.map((modelId) => ({
       id: modelId,
       name: modelId,
@@ -127,23 +184,19 @@ export function getImageModelsForProvider(
     }));
   }
 
-  if (IMAGE_GEN_MODELS[providerId]) {
-    return IMAGE_GEN_MODELS[providerId] ?? [];
-  }
-
-  if (IMAGE_GEN_MODELS[providerType]) {
-    return IMAGE_GEN_MODELS[providerType] ?? [];
-  }
-
-  return [];
+  return builtinModels;
 }
 
 export function getImageModelIdsForProvider(
   providerId: string,
   providerType: string,
   customModels?: string[],
+  apiHost?: string,
 ): string[] {
-  return getImageModelsForProvider(providerId, providerType, customModels).map(
-    (model) => model.id,
-  );
+  return getImageModelsForProvider(
+    providerId,
+    providerType,
+    customModels,
+    apiHost,
+  ).map((model) => model.id);
 }

@@ -1,6 +1,15 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const { mockWechatChannelSetRuntimeModel } = vi.hoisted(() => ({
+  mockWechatChannelSetRuntimeModel: vi.fn(async () => undefined),
+}));
+
+vi.mock("@/lib/api/channelsRuntime", () => ({
+  wechatChannelSetRuntimeModel: mockWechatChannelSetRuntimeModel,
+}));
+
 import { useHomeShellAgentPreferences } from "./useHomeShellAgentPreferences";
 
 interface HookHarness {
@@ -54,6 +63,7 @@ describe("useHomeShellAgentPreferences", () => {
       }
     ).IS_REACT_ACT_ENVIRONMENT = true;
     localStorage.clear();
+    mockWechatChannelSetRuntimeModel.mockReset();
   });
 
   afterEach(() => {
@@ -139,6 +149,25 @@ describe("useHomeShellAgentPreferences", () => {
           ) || "null",
         ),
       ).toBe("code_orchestrated");
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  it("更新首页 Claw 模型时应同步微信运行时模型", async () => {
+    const harness = mountHook("project-home-sync");
+
+    try {
+      await act(async () => {
+        harness.getValue().setProviderType("deepseek");
+        harness.getValue().setModel("deepseek-reasoner");
+        await Promise.resolve();
+      });
+
+      expect(mockWechatChannelSetRuntimeModel).toHaveBeenCalledWith({
+        providerId: "deepseek",
+        modelId: "deepseek-reasoner",
+      });
     } finally {
       harness.unmount();
     }

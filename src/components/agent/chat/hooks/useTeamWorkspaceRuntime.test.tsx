@@ -149,7 +149,7 @@ describe("useTeamWorkspaceRuntime", () => {
     );
     expect(
       latestValue?.liveActivityBySessionId["child-1"]?.[0]?.detail,
-    ).toContain("已切换为运行中");
+    ).toContain("已切换为处理中");
     expect(
       latestValue?.activityRefreshVersionBySessionId["child-1"] ?? 0,
     ).toBe(0);
@@ -204,11 +204,11 @@ describe("useTeamWorkspaceRuntime", () => {
     });
 
     expect(latestValue?.liveActivityBySessionId["child-1"]?.[0]?.title).toBe(
-      "工具 browser_snapshot",
+      "处理中 · browser_snapshot",
     );
     expect(
       latestValue?.liveActivityBySessionId["child-1"]?.[0]?.detail,
-    ).toContain("正在执行 browser_snapshot");
+    ).toContain("正在处理 browser_snapshot");
     expect(
       latestValue?.activityRefreshVersionBySessionId["child-1"] ?? 0,
     ).toBe(0);
@@ -228,7 +228,7 @@ describe("useTeamWorkspaceRuntime", () => {
     });
 
     expect(latestValue?.liveActivityBySessionId["child-1"]?.[0]?.title).toBe(
-      "工具 browser_snapshot",
+      "处理中 · browser_snapshot",
     );
     expect(
       latestValue?.liveActivityBySessionId["child-1"]?.[0]?.detail,

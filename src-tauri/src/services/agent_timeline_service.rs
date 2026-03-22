@@ -170,11 +170,7 @@ impl AgentTimelineRecorder {
                 );
                 self.persist_and_emit_item(app, event_name, item)?;
             }
-            TauriAgentEvent::ActionRequired {
-                request_id: _,
-                action_type: _,
-                data: _,
-            } => {}
+            TauriAgentEvent::ActionRequired { .. } => {}
             TauriAgentEvent::Warning { code, message } => {
                 let item = self.build_item(
                     format!("warning:{}:{}", self.turn_id, self.sequence_counter + 1),

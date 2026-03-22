@@ -240,6 +240,7 @@ export function WorkbenchPage({
               }
               isCreateWorkspaceView={isCreateWorkspaceView}
               projectId={selectedProjectId}
+              contentId={selectedContentId}
               theme={theme}
               creationMode={selectedContentCreationMode}
               creationType={selectedContentCreationType}

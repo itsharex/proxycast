@@ -79,16 +79,26 @@ pub async fn get_logs(logs: tauri::State<'_, LogState>) -> Result<Vec<logger::Lo
 /// 清除日志
 #[tauri::command]
 pub async fn clear_logs(logs: tauri::State<'_, LogState>) -> Result<(), String> {
-    logs.write().await.clear();
+    let log_file_path = {
+        let mut logs = logs.write().await;
+        let log_file_path = logs.get_log_file_path();
+        logs.clear();
+        log_file_path
+    };
+    clear_persisted_log_artifacts_from_path(log_file_path)?;
     Ok(())
 }
 
 /// 清除诊断相关历史日志与原始响应文件
 #[tauri::command]
 pub async fn clear_diagnostic_log_history(logs: tauri::State<'_, LogState>) -> Result<(), String> {
-    let log_file_path = { logs.read().await.get_log_file_path() };
-    logs.write().await.clear();
-    clear_diagnostic_log_artifacts_from_path(log_file_path)?;
+    let log_file_path = {
+        let mut logs = logs.write().await;
+        let log_file_path = logs.get_log_file_path();
+        logs.clear();
+        log_file_path
+    };
+    clear_persisted_log_artifacts_from_path(log_file_path)?;
     Ok(())
 }
 
@@ -258,6 +268,48 @@ pub fn clear_diagnostic_log_artifacts_from_path(
         })?;
     }
 
+    Ok(())
+}
+
+pub fn truncate_current_log_file_from_path(current_log_path: Option<String>) -> Result<(), String> {
+    let Some(current_log_path) = current_log_path else {
+        return Ok(());
+    };
+
+    let current_log_path = PathBuf::from(current_log_path);
+
+    if let Some(parent) = current_log_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "创建日志目录失败（{}）: {}",
+                parent.to_string_lossy(),
+                error
+            )
+        })?;
+    }
+
+    fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&current_log_path)
+        .and_then(|mut file| file.write_all(b""))
+        .map_err(|error| {
+            format!(
+                "清空当前日志文件失败（{}）: {}",
+                current_log_path.to_string_lossy(),
+                error
+            )
+        })?;
+
+    Ok(())
+}
+
+pub fn clear_persisted_log_artifacts_from_path(
+    current_log_path: Option<String>,
+) -> Result<(), String> {
+    truncate_current_log_file_from_path(current_log_path.clone())?;
+    clear_diagnostic_log_artifacts_from_path(current_log_path)?;
     Ok(())
 }
 
@@ -990,9 +1042,9 @@ fn export_support_bundle_to(
 #[cfg(test)]
 mod tests {
     use super::{
-        clear_diagnostic_log_artifacts_from_path, export_support_bundle_to,
-        get_log_storage_diagnostics_from_path, read_persisted_logs_tail_from_path,
-        SupportBundleContext,
+        clear_diagnostic_log_artifacts_from_path, clear_persisted_log_artifacts_from_path,
+        export_support_bundle_to, get_log_storage_diagnostics_from_path,
+        read_persisted_logs_tail_from_path, SupportBundleContext,
     };
     use flate2::write::GzEncoder;
     use flate2::Compression;
@@ -1150,6 +1202,48 @@ mod tests {
             .expect("清理诊断日志历史失败");
 
         assert!(current.exists());
+        assert!(!rotated.exists());
+        assert!(!gz_path.exists());
+        assert!(!raw.exists());
+
+        cleanup_log_fixture(&current);
+    }
+
+    #[test]
+    fn clear_persisted_log_artifacts_from_path_should_truncate_current_and_remove_history() {
+        let current = unique_log_path();
+        let rotated = current.with_file_name(format!(
+            "{}.20260309-085900",
+            current
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("文件名缺失")
+        ));
+        let gz_path = current.with_file_name(format!(
+            "{}.20260309-085800.gz",
+            current
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("文件名缺失")
+        ));
+        let raw = current.with_file_name("raw_response_demo.txt");
+
+        fs::write(&current, "current\n").expect("写入当前日志失败");
+        fs::write(&rotated, "rotated\n").expect("写入轮转日志失败");
+        fs::write(&raw, "raw body\n").expect("写入原始响应文件失败");
+
+        let gz_file = fs::File::create(&gz_path).expect("创建 gzip 日志失败");
+        let mut encoder = GzEncoder::new(gz_file, Compression::default());
+        encoder
+            .write_all(b"gzip body\n")
+            .expect("写入 gzip 内容失败");
+        encoder.finish().expect("完成 gzip 写入失败");
+
+        clear_persisted_log_artifacts_from_path(Some(current.to_string_lossy().to_string()))
+            .expect("清空持久化日志失败");
+
+        assert!(current.exists());
+        assert_eq!(fs::read_to_string(&current).expect("读取当前日志失败"), "");
         assert!(!rotated.exists());
         assert!(!gz_path.exists());
         assert!(!raw.exists());

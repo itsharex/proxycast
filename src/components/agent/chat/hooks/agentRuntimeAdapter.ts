@@ -21,6 +21,7 @@ import {
   type ImageInput,
 } from "@/lib/api/agentRuntime";
 import type { StreamEvent } from "@/lib/api/agentStream";
+import type { ActionRequiredScope } from "../types";
 
 export interface AgentRuntimeTurnRequest {
   message: string;
@@ -49,6 +50,7 @@ export interface AgentRuntimeActionResponse {
   userData?: unknown;
   metadata?: Record<string, unknown>;
   eventName?: string;
+  actionScope?: ActionRequiredScope;
 }
 
 export interface AgentRuntimeAdapter {
@@ -157,6 +159,15 @@ export const defaultAgentRuntimeAdapter: AgentRuntimeAdapter = {
       user_data: request.userData,
       metadata: request.metadata,
       ...(request.eventName ? { event_name: request.eventName } : {}),
+      ...(request.actionScope
+        ? {
+            action_scope: {
+              session_id: request.actionScope.sessionId,
+              thread_id: request.actionScope.threadId,
+              turn_id: request.actionScope.turnId,
+            },
+          }
+        : {}),
     });
   },
   async listenToTurnEvents(eventName, handler) {

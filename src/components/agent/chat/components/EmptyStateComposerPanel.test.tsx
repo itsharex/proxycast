@@ -346,6 +346,21 @@ describe("EmptyStateComposerPanel", () => {
     expect(onSubagentEnabledChange).toHaveBeenCalledWith(true);
   });
 
+  it("命中稳妥模式模型时应在首页输入区前置提示", () => {
+    const container = renderPanel({
+      providerType: "openai",
+      model: "glm-4.7",
+    });
+
+    expect(
+      container.querySelector(
+        '[data-testid="empty-state-stable-processing-notice"]',
+      ),
+    ).toBeTruthy();
+    expect(container.textContent).toContain("稳妥模式");
+    expect(container.textContent).toContain("依次开始同类请求");
+  });
+
   it("点击开启 Team 后应自动透传 Team 配置面板打开令牌", async () => {
     const container = renderStatefulPanel();
 

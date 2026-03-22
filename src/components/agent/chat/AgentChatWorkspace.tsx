@@ -34,7 +34,6 @@ import {
   revealPathInFinder,
 } from "@/lib/api/fileSystem";
 import {
-  uploadImageToSession,
   importDocument,
   resolveFilePath as resolveSessionFilePath,
 } from "@/lib/api/session-files";
@@ -48,6 +47,7 @@ import {
 } from "./hooks";
 import {
   buildLiveTaskSnapshot,
+  type AssistantDraftState,
   type TaskStatusReason,
 } from "./hooks/agentChatShared";
 import {
@@ -58,6 +58,7 @@ import type { SidebarActivityLog } from "./hooks/useThemeContextWorkspace";
 import type { TopicBranchStatus } from "./hooks/useTopicBranchBoard";
 import { useSessionFiles } from "./hooks/useSessionFiles";
 import { useContentSync, type SyncStatus } from "./hooks/useContentSync";
+import { useGlobalMediaGenerationDefaults } from "@/hooks/useGlobalMediaGenerationDefaults";
 import { getDefaultGuidePromptByTheme } from "./utils/defaultGuidePrompt";
 import { useTrayModelShortcuts } from "./hooks/useTrayModelShortcuts";
 import {
@@ -65,6 +66,7 @@ import {
   resolveTeamWorkspaceRuntimeStatusLabel,
   summarizeTeamWorkspaceExecution,
   type TeamWorkspaceControlSummary,
+  type TeamWorkspaceRuntimeFormationState,
   type TeamWorkspaceWaitSummary,
 } from "./teamWorkspaceRuntime";
 import { notifyProjectRuntimeAgentsGuide } from "@/components/workspace/services/runtimeAgentsGuideService";
@@ -79,6 +81,14 @@ import { TeamWorkspaceDock } from "./components/TeamWorkspaceDock";
 import { TeamWorkspaceBoard } from "./components/TeamWorkspaceBoard";
 import { TeamWorkbenchSummaryPanel } from "./components/TeamWorkbenchSummaryPanel";
 import { ThemeWorkbenchEntryPromptAccessory } from "./components/ThemeWorkbenchEntryPromptAccessory";
+import {
+  ImageWorkbenchCanvas,
+  type ImageWorkbenchOutputView,
+  type ImageWorkbenchTaskMode,
+  type ImageWorkbenchTaskStatus,
+  type ImageWorkbenchTaskView,
+  type ImageWorkbenchViewport,
+} from "./components/ImageWorkbenchCanvas";
 import { MessageList } from "./components/MessageList";
 import { Inputbar } from "./components/Inputbar";
 import { RuntimeStyleControlBar } from "./components/RuntimeStyleControlBar";
@@ -102,13 +112,16 @@ import {
 } from "@/components/content-creator/canvas/canvasUtils";
 import { createInitialDocumentState } from "@/components/content-creator/canvas/document";
 import {
+  COVER_IMAGE_WORKBENCH_REQUEST_EVENT,
   COVER_IMAGE_REPLACED_EVENT,
+  type CoverImageWorkbenchRequestDetail,
   type CoverImageReplacedDetail,
 } from "@/components/content-creator/canvas/document/platforms/CoverImagePlaceholder";
 import type {
   AutoContinueRunPayload,
   ContentReviewRunPayload,
   DocumentVersion,
+  PlatformType,
   TextStylizeRunPayload,
 } from "@/components/content-creator/canvas/document/types";
 import { parseAIResponse } from "@/components/content-creator/a2ui/parser";
@@ -192,6 +205,11 @@ import { setActiveContentTarget } from "@/lib/activeContentTarget";
 import { recordWorkspaceRepair } from "@/lib/workspaceHealthTelemetry";
 import { listMaterials, uploadMaterial } from "@/lib/api/materials";
 import { setStoredResourceProjectId } from "@/lib/resourceProjectSelection";
+import {
+  IMAGE_GENERATION_CANCELED_MESSAGE,
+  useImageGen,
+} from "@/components/image-gen/useImageGen";
+import { resolveMediaGenerationPreference } from "@/lib/mediaGeneration";
 import { resolveProviderModelCompatibility } from "./utils/providerModelCompatibility";
 import { loadProviderModels } from "@/hooks/useProviderModels";
 import {
@@ -223,6 +241,7 @@ import {
 } from "@/lib/api/skill-execution";
 
 import type {
+  AgentRuntimeStatus,
   BrowserAssistSessionState,
   Message,
   MessageImage,
@@ -251,6 +270,7 @@ import { resolveTopicSwitchProject } from "./utils/topicProjectSwitch";
 import {
   saveChatToolPreferences,
 } from "./utils/chatToolPreferences";
+import { parseImageWorkbenchCommand } from "./utils/imageWorkbenchCommand";
 import {
   buildHarnessRequestMetadata,
   extractExistingHarnessMetadata,
@@ -315,6 +335,23 @@ import {
 import { preheatBrowserAssistInBackground } from "./utils/browserAssistPreheat";
 import { mergeThreadItems } from "./utils/threadTimelineView";
 import { subscribeDocumentEditorFocus } from "@/lib/documentEditorFocusEvents";
+import {
+  emitCanvasImageInsertRequest,
+  type CanvasImageInsertAnchorHint,
+  type CanvasImageTargetType,
+} from "@/lib/canvasImageInsertBus";
+import {
+  getImageModelIdsForProvider,
+  pickImageModelBySelection,
+  findImageProviderForSelection,
+  type ImageModelPreset,
+} from "@/lib/imageGeneration";
+import {
+  onImageWorkbenchFocus,
+  onImageWorkbenchRequest,
+  type ImageWorkbenchFocusDetail,
+  type ImageWorkbenchExternalRequestDetail,
+} from "@/lib/imageWorkbenchEvents";
 import {
   DEFAULT_STYLE_PROFILE,
   buildRuntimeStyleOverridePrompt,
@@ -1005,16 +1042,84 @@ const LayoutTransitionRenderGate = memo(
 );
 LayoutTransitionRenderGate.displayName = "LayoutTransitionRenderGate";
 
-const TEAM_PRIMARY_CHAT_PANEL_WIDTH = "min(100%, clamp(360px, 30%, 460px))";
-const TEAM_PRIMARY_CHAT_PANEL_MIN_WIDTH = "360px";
+const TEAM_PRIMARY_CHAT_PANEL_WIDTH = "min(100%, clamp(420px, 34%, 560px))";
+const TEAM_PRIMARY_CHAT_PANEL_MIN_WIDTH = "400px";
 
 interface RuntimeTeamDispatchPreviewSnapshot {
   key: string;
   prompt: string;
   images: MessageImage[];
   baseMessageCount: number;
-  status: "forming" | "failed";
+  status: "forming" | "formed" | "failed";
+  formationState?: TeamWorkspaceRuntimeFormationState | null;
   failureMessage?: string | null;
+}
+
+function buildRuntimeTeamMemberPlanLines(
+  state: TeamWorkspaceRuntimeFormationState,
+): string[] {
+  const members = state.members.slice(0, 3);
+  const lines = members.map((member, index) => {
+    const label = member.label.trim() || `成员 ${index + 1}`;
+    const summary = member.summary.trim() || "负责分担当前任务中的一部分工作。";
+    return `${index + 1}. ${label}：${summary}`;
+  });
+
+  if (state.members.length > members.length) {
+    lines.push(`另外还有 ${state.members.length - members.length} 位成员会继续配合处理。`);
+  }
+
+  return lines;
+}
+
+function buildRuntimeTeamAssistantDraft(
+  state: TeamWorkspaceRuntimeFormationState | null | undefined,
+): AssistantDraftState | undefined {
+  if (!state || state.status !== "formed") {
+    return undefined;
+  }
+
+  const teamLabel =
+    state.label?.trim() || state.blueprint?.label?.trim() || "当前协作方案";
+  const summary =
+    state.summary?.trim() || state.blueprint?.summary?.trim() || "";
+  const planLines = buildRuntimeTeamMemberPlanLines(state);
+  const contentSections = [
+    `我已经为这项任务准备了「${teamLabel}」。`,
+    summary ? `会先按“${summary}”来推进。` : null,
+    planLines.length > 0 ? `分工如下：\n${planLines.join("\n")}` : null,
+    "接下来我会让他们分别处理，再把关键进展、风险和需要你确认的事项汇总给你。",
+  ].filter(Boolean);
+
+  const initialRuntimeStatus: AgentRuntimeStatus = {
+    phase: "routing",
+    title: "协作分工已准备好",
+    detail:
+      summary || "已整理好当前任务的分工，接下来会分别展开处理并同步结果。",
+    checkpoints: [
+      `当前方案：${teamLabel}`,
+      `已安排 ${Math.max(state.members.length, 1)} 位协作成员`,
+      "主对话会持续同步关键进展",
+    ],
+  };
+
+  const waitingRuntimeStatus: AgentRuntimeStatus = {
+    phase: "routing",
+    title: "协作成员开始接手",
+    detail:
+      summary || "分工已经确认，协作成员会按各自职责继续处理并回传关键结果。",
+    checkpoints: [
+      `当前方案：${teamLabel}`,
+      planLines[0] || "成员会分别接手自己的部分",
+      "主对话会持续同步关键进展",
+    ],
+  };
+
+  return {
+    content: contentSections.join("\n\n"),
+    initialRuntimeStatus,
+    waitingRuntimeStatus,
+  };
 }
 
 function buildRuntimeTeamDispatchPreviewMessages(
@@ -1022,6 +1127,18 @@ function buildRuntimeTeamDispatchPreviewMessages(
 ): Message[] {
   const normalizedPrompt = snapshot.prompt.trim();
   const timestamp = new Date();
+  const formedAssistantDraft =
+    snapshot.status === "formed"
+      ? buildRuntimeTeamAssistantDraft(snapshot.formationState)
+      : undefined;
+  const formedTeamLabel =
+    snapshot.formationState?.label?.trim() ||
+    snapshot.formationState?.blueprint?.label?.trim() ||
+    "当前协作方案";
+  const formedSummary =
+    snapshot.formationState?.summary?.trim() ||
+    snapshot.formationState?.blueprint?.summary?.trim() ||
+    "";
   const assistantRuntimeStatus =
     snapshot.status === "failed"
       ? {
@@ -1029,13 +1146,27 @@ function buildRuntimeTeamDispatchPreviewMessages(
           title: "Team 调度准备失败",
           detail:
             snapshot.failureMessage?.trim() ||
-            "本轮 Team 组建失败，已回退到普通对话发送。",
+            "这次 Team 组建失败，已回退到普通对话发送。",
         }
+      : snapshot.status === "formed"
+        ? formedAssistantDraft?.initialRuntimeStatus || {
+            phase: "routing" as const,
+            title: "协作分工已准备好",
+            detail:
+              formedSummary ||
+              "已整理好当前任务的分工，接下来会分别展开处理并同步结果。",
+            checkpoints: [
+              `当前方案：${formedTeamLabel}`,
+              "协作成员会按分工开始接手",
+              "主对话会持续同步关键进展",
+            ],
+          }
       : {
           phase: "routing" as const,
           title: "正在组建 Team",
-          detail: "系统正在根据本轮任务准备成员，并切换到 Team 画布。",
-          checkpoints: ["记录本轮调度", "生成成员蓝图", "等待角色接管轨道"],
+          detail:
+            "系统正在根据当前任务安排分工，会先接入合适的成员，再把关键进展持续汇总回主对话。",
+          checkpoints: ["确认当前任务目标", "安排协作分工", "等待成员接手处理"],
         };
 
   return [
@@ -1051,13 +1182,320 @@ function buildRuntimeTeamDispatchPreviewMessages(
       role: "assistant",
       content:
         snapshot.status === "failed"
-          ? "本轮 Team 调度准备失败，已回退到普通执行。"
-          : "本轮已进入 Team 调度，正在组建成员…",
+          ? "这次 Team 调度准备失败，已回退到普通执行。"
+          : snapshot.status === "formed"
+            ? formedAssistantDraft?.content ||
+              `我已经为这项任务准备了「${formedTeamLabel}」。\n\n接下来我会让他们分别处理，再把关键进展和结果汇总给你。`
+          : "我会先安排协作分工，再把关键进展和结果汇总给你。",
       timestamp: new Date(timestamp.getTime() + 1),
       isThinking: snapshot.status === "forming",
       runtimeStatus: assistantRuntimeStatus,
     },
   ];
+}
+
+interface ImageWorkbenchTask extends ImageWorkbenchTaskView {
+  sessionId: string;
+  hookImageIds: string[];
+  applyTarget: ImageWorkbenchApplyTarget | null;
+}
+
+interface ImageWorkbenchOutput extends ImageWorkbenchOutputView {
+  hookImageId: string;
+  applyTarget: ImageWorkbenchApplyTarget | null;
+}
+
+type ImageWorkbenchApplyTarget =
+  | {
+      kind: "canvas-insert";
+      canvasType: CanvasImageTargetType;
+      anchorHint?: CanvasImageInsertAnchorHint;
+      projectId?: string | null;
+      contentId?: string | null;
+      actionLabel: string;
+      dispatchLabel: string;
+    }
+  | {
+      kind: "document-cover";
+      placeholder: string;
+      actionLabel: string;
+      successLabel: string;
+    };
+
+interface SessionImageWorkbenchState {
+  active: boolean;
+  viewport: ImageWorkbenchViewport;
+  tasks: ImageWorkbenchTask[];
+  outputs: ImageWorkbenchOutput[];
+  selectedOutputId: string | null;
+  nextOutputIndex: number;
+}
+
+function createInitialSessionImageWorkbenchState(): SessionImageWorkbenchState {
+  return {
+    active: false,
+    viewport: { x: 0, y: 0, scale: 1 },
+    tasks: [],
+    outputs: [],
+    selectedOutputId: null,
+    nextOutputIndex: 1,
+  };
+}
+
+function buildImageWorkbenchDispatchMessages(params: {
+  rawText: string;
+  images: MessageImage[];
+  taskId: string;
+  prompt: string;
+  mode: ImageWorkbenchTaskMode;
+  count: number;
+}): Message[] {
+  const timestamp = new Date();
+  const modeLabel =
+    params.mode === "edit"
+      ? "图片编辑"
+      : params.mode === "variation"
+        ? "图片变体"
+        : "图片生成";
+
+  return [
+    {
+      id: `image-workbench:${params.taskId}:user`,
+      role: "user",
+      content: params.rawText,
+      images: params.images.length > 0 ? params.images : undefined,
+      timestamp,
+    },
+    {
+      id: `image-workbench:${params.taskId}:assistant`,
+      role: "assistant",
+      content: `已创建${modeLabel}任务，正在准备 ${params.count} 张结果。`,
+      timestamp: new Date(timestamp.getTime() + 1),
+      runtimeStatus: {
+        phase: "routing",
+        title: `${modeLabel}已进入工作台`,
+        detail: params.prompt.trim()
+          ? `主画布已接管当前任务：${params.prompt.trim()}`
+          : "主画布已接管当前任务，正在准备图片服务与结果卡片。",
+        checkpoints: ["记录当前调度", "创建画布任务卡", "等待结果回填"],
+      },
+    },
+  ];
+}
+
+function buildImageWorkbenchCompletionMessage(params: {
+  taskId: string;
+  successCount: number;
+  failedCount: number;
+  mode: ImageWorkbenchTaskMode;
+}): Message {
+  const timestamp = new Date();
+  const modeLabel =
+    params.mode === "edit"
+      ? "图片编辑"
+      : params.mode === "variation"
+        ? "图片变体"
+        : "图片生成";
+  const detail =
+    params.failedCount > 0
+      ? `${modeLabel}完成 ${params.successCount} 张，失败 ${params.failedCount} 张。`
+      : `${modeLabel}已完成，共生成 ${params.successCount} 张。`;
+
+  return {
+    id: `image-workbench:${params.taskId}:complete`,
+    role: "assistant",
+    content: detail,
+    timestamp,
+  };
+}
+
+function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function extractImagePromptSnippet(content: string, maxLength = 120): string {
+  const normalized = collapseWhitespace(
+    content
+      .replace(/```[\s\S]*?```/g, " ")
+      .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
+      .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
+      .replace(/[#>*`~\-|]/g, " ")
+      .replace(/\d+\.\s+/g, " ")
+      .replace(/[^\S\r\n]+/g, " "),
+  );
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength).trim()}...`;
+}
+
+function resolveDocumentPlatformLabel(platform: PlatformType): string {
+  switch (platform) {
+    case "wechat":
+      return "微信";
+    case "xiaohongshu":
+      return "小红书";
+    case "zhihu":
+      return "知乎";
+    case "markdown":
+    default:
+      return "文稿";
+  }
+}
+
+function resolveCoverAspectRatio(platform?: PlatformType): string {
+  if (platform === "xiaohongshu") {
+    return "1:1";
+  }
+  return "16:9";
+}
+
+function resolveClosestImageAspectRatio(
+  width: number,
+  height: number,
+): string | undefined {
+  if (width <= 0 || height <= 0) {
+    return undefined;
+  }
+
+  const currentRatio = width / height;
+  const candidates: Array<[string, number]> = [
+    ["1:1", 1],
+    ["16:9", 16 / 9],
+    ["9:16", 9 / 16],
+    ["4:3", 4 / 3],
+    ["3:4", 3 / 4],
+    ["3:2", 3 / 2],
+    ["2:3", 2 / 3],
+    ["21:9", 21 / 9],
+    ["4:5", 4 / 5],
+    ["5:4", 5 / 4],
+  ];
+
+  return candidates.reduce((closest, candidate) => {
+    if (!closest) {
+      return candidate;
+    }
+    return Math.abs(candidate[1] - currentRatio) < Math.abs(closest[1] - currentRatio)
+      ? candidate
+      : closest;
+  }, null as [string, number] | null)?.[0];
+}
+
+function buildImageWorkbenchCommandText(
+  prompt: string,
+  options?: {
+    aspectRatio?: string;
+    count?: number;
+  },
+): string {
+  const normalizedPrompt = collapseWhitespace(prompt) || "生成一张主题配图";
+  const ratioSuffix = options?.aspectRatio?.trim()
+    ? `，${options.aspectRatio.trim()}`
+    : "";
+  const countSuffix =
+    options?.count && options.count > 1 ? `，出 ${Math.trunc(options.count)} 张` : "";
+  return `@配图 生成 ${normalizedPrompt}${ratioSuffix}${countSuffix}`;
+}
+
+function buildDocumentImageWorkbenchPrompt(params: {
+  projectName?: string | null;
+  platform: PlatformType;
+  content: string;
+}): string {
+  const platformLabel = resolveDocumentPlatformLabel(params.platform);
+  const subject =
+    extractImagePromptSnippet(params.content) ||
+    collapseWhitespace(params.projectName || "") ||
+    "当前主题";
+  return `为当前${platformLabel}文稿补一张主视觉配图，重点内容：${subject}`;
+}
+
+function buildPosterImageWorkbenchPrompt(params: {
+  projectName?: string | null;
+  width: number;
+  height: number;
+}): string {
+  const subject = collapseWhitespace(params.projectName || "") || "当前海报主题";
+  return `为当前海报生成一张主视觉图片，主题：${subject}，画布尺寸约 ${params.width}x${params.height}`;
+}
+
+function findDocumentCoverPlaceholder(content: string): string | null {
+  const match = content.match(
+    /!\[[^\]]*]\((pending-cover:\/\/[^)\s]+|【img:[^】]+】|cover-generation-failed)\)/,
+  );
+  return match?.[1]?.trim() || null;
+}
+
+function buildDefaultCanvasImageApplyTarget(params: {
+  canvasState: CanvasStateUnion | null;
+  projectId?: string | null;
+  contentId?: string | null;
+}): ImageWorkbenchApplyTarget | null {
+  if (!params.canvasState) {
+    return null;
+  }
+
+  if (params.canvasState.type === "document") {
+    return {
+      kind: "canvas-insert",
+      canvasType: "document",
+      anchorHint: "section_end",
+      projectId: params.projectId ?? null,
+      contentId: params.contentId ?? null,
+      actionLabel: "插入文稿",
+      dispatchLabel: "已切回文稿，正在插入图片",
+    };
+  }
+
+  if (params.canvasState.type === "poster") {
+    return {
+      kind: "canvas-insert",
+      canvasType: "poster",
+      anchorHint: "poster_center",
+      projectId: params.projectId ?? null,
+      contentId: params.contentId ?? null,
+      actionLabel: "插入海报",
+      dispatchLabel: "已切回海报，正在插入图片",
+    };
+  }
+
+  return null;
+}
+
+function resolveScopedImageWorkbenchApplyTarget(params: {
+  canvasState: CanvasStateUnion | null;
+  projectId?: string | null;
+  contentId?: string | null;
+  requestedTarget?: "generate" | "cover";
+}): ImageWorkbenchApplyTarget | null {
+  if (
+    params.requestedTarget === "cover" &&
+    params.canvasState?.type === "document"
+  ) {
+    const placeholder = findDocumentCoverPlaceholder(params.canvasState.content);
+    if (placeholder) {
+      return {
+        kind: "document-cover",
+        placeholder,
+        actionLabel: "设为封面",
+        successLabel: "已设为封面",
+      };
+    }
+  }
+
+  return buildDefaultCanvasImageApplyTarget(params);
+}
+
+function resolveImageWorkbenchActionLabel(
+  target: ImageWorkbenchApplyTarget | null | undefined,
+): string {
+  if (!target) {
+    return "应用到画布";
+  }
+  return target.actionLabel;
 }
 
 const ThemeWorkbenchLeftExpandButton = styled.button`
@@ -2673,6 +3111,9 @@ export function AgentChatWorkspace({
   // General 主题专用画布状态
   const [generalCanvasState, setGeneralCanvasState] =
     useState<GeneralCanvasState>(DEFAULT_CANVAS_STATE);
+  const [imageWorkbenchBySessionId, setImageWorkbenchBySessionId] = useState<
+    Record<string, SessionImageWorkbenchState>
+  >({});
 
   // 任务文件状态
   const [taskFiles, setTaskFiles] = useState<TaskFile[]>([]);
@@ -2688,6 +3129,15 @@ export function AgentChatWorkspace({
   const [projectMemory, setProjectMemory] = useState<ProjectMemory | null>(
     null,
   );
+  const { mediaDefaults } = useGlobalMediaGenerationDefaults();
+  const effectiveImageWorkbenchPreference = useMemo(
+    () =>
+      resolveMediaGenerationPreference(
+        project?.settings?.imageGeneration,
+        mediaDefaults.image,
+      ),
+    [mediaDefaults.image, project?.settings?.imageGeneration],
+  );
   const [runtimeStyleSelection, setRuntimeStyleSelection] =
     useState<RuntimeStyleSelection>({
       presetId: "project-default",
@@ -2697,6 +3147,70 @@ export function AgentChatWorkspace({
       sourceLabel: undefined,
       sourceProfile: null,
     });
+
+  const {
+    availableProviders: imageWorkbenchProviders,
+    selectedProvider: imageWorkbenchSelectedProvider,
+    selectedProviderId: imageWorkbenchSelectedProviderId,
+    setSelectedProviderId: setImageWorkbenchSelectedProviderId,
+    availableModels: imageWorkbenchModels,
+    selectedModel: imageWorkbenchSelectedModel,
+    selectedModelId: imageWorkbenchSelectedModelId,
+    setSelectedModelId: setImageWorkbenchSelectedModelId,
+    selectedSize: imageWorkbenchSelectedSize,
+    setSelectedSize: setImageWorkbenchSelectedSize,
+    generating: imageWorkbenchGenerating,
+    savingToResource: imageWorkbenchSavingToResource,
+    preferredProviderUnavailable: imageWorkbenchPreferredProviderUnavailable,
+    generateImage: runImageWorkbenchGeneration,
+    cancelGeneration: cancelImageWorkbenchGeneration,
+    saveImagesToResource: saveImageWorkbenchImagesToResource,
+  } = useImageGen({
+    preferredProviderId: effectiveImageWorkbenchPreference.preferredProviderId,
+    preferredModelId: effectiveImageWorkbenchPreference.preferredModelId,
+    allowFallback: effectiveImageWorkbenchPreference.allowFallback,
+  });
+  const imageWorkbenchPreferenceSourceLabel = useMemo(() => {
+    switch (effectiveImageWorkbenchPreference.source) {
+      case "project":
+        return "项目图片设置";
+      case "global":
+        return "全局图片设置";
+      case "auto":
+      default:
+        return "自动选择";
+    }
+  }, [effectiveImageWorkbenchPreference.source]);
+  const imageWorkbenchPreferenceSummary = useMemo(() => {
+    const providerLabel =
+      imageWorkbenchSelectedProvider?.name?.trim() ||
+      imageWorkbenchSelectedProviderId ||
+      "自动匹配";
+    const modelLabel =
+      imageWorkbenchSelectedModel?.name?.trim() ||
+      imageWorkbenchSelectedModelId ||
+      "自动模型";
+    return `来源：${imageWorkbenchPreferenceSourceLabel} · ${providerLabel} / ${modelLabel}`;
+  }, [
+    imageWorkbenchPreferenceSourceLabel,
+    imageWorkbenchSelectedModel?.name,
+    imageWorkbenchSelectedModelId,
+    imageWorkbenchSelectedProvider?.name,
+    imageWorkbenchSelectedProviderId,
+  ]);
+  const imageWorkbenchPreferenceWarning = useMemo(() => {
+    if (
+      !imageWorkbenchPreferredProviderUnavailable ||
+      effectiveImageWorkbenchPreference.allowFallback
+    ) {
+      return null;
+    }
+    return `默认图片服务 ${effectiveImageWorkbenchPreference.preferredProviderId} 当前不可用，且已关闭自动回退。`;
+  }, [
+    effectiveImageWorkbenchPreference.allowFallback,
+    effectiveImageWorkbenchPreference.preferredProviderId,
+    imageWorkbenchPreferredProviderUnavailable,
+  ]);
 
   useEffect(() => {
     taskFilesRef.current = taskFiles;
@@ -3361,6 +3875,7 @@ export function AgentChatWorkspace({
     executionStrategy,
     setExecutionStrategy,
     messages = [],
+    setMessages: setChatMessages,
     currentTurnId,
     turns = [],
     threadItems = [],
@@ -3429,6 +3944,40 @@ export function AgentChatWorkspace({
     subagentEnabled: chatToolPreferences.subagent,
     hasRealTeamGraph,
   });
+  const imageWorkbenchSessionKey = useMemo(
+    () => sessionId?.trim() || "__local_image_workbench__",
+    [sessionId],
+  );
+  const currentImageWorkbenchState = useMemo(
+    () =>
+      imageWorkbenchBySessionId[imageWorkbenchSessionKey] ||
+      createInitialSessionImageWorkbenchState(),
+    [imageWorkbenchBySessionId, imageWorkbenchSessionKey],
+  );
+  const updateCurrentImageWorkbenchState = useCallback(
+    (
+      updater: (
+        current: SessionImageWorkbenchState,
+      ) => SessionImageWorkbenchState,
+    ) => {
+      setImageWorkbenchBySessionId((previous) => {
+        const current =
+          previous[imageWorkbenchSessionKey] ||
+          createInitialSessionImageWorkbenchState();
+        return {
+          ...previous,
+          [imageWorkbenchSessionKey]: updater(current),
+        };
+      });
+    },
+    [imageWorkbenchSessionKey],
+  );
+  const appendLocalDispatchMessages = useCallback(
+    (nextMessages: Message[]) => {
+      setChatMessages((previous) => [...previous, ...nextMessages]);
+    },
+    [setChatMessages],
+  );
   const handleCloseSubagentSession = useCallback(
     async (subagentSessionId: string) => {
       try {
@@ -3986,7 +4535,7 @@ export function AgentChatWorkspace({
       }
     }
 
-    return "Agent 正在准备执行";
+    return "正在准备处理";
   }, [isSending, messages]);
   const [harnessPanelVisible, setHarnessPanelVisible] = useState(() =>
     loadPersistedBoolean(HARNESS_PANEL_VISIBILITY_KEY, false),
@@ -4485,6 +5034,23 @@ export function AgentChatWorkspace({
 
     return null;
   }, [messages, pendingA2UIForm]);
+
+  useEffect(() => {
+    if (
+      !pendingActionRequest ||
+      pendingA2UIForm ||
+      !isActionRequestA2UICompatible(pendingActionRequest)
+    ) {
+      return;
+    }
+
+    console.warn("[AgentChatPage] 待处理 action_required 未生成输入区 A2UI", {
+      requestId: pendingActionRequest.requestId,
+      actionType: pendingActionRequest.actionType,
+      prompt: pendingActionRequest.prompt,
+      scope: pendingActionRequest.scope,
+    });
+  }, [pendingA2UIForm, pendingActionRequest]);
 
   useEffect(() => {
     const unsubscribe = subscribeDocumentEditorFocus((focused) => {
@@ -5558,6 +6124,7 @@ export function AgentChatWorkspace({
         ? {
             ...current,
             status: "failed",
+            formationState: null,
             failureMessage: runtimeTeamState.errorMessage?.trim() || null,
           }
         : null,
@@ -5995,6 +6562,436 @@ export function AgentChatWorkspace({
     [looksLikeSerializedNovelState],
   );
 
+  const handleImageWorkbenchViewportChange = useCallback(
+    (viewport: ImageWorkbenchViewport) => {
+      updateCurrentImageWorkbenchState((current) => ({
+        ...current,
+        active: true,
+        viewport,
+      }));
+    },
+    [updateCurrentImageWorkbenchState],
+  );
+
+  const handleSelectImageWorkbenchOutput = useCallback(
+    (outputId: string) => {
+      updateCurrentImageWorkbenchState((current) => ({
+        ...current,
+        active: true,
+        selectedOutputId: outputId,
+      }));
+    },
+    [updateCurrentImageWorkbenchState],
+  );
+
+  const handleSeedImageWorkbenchFollowUp = useCallback(
+    (command: string) => {
+      setInput(command);
+      toast.info("已在输入框填入配图命令");
+    },
+    [setInput],
+  );
+
+  const handleOpenImageWorkbenchAsset = useCallback((url: string) => {
+    if (!url.trim()) {
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  }, []);
+
+  const handleStopImageWorkbenchGeneration = useCallback(() => {
+    cancelImageWorkbenchGeneration();
+    updateCurrentImageWorkbenchState((current) => ({
+      ...current,
+      active: true,
+      tasks: current.tasks.map((task) =>
+        task.status === "routing" || task.status === "running"
+          ? {
+              ...task,
+              status: "error",
+              failureMessage: IMAGE_GENERATION_CANCELED_MESSAGE,
+            }
+          : task,
+      ),
+    }));
+    toast.info(IMAGE_GENERATION_CANCELED_MESSAGE);
+  }, [cancelImageWorkbenchGeneration, updateCurrentImageWorkbenchState]);
+
+  const handleSaveSelectedImageWorkbenchOutput = useCallback(async () => {
+    const selectedOutput = currentImageWorkbenchState.outputs.find(
+      (item) => item.id === currentImageWorkbenchState.selectedOutputId,
+    );
+    if (!selectedOutput) {
+      toast.info("请先选择一张图片");
+      return;
+    }
+    if (!projectId) {
+      toast.error("请先选择项目后再保存到素材库");
+      return;
+    }
+
+    const result = await saveImageWorkbenchImagesToResource(
+      [selectedOutput.hookImageId],
+      projectId,
+    );
+    if (result.saved > 0) {
+      updateCurrentImageWorkbenchState((current) => ({
+        ...current,
+        outputs: current.outputs.map((item) =>
+          item.id === selectedOutput.id
+            ? { ...item, resourceSaved: true }
+            : item,
+        ),
+      }));
+      toast.success("已保存到素材库");
+      return;
+    }
+
+    if (result.skipped > 0) {
+      toast.info("该图片已在当前素材库中");
+      return;
+    }
+
+    toast.error(result.errors[0] || "保存到素材库失败");
+  }, [
+    currentImageWorkbenchState.outputs,
+    currentImageWorkbenchState.selectedOutputId,
+    projectId,
+    saveImageWorkbenchImagesToResource,
+    updateCurrentImageWorkbenchState,
+  ]);
+
+  const handleApplySelectedImageWorkbenchOutput = useCallback(() => {
+    const selectedOutput = currentImageWorkbenchState.outputs.find(
+      (item) => item.id === currentImageWorkbenchState.selectedOutputId,
+    );
+    if (!selectedOutput) {
+      toast.info("请先选择一张图片");
+      return;
+    }
+
+    const applyTarget = selectedOutput.applyTarget;
+    if (!applyTarget) {
+      toast.info("当前结果还没有绑定落位目标");
+      return;
+    }
+
+    if (applyTarget.kind === "document-cover") {
+      let replaced = false;
+      setCanvasState((previous) => {
+        if (!previous || previous.type !== "document") {
+          return previous;
+        }
+
+        const updatedContent = previous.content.split(applyTarget.placeholder).join(
+          selectedOutput.url,
+        );
+        if (updatedContent === previous.content) {
+          return previous;
+        }
+
+        replaced = true;
+        return {
+          ...previous,
+          content: updatedContent,
+        };
+      });
+
+      if (!replaced) {
+        toast.error("未找到待替换的封面占位");
+        return;
+      }
+
+      updateCurrentImageWorkbenchState((current) => ({
+        ...current,
+        active: false,
+      }));
+      setLayoutMode("chat-canvas");
+      toast.success(applyTarget.successLabel);
+      return;
+    }
+
+    emitCanvasImageInsertRequest({
+      projectId: applyTarget.projectId ?? projectId ?? null,
+      contentId: applyTarget.contentId ?? contentId ?? null,
+      canvasType: applyTarget.canvasType,
+      anchorHint: applyTarget.anchorHint,
+      source: "manual",
+      image: {
+        id: selectedOutput.id,
+        previewUrl: selectedOutput.url,
+        contentUrl: selectedOutput.url,
+        title: collapseWhitespace(selectedOutput.prompt) || selectedOutput.refId,
+        provider: selectedOutput.providerName,
+      },
+    });
+
+    updateCurrentImageWorkbenchState((current) => ({
+      ...current,
+      active: false,
+    }));
+    setLayoutMode("chat-canvas");
+    toast.info(applyTarget.dispatchLabel);
+  }, [
+    contentId,
+    currentImageWorkbenchState.outputs,
+    currentImageWorkbenchState.selectedOutputId,
+    projectId,
+    setCanvasState,
+    updateCurrentImageWorkbenchState,
+  ]);
+
+  const imageWorkbenchPrimaryActionLabel = useMemo(() => {
+    const selectedOutput = currentImageWorkbenchState.outputs.find(
+      (item) => item.id === currentImageWorkbenchState.selectedOutputId,
+    );
+    return resolveImageWorkbenchActionLabel(selectedOutput?.applyTarget);
+  }, [
+    currentImageWorkbenchState.outputs,
+    currentImageWorkbenchState.selectedOutputId,
+  ]);
+
+  const handleImageWorkbenchCommand = useCallback(
+    async (params: {
+      rawText: string;
+      parsedCommand: NonNullable<
+        ReturnType<typeof parseImageWorkbenchCommand>
+      >;
+      images: MessageImage[];
+      applyTarget?: ImageWorkbenchApplyTarget | null;
+    }): Promise<boolean> => {
+      if (!projectId) {
+        toast.error("请先选择项目后再开始配图");
+        return false;
+      }
+
+      const { rawText, parsedCommand, images } = params;
+      const targetOutput = parsedCommand.targetRef
+        ? currentImageWorkbenchState.outputs.find(
+            (item) =>
+              item.refId.toLowerCase() === parsedCommand.targetRef?.toLowerCase(),
+          ) || null
+        : null;
+      const effectiveApplyTarget =
+        params.applyTarget ?? targetOutput?.applyTarget ?? null;
+
+      if (
+        (parsedCommand.mode === "edit" || parsedCommand.mode === "variation") &&
+        !targetOutput &&
+        images.length === 0
+      ) {
+        toast.error("编辑或变体任务需要选择已有图片，或先附加参考图");
+        return false;
+      }
+
+      const effectivePrompt =
+        parsedCommand.prompt.trim() ||
+        (parsedCommand.mode === "generate"
+          ? ""
+          : "请基于参考图继续优化画面表现");
+      if (!effectivePrompt) {
+        toast.error("请补充清晰的配图描述后再提交");
+        return false;
+      }
+
+      const taskId = `image-task-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      const referenceImages = [
+        ...(targetOutput?.url ? [targetOutput.url] : []),
+        ...images.map((image) => image.data).filter(Boolean),
+      ];
+      const now = Date.now();
+
+      updateCurrentImageWorkbenchState((current) => ({
+        ...current,
+        active: true,
+        tasks: [
+          {
+            sessionId: imageWorkbenchSessionKey,
+            id: taskId,
+            mode: parsedCommand.mode,
+            status: "routing",
+            prompt: effectivePrompt,
+            rawText,
+            expectedCount: parsedCommand.count,
+            outputIds: [],
+            targetOutputId: targetOutput?.id ?? null,
+            createdAt: now,
+            hookImageIds: [],
+            applyTarget: effectiveApplyTarget,
+          },
+          ...current.tasks,
+        ],
+        selectedOutputId: targetOutput?.id ?? current.selectedOutputId,
+      }));
+
+      appendLocalDispatchMessages(
+        buildImageWorkbenchDispatchMessages({
+          rawText,
+          images,
+          taskId,
+          prompt: effectivePrompt,
+          mode: parsedCommand.mode,
+          count: parsedCommand.count,
+        }),
+      );
+
+      setLayoutMode("chat-canvas");
+      setInput("");
+      setMentionedCharacters([]);
+
+      updateCurrentImageWorkbenchState((current) => ({
+        ...current,
+        active: true,
+        tasks: current.tasks.map((task) =>
+          task.id === taskId ? { ...task, status: "running" } : task,
+        ),
+      }));
+
+      try {
+        const generatedImages = await runImageWorkbenchGeneration(effectivePrompt, {
+          imageCount: parsedCommand.count,
+          referenceImages,
+          size: parsedCommand.size || imageWorkbenchSelectedSize,
+        });
+        const hookImageIds = generatedImages.map((image) => image.id);
+
+        let successCount = 0;
+        updateCurrentImageWorkbenchState((current) => {
+          let nextOutputIndex = current.nextOutputIndex;
+          const nextOutputs = [...current.outputs];
+          const createdOutputIds: string[] = [];
+
+          for (const image of generatedImages) {
+            if (image.status !== "complete" || !image.url) {
+              continue;
+            }
+            successCount += 1;
+            const outputId = `${taskId}:${image.id}`;
+            const refId = `img-${nextOutputIndex}`;
+            nextOutputIndex += 1;
+            nextOutputs.unshift({
+              id: outputId,
+              taskId,
+              hookImageId: image.id,
+              refId,
+              url: image.url,
+              prompt: image.prompt,
+              createdAt: image.createdAt,
+              providerName: image.providerName,
+              modelName: image.model,
+              size: image.size,
+              parentOutputId: targetOutput?.refId ?? null,
+              resourceSaved: Boolean(image.resourceMaterialId),
+              applyTarget: effectiveApplyTarget,
+            });
+            createdOutputIds.push(outputId);
+          }
+          const failedCount = Math.max(0, parsedCommand.count - successCount);
+
+          const nextStatus: ImageWorkbenchTaskStatus =
+            successCount === 0
+              ? "error"
+              : failedCount > 0
+                ? "partial"
+                : "complete";
+
+          return {
+            ...current,
+            active: true,
+            outputs: nextOutputs,
+            selectedOutputId:
+              createdOutputIds[0] || current.selectedOutputId || targetOutput?.id || null,
+            nextOutputIndex,
+            tasks: current.tasks.map((task) =>
+              task.id === taskId
+                ? {
+                    ...task,
+                    status: nextStatus,
+                    outputIds: createdOutputIds,
+                    hookImageIds,
+                    failureMessage:
+                      successCount === 0
+                        ? "图片服务未返回可用结果"
+                        : failedCount > 0
+                          ? `有 ${failedCount} 张结果生成失败`
+                          : undefined,
+                  }
+                : task,
+            ),
+          };
+        });
+
+        appendLocalDispatchMessages([
+          buildImageWorkbenchCompletionMessage({
+            taskId,
+            successCount,
+            failedCount: Math.max(0, parsedCommand.count - successCount),
+            mode: parsedCommand.mode,
+          }),
+        ]);
+
+        if (successCount === 0) {
+          toast.error("图片任务失败，未生成可用结果");
+        } else if (parsedCommand.count - successCount > 0) {
+          toast.warning(
+            `图片任务已完成 ${successCount} 张，失败 ${Math.max(
+              0,
+              parsedCommand.count - successCount,
+            )} 张`,
+          );
+        } else {
+          toast.success(`图片任务已完成，共生成 ${successCount} 张`);
+        }
+        return true;
+      } catch (error) {
+        const failureMessage =
+          error instanceof Error ? error.message : "图片任务执行失败";
+        const canceled = failureMessage === IMAGE_GENERATION_CANCELED_MESSAGE;
+        updateCurrentImageWorkbenchState((current) => ({
+          ...current,
+          active: true,
+          tasks: current.tasks.map((task) =>
+            task.id === taskId
+              ? {
+                  ...task,
+                  status: "error",
+                  failureMessage,
+                }
+              : task,
+          ),
+        }));
+        if (!canceled) {
+          appendLocalDispatchMessages([
+            {
+              id: `image-workbench:${taskId}:failed`,
+              role: "assistant",
+              content: `当前图片任务失败：${failureMessage}`,
+              timestamp: new Date(),
+              runtimeStatus: {
+                phase: "failed",
+                title: "图片任务失败",
+                detail: failureMessage,
+              },
+            },
+          ]);
+          toast.error(failureMessage);
+        }
+        return true;
+      }
+    },
+    [
+      appendLocalDispatchMessages,
+      currentImageWorkbenchState.outputs,
+      imageWorkbenchSelectedSize,
+      imageWorkbenchSessionKey,
+      projectId,
+      runImageWorkbenchGeneration,
+      updateCurrentImageWorkbenchState,
+    ],
+  );
+
   // 监听 AI 消息变化，自动提取文档内容
   useEffect(() => {
     if (!isContentCreationMode) return;
@@ -6194,6 +7191,18 @@ export function AgentChatWorkspace({
         return false;
       }
 
+      const parsedImageWorkbenchCommand =
+        !sendOptions?.purpose && sourceText.trim()
+          ? parseImageWorkbenchCommand(sourceText)
+          : null;
+      if (parsedImageWorkbenchCommand) {
+        return handleImageWorkbenchCommand({
+          rawText: sourceText,
+          parsedCommand: parsedImageWorkbenchCommand,
+          images: images || [],
+        });
+      }
+
       if (
         maybeStartBrowserTaskPreflight({
           boundary: sendBoundary,
@@ -6386,6 +7395,7 @@ export function AgentChatWorkspace({
             images: images || [],
             baseMessageCount: messages.length,
             status: "forming",
+            formationState: null,
           });
         }
 
@@ -6397,6 +7407,30 @@ export function AgentChatWorkspace({
           purpose: sendOptions?.purpose,
           subagentEnabled: effectiveToolPreferences.subagent,
         });
+        if (preparedRuntimeTeamState?.status === "formed") {
+          setRuntimeTeamDispatchPreview((current) =>
+            current
+              ? {
+                  ...current,
+                  status: "formed",
+                  formationState: preparedRuntimeTeamState,
+                  failureMessage: null,
+                }
+              : current,
+          );
+        } else if (preparedRuntimeTeamState?.status === "failed") {
+          setRuntimeTeamDispatchPreview((current) =>
+            current
+              ? {
+                  ...current,
+                  status: "failed",
+                  formationState: null,
+                  failureMessage:
+                    preparedRuntimeTeamState.errorMessage?.trim() || null,
+                }
+              : current,
+          );
+        }
         const turnTeamBlueprint =
           preparedRuntimeTeamState?.status === "formed" &&
           preparedRuntimeTeamState.members.length > 0
@@ -6428,6 +7462,9 @@ export function AgentChatWorkspace({
                 : sendOptions?.purpose
                   ? "turn_purpose_override"
                   : "single_agent_direct";
+        const assistantDraft = buildRuntimeTeamAssistantDraft(
+          preparedRuntimeTeamState,
+        );
 
         setInput("");
         setMentionedCharacters([]); // 清空引用的角色
@@ -6472,6 +7509,12 @@ export function AgentChatWorkspace({
             }),
           },
         };
+        const runtimeSendOptions = assistantDraft
+          ? {
+              ...nextSendOptions,
+              assistantDraft,
+            }
+          : nextSendOptions;
 
         if (autoContinuePayload) {
           await sendMessage(
@@ -6483,7 +7526,7 @@ export function AgentChatWorkspace({
             sendExecutionStrategy,
             effectiveModel,
             autoContinuePayload,
-            nextSendOptions,
+            runtimeSendOptions,
           );
         } else {
           await sendMessage(
@@ -6495,7 +7538,7 @@ export function AgentChatWorkspace({
             sendExecutionStrategy,
             effectiveModel,
             undefined,
-            nextSendOptions,
+            runtimeSendOptions,
           );
         }
 
@@ -6547,6 +7590,7 @@ export function AgentChatWorkspace({
       selectedTeamSummary,
       providerType,
       finalizeAfterSendSuccess,
+      handleImageWorkbenchCommand,
       isBlockedByBrowserPreflight,
       maybeStartBrowserTaskPreflight,
       prepareRuntimeTeamBeforeSend,
@@ -6963,59 +8007,81 @@ export function AgentChatWorkspace({
   );
 
   const handleAddImage = useCallback(async () => {
-    try {
-      const selected = await openDialog({
-        multiple: false,
-        filters: [
-          {
-            name: "图片",
-            extensions: ["jpg", "jpeg", "png", "gif", "webp"],
-          },
-        ],
-      });
-
-      if (!selected) {
-        return;
-      }
-
-      const filePath = selected;
-      if (!filePath) {
-        toast.error("未选择文件");
-        return;
-      }
-
-      if (!sessionId) {
-        toast.error("会话未就绪");
-        return;
-      }
-
-      toast.info("正在上传图片...");
-
-      // 上传图片到会话
-      const imageUrl = await uploadImageToSession(sessionId, filePath);
-
-      // 插入图片到文档
-      setCanvasState((previous) => {
-        if (!previous || previous.type !== "document") {
-          toast.error("当前不在文档编辑模式");
-          return previous;
-        }
-
-        const fileName = filePath.split(/[\\/]/).pop() || "image";
-        const imageMarkdown = `\n\n![${fileName}](${imageUrl})\n\n`;
-
-        return {
-          ...previous,
-          content: previous.content + imageMarkdown,
-        };
-      });
-
-      toast.success("图片已添加");
-    } catch (error) {
-      console.error("添加图片失败:", error);
-      toast.error(error instanceof Error ? error.message : "添加图片失败");
+    if (!projectId) {
+      toast.error("请先选择项目后再开始配图");
+      return;
     }
-  }, [sessionId, setCanvasState]);
+
+    if (!canvasState) {
+      toast.info("当前没有可用画布");
+      return;
+    }
+
+    let rawText = "";
+    let applyTarget: ImageWorkbenchApplyTarget | null = null;
+
+    if (canvasState.type === "document") {
+      rawText = buildImageWorkbenchCommandText(
+        buildDocumentImageWorkbenchPrompt({
+          projectName: project?.name,
+          platform: canvasState.platform,
+          content: canvasState.content,
+        }),
+      );
+      applyTarget = buildDefaultCanvasImageApplyTarget({
+        canvasState,
+        projectId,
+        contentId: contentId ?? null,
+      });
+    } else if (canvasState.type === "poster") {
+      const currentPage =
+        canvasState.pages[canvasState.currentPageIndex] || canvasState.pages[0];
+      if (!currentPage) {
+        toast.error("海报画布缺少有效页面");
+        return;
+      }
+      rawText = buildImageWorkbenchCommandText(
+        buildPosterImageWorkbenchPrompt({
+          projectName: project?.name,
+          width: currentPage.width,
+          height: currentPage.height,
+        }),
+        {
+          aspectRatio: resolveClosestImageAspectRatio(
+            currentPage.width,
+            currentPage.height,
+          ),
+        },
+      );
+      applyTarget = buildDefaultCanvasImageApplyTarget({
+        canvasState,
+        projectId,
+        contentId: contentId ?? null,
+      });
+    } else {
+      toast.info("当前画布暂未接入配图工作台");
+      return;
+    }
+
+    const parsedCommand = parseImageWorkbenchCommand(rawText);
+    if (!parsedCommand) {
+      toast.error("配图任务初始化失败");
+      return;
+    }
+
+    await handleImageWorkbenchCommand({
+      rawText,
+      parsedCommand,
+      images: [],
+      applyTarget,
+    });
+  }, [
+    canvasState,
+    contentId,
+    handleImageWorkbenchCommand,
+    project?.name,
+    projectId,
+  ]);
 
   const handleImportDocument = useCallback(async () => {
     try {
@@ -9318,6 +10384,135 @@ export function AgentChatWorkspace({
     })();
   }, [contentId, isThemeWorkbench]);
 
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<CoverImageWorkbenchRequestDetail>)
+        .detail;
+      if (!detail?.prompt?.trim()) {
+        return;
+      }
+
+      const rawText = buildImageWorkbenchCommandText(detail.prompt, {
+        aspectRatio:
+          canvasState?.type === "document"
+            ? resolveCoverAspectRatio(canvasState.platform)
+            : resolveCoverAspectRatio(),
+      });
+      const parsedCommand = parseImageWorkbenchCommand(rawText);
+      if (!parsedCommand) {
+        toast.error("封面任务初始化失败");
+        return;
+      }
+
+      void handleImageWorkbenchCommand({
+        rawText,
+        parsedCommand,
+        images: [],
+        applyTarget: {
+          kind: "document-cover",
+          placeholder: detail.placeholder,
+          actionLabel: "设为封面",
+          successLabel: "已设为封面",
+        },
+      });
+    };
+
+    window.addEventListener(COVER_IMAGE_WORKBENCH_REQUEST_EVENT, handler);
+    return () =>
+      window.removeEventListener(COVER_IMAGE_WORKBENCH_REQUEST_EVENT, handler);
+  }, [canvasState, handleImageWorkbenchCommand]);
+
+  useEffect(() => {
+    return onImageWorkbenchRequest((detail: ImageWorkbenchExternalRequestDetail) => {
+      if (detail.projectId && detail.projectId !== (projectId ?? null)) {
+        return;
+      }
+      if (detail.contentId && detail.contentId !== (contentId ?? null)) {
+        return;
+      }
+      if (!detail.prompt.trim()) {
+        return;
+      }
+
+      if (detail.modelPreset) {
+        const preferredProvider = findImageProviderForSelection(
+          imageWorkbenchProviders,
+          detail.modelPreset as ImageModelPreset,
+        );
+        if (preferredProvider) {
+          setImageWorkbenchSelectedProviderId(preferredProvider.id);
+          const nextModel = pickImageModelBySelection(
+            getImageModelIdsForProvider(
+              preferredProvider.id,
+              preferredProvider.type,
+              preferredProvider.custom_models,
+            ),
+            detail.modelPreset as ImageModelPreset,
+          );
+          if (nextModel) {
+            setImageWorkbenchSelectedModelId(nextModel);
+          }
+        }
+      }
+
+      const rawText = buildImageWorkbenchCommandText(detail.prompt, {
+        aspectRatio: detail.aspectRatio,
+        count: detail.count,
+      });
+      const parsedCommand = parseImageWorkbenchCommand(rawText);
+      if (!parsedCommand) {
+        toast.error("图片任务初始化失败");
+        return;
+      }
+      if (parsedCommand.size) {
+        setImageWorkbenchSelectedSize(parsedCommand.size);
+      }
+
+      void handleImageWorkbenchCommand({
+        rawText,
+        parsedCommand,
+        images: [],
+        applyTarget: resolveScopedImageWorkbenchApplyTarget({
+          canvasState,
+          projectId: projectId ?? null,
+          contentId: contentId ?? null,
+          requestedTarget: detail.target,
+        }),
+      });
+    });
+  }, [
+    canvasState,
+    contentId,
+    handleImageWorkbenchCommand,
+    imageWorkbenchProviders,
+    projectId,
+    setImageWorkbenchSelectedModelId,
+    setImageWorkbenchSelectedProviderId,
+    setImageWorkbenchSelectedSize,
+  ]);
+
+  useEffect(() => {
+    return onImageWorkbenchFocus((detail: ImageWorkbenchFocusDetail) => {
+      if (detail.projectId && detail.projectId !== (projectId ?? null)) {
+        return;
+      }
+      if (detail.contentId && detail.contentId !== (contentId ?? null)) {
+        return;
+      }
+
+      updateCurrentImageWorkbenchState((current) => {
+        if (current.tasks.length === 0 && current.outputs.length === 0) {
+          return current;
+        }
+        return {
+          ...current,
+          active: true,
+        };
+      });
+      setLayoutMode("chat-canvas");
+    });
+  }, [contentId, projectId, updateCurrentImageWorkbenchState]);
+
   // 监听封面图重新生成成功事件，将占位 URL 替换为真实图片 URL
   useEffect(() => {
     const handler = (e: Event) => {
@@ -9973,8 +11168,8 @@ export function AgentChatWorkspace({
             toolInventoryError={toolInventoryError}
             onRefreshToolInventory={refreshToolInventory}
             layout="dialog"
-            title="Agent 工作台"
-            description="集中查看计划、审批、协作成员、文件活动与工具产物。"
+            title="处理工作台"
+            description="集中查看计划、待确认事项、协作成员、文件活动和处理结果。"
             toggleLabel="工作台详情"
             leadContent={
               <AgentRuntimeStrip
@@ -10243,6 +11438,45 @@ export function AgentChatWorkspace({
 
   const renderLiveCanvasPreview = useCallback(
     (stackedWorkbenchTrigger?: ReactNode) => {
+      if (currentImageWorkbenchState.active) {
+        return wrapPreviewWithWorkbenchTrigger(
+          <ImageWorkbenchCanvas
+            tasks={currentImageWorkbenchState.tasks}
+            outputs={currentImageWorkbenchState.outputs}
+            selectedOutputId={currentImageWorkbenchState.selectedOutputId}
+            viewport={currentImageWorkbenchState.viewport}
+            preferenceSummary={imageWorkbenchPreferenceSummary}
+            preferenceWarning={imageWorkbenchPreferenceWarning}
+            availableProviders={imageWorkbenchProviders.map((provider) => ({
+              id: provider.id,
+              name: provider.name,
+            }))}
+            selectedProviderId={imageWorkbenchSelectedProviderId}
+            onProviderChange={setImageWorkbenchSelectedProviderId}
+            availableModels={imageWorkbenchModels}
+            selectedModelId={imageWorkbenchSelectedModelId}
+            onModelChange={setImageWorkbenchSelectedModelId}
+            selectedSize={imageWorkbenchSelectedSize}
+            onSizeChange={setImageWorkbenchSelectedSize}
+            generating={imageWorkbenchGenerating}
+            savingToResource={imageWorkbenchSavingToResource}
+            onStopGeneration={handleStopImageWorkbenchGeneration}
+            onViewportChange={handleImageWorkbenchViewportChange}
+            onSelectOutput={handleSelectImageWorkbenchOutput}
+            onSaveSelectedToLibrary={handleSaveSelectedImageWorkbenchOutput}
+            applySelectedOutputLabel={imageWorkbenchPrimaryActionLabel}
+            onApplySelectedOutput={
+              currentImageWorkbenchState.outputs.length > 0
+                ? handleApplySelectedImageWorkbenchOutput
+                : undefined
+            }
+            onSeedFollowUpCommand={handleSeedImageWorkbenchFollowUp}
+            onOpenImage={handleOpenImageWorkbenchAsset}
+          />,
+          stackedWorkbenchTrigger,
+        );
+      }
+
       if (
         canvasRenderTheme === "general" &&
         currentCanvasArtifact &&
@@ -10333,6 +11567,7 @@ export function AgentChatWorkspace({
       canvasRenderTheme,
       chatToolPreferences.thinking,
       contentId,
+      currentImageWorkbenchState,
       currentCanvasArtifact,
       displayedCanvasArtifact,
       generalCanvasState,
@@ -10344,7 +11579,24 @@ export function AgentChatWorkspace({
       handleDocumentContentReviewRun,
       handleDocumentThinkingEnabledChange,
       handleDocumentTextStylizeRun,
+      handleApplySelectedImageWorkbenchOutput,
+      handleImageWorkbenchViewportChange,
       handleImportDocument,
+      handleOpenImageWorkbenchAsset,
+      handleSaveSelectedImageWorkbenchOutput,
+      handleStopImageWorkbenchGeneration,
+      handleSeedImageWorkbenchFollowUp,
+      handleSelectImageWorkbenchOutput,
+      imageWorkbenchPrimaryActionLabel,
+      imageWorkbenchGenerating,
+      imageWorkbenchModels,
+      imageWorkbenchPreferenceSummary,
+      imageWorkbenchPreferenceWarning,
+      imageWorkbenchProviders,
+      imageWorkbenchSavingToResource,
+      imageWorkbenchSelectedModelId,
+      imageWorkbenchSelectedProviderId,
+      imageWorkbenchSelectedSize,
       initialContentLoadError,
       isInitialContentLoading,
       isSending,
@@ -10356,6 +11608,9 @@ export function AgentChatWorkspace({
       providerType,
       renderArtifactWorkbenchPreview,
       resolvedCanvasState,
+      setImageWorkbenchSelectedModelId,
+      setImageWorkbenchSelectedProviderId,
+      setImageWorkbenchSelectedSize,
       setModel,
       setProviderType,
       shouldShowCanvasLoadingState,
@@ -10508,8 +11763,8 @@ export function AgentChatWorkspace({
         tone: "active" as const,
         label:
           teamWorkbenchExecutionSummary.runningSessionCount > 1
-            ? `${teamWorkbenchExecutionSummary.runningSessionCount} 运行中`
-            : "运行中",
+            ? `${teamWorkbenchExecutionSummary.runningSessionCount} 处理中`
+            : "处理中",
       };
     }
 
@@ -10518,8 +11773,8 @@ export function AgentChatWorkspace({
         tone: "active" as const,
         label:
           teamWorkbenchExecutionSummary.queuedSessionCount > 1
-            ? `${teamWorkbenchExecutionSummary.queuedSessionCount} 排队`
-            : "排队中",
+            ? `${teamWorkbenchExecutionSummary.queuedSessionCount} 稍后开始`
+            : "稍后开始",
       };
     }
 
@@ -10625,14 +11880,15 @@ export function AgentChatWorkspace({
             subtitle: hasRealTeamGraph
               ? "主对话保留调度记录，画布按角色分别展示执行过程与结果。"
               : runtimeTeamState?.status === "forming"
-                ? "正在为本轮任务组建成员，画布会先展示蓝图轨道，真实角色加入后自动接管。"
+                ? "正在为当前任务组建成员，画布会先展示蓝图轨道，真实角色加入后自动接管。"
                 : runtimeTeamState?.status === "formed"
-                  ? "本轮 Team 已就绪，主对话仅保留调度记录，执行正文继续留在各角色轨道。"
+                  ? "Team 已就绪，主对话仅保留调度记录，执行正文继续留在各角色轨道。"
                   : runtimeTeamState?.status === "failed"
                     ? runtimeTeamState.errorMessage?.trim() ||
-                      "本轮 Team 准备失败，可直接查看失败原因并继续当前对话。"
+                      "这次 Team 准备失败，可直接查看失败原因并继续当前对话。"
                     : "Team 模式已启用，等待系统创建真实团队成员。",
             autoFocusToken: teamWorkbenchAutoFocusToken,
+            preferFullscreenPreview: true,
             triggerState: teamWorkbenchTriggerState,
             renderPreview: (options?: { stackedWorkbenchTrigger?: ReactNode }) =>
               renderTeamWorkbenchPreview(options?.stackedWorkbenchTrigger),
@@ -11051,6 +12307,10 @@ export function AgentChatWorkspace({
       return null;
     }
 
+    if (currentImageWorkbenchState.active) {
+      return liveCanvasPreview;
+    }
+
     if (
       !teamWorkbenchView &&
       (shouldShowCanvasLoadingState || isBrowserAssistCanvasVisible)
@@ -11088,6 +12348,7 @@ export function AgentChatWorkspace({
     resolvedCanvasState,
     selectedFileId,
     settledWorkbenchArtifacts,
+    currentImageWorkbenchState.active,
     shouldShowCanvasLoadingState,
     isBrowserAssistCanvasVisible,
     setCanvasWorkbenchLayoutMode,

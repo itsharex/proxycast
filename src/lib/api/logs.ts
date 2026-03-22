@@ -7,30 +7,18 @@ export interface LogEntry {
 }
 
 export async function getLogs(): Promise<LogEntry[]> {
-  try {
-    return await safeInvoke("get_logs");
-  } catch {
-    return [];
-  }
+  return safeInvoke("get_logs");
 }
 
 export async function getPersistedLogsTail(lines = 200): Promise<LogEntry[]> {
   const safeLines = Number.isFinite(lines)
     ? Math.min(1000, Math.max(20, Math.floor(lines)))
     : 200;
-  try {
-    return await safeInvoke("get_persisted_logs_tail", { lines: safeLines });
-  } catch {
-    return [];
-  }
+  return safeInvoke("get_persisted_logs_tail", { lines: safeLines });
 }
 
 export async function clearLogs(): Promise<void> {
-  try {
-    await safeInvoke("clear_logs");
-  } catch {
-    // ignore
-  }
+  await safeInvoke("clear_logs");
 }
 
 export async function clearDiagnosticLogHistory(): Promise<void> {

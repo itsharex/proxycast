@@ -126,7 +126,7 @@ describe("InputbarCore", () => {
     ).toBeNull();
   });
 
-  it("生成中应显示排队与停止按钮，并渲染排队列表", () => {
+  it("生成中应显示稍后处理与停止按钮，并渲染待处理列表", () => {
     const onSend = vi.fn();
     const onStop = vi.fn();
     const container = renderInputbarCore({
@@ -147,7 +147,7 @@ describe("InputbarCore", () => {
     });
 
     const queueButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("排队"),
+      (button) => button.textContent?.includes("稍后处理"),
     );
     const stopButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.includes("停止"),
@@ -155,7 +155,7 @@ describe("InputbarCore", () => {
 
     expect(queueButton).toBeTruthy();
     expect(stopButton).toBeTruthy();
-    expect(container.textContent).toContain("已排队 1");
+    expect(container.textContent).toContain("稍后处理 1");
     expect(container.textContent).not.toContain("这里是完整的排队输入内容");
 
     const queueCard = Array.from(container.querySelectorAll("button")).find(

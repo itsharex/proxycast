@@ -7,6 +7,7 @@ import { useWorkbenchRightRailVideoTasks } from "./useWorkbenchRightRailVideoTas
 
 interface UseWorkbenchRightRailCapabilityControllerParams {
   projectId?: string | null;
+  contentId?: string | null;
   initialExpandedActionKey?: string | null;
   onInitialExpandedActionConsumed?: () => void;
   initialStyleGuideDialogOpen?: boolean;
@@ -18,6 +19,7 @@ interface UseWorkbenchRightRailCapabilityControllerParams {
 
 export function useWorkbenchRightRailCapabilityController({
   projectId,
+  contentId,
   initialExpandedActionKey,
   onInitialExpandedActionConsumed,
   initialStyleGuideDialogOpen,
@@ -68,6 +70,7 @@ export function useWorkbenchRightRailCapabilityController({
 
   const imageTasks = useWorkbenchRightRailImageTasks({
     projectId,
+    contentId,
     appendGeneratedOutput,
     handleSubmitPrompt,
   });

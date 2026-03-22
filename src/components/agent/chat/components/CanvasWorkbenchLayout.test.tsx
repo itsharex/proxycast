@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Artifact } from "@/lib/artifact/types";
+import { emitCompactRightPanelOpen } from "@/lib/compactRightPanelEvents";
 import type { TaskFile } from "./TaskFiles";
 import {
   CanvasWorkbenchLayout,
@@ -644,7 +645,7 @@ describe("CanvasWorkbenchLayout", () => {
     expect(trigger?.className).toContain("bg-sky-50");
   });
 
-  it("容器变窄时应切换为底部工作台布局并保持工作台可展开收起", async () => {
+  it("容器变窄时应切换为右侧抽屉工作台布局并保持工作台可展开收起", async () => {
     const container = mount({
       artifacts: [
         createArtifact("artifact-new", "draft.md", "标题\n产物版本", 20),
@@ -715,10 +716,12 @@ describe("CanvasWorkbenchLayout", () => {
       container
         .querySelector('[data-testid="canvas-workbench-layout"]')
         ?.getAttribute("data-panel-placement"),
-    ).toBe("overlay-bottom");
+    ).toBe("overlay-right");
     expect(
       container.querySelector('button[aria-label="折叠画布工作台"]'),
     ).not.toBeNull();
+    expect(container.textContent).toContain("右侧工作台");
+    expect(container.textContent).toContain("产物、文件、变更与预览");
 
     clickButtonByLabel(container, "折叠画布工作台");
     expect(
@@ -730,7 +733,50 @@ describe("CanvasWorkbenchLayout", () => {
     expect(container.textContent).toContain("当前画布正文");
   });
 
-  it("窄屏底部工作台应支持拖拽调整高度", async () => {
+  it("Team 全屏预览时主预览区应占满剩余宽度，而不是收缩成窄列", async () => {
+    const container = mount({
+      artifacts: [],
+      canvasState: null,
+      taskFiles: [],
+      workspaceRoot: "/workspace",
+      workspaceUnavailable: false,
+      defaultPreview: null,
+      loadFilePreview: vi.fn(async (path: string) => ({
+        path,
+        content: "README 内容",
+        isBinary: false,
+        size: 12,
+        error: null,
+      })),
+      onOpenPath: vi.fn(async () => undefined),
+      onRevealPath: vi.fn(async () => undefined),
+      renderPreview: () => <div data-testid="fallback-preview">fallback</div>,
+      teamView: {
+        enabled: true,
+        title: "Team Workbench",
+        subtitle: "多成员实时协作",
+        preferFullscreenPreview: true,
+        renderPreview: () => <div data-testid="team-preview">team-preview</div>,
+        renderPanel: () => <div data-testid="team-panel">team-panel</div>,
+      },
+    });
+
+    await flushEffects();
+
+    expect(container.querySelector('[data-testid="team-preview"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="canvas-workbench-layout"]'),
+    ).toBeNull();
+
+    const previewRegion = container.querySelector<HTMLElement>(
+      '[data-testid="canvas-workbench-preview-region"]',
+    );
+    expect(previewRegion).not.toBeNull();
+    expect(previewRegion?.className).toContain("flex-1");
+    expect(previewRegion?.className).toContain("h-full");
+  });
+
+  it("窄屏右侧抽屉工作台应支持拖拽调整宽度", async () => {
     const container = mount({
       artifacts: [
         createArtifact("artifact-new", "draft.md", "标题\n产物版本", 20),
@@ -781,58 +827,119 @@ describe("CanvasWorkbenchLayout", () => {
     expect(layout).toBeTruthy();
     expect(resizeHandle).toBeTruthy();
 
-    const initialHeight = Number.parseFloat(layout?.style.height || "0");
-    expect(initialHeight).toBeGreaterThan(0);
+    const initialWidth = Number.parseFloat(layout?.style.width || "0");
+    expect(initialWidth).toBeGreaterThan(0);
 
     await act(async () => {
       resizeHandle?.dispatchEvent(
         new MouseEvent("mousedown", {
           bubbles: true,
-          clientY: 520,
+          clientX: 620,
         }),
       );
       window.dispatchEvent(
         new MouseEvent("mousemove", {
           bubbles: true,
-          clientY: 420,
+          clientX: 520,
         }),
       );
       window.dispatchEvent(
         new MouseEvent("mouseup", {
           bubbles: true,
-          clientY: 420,
+          clientX: 520,
         }),
       );
       await Promise.resolve();
     });
 
-    const expandedHeight = Number.parseFloat(layout?.style.height || "0");
-    expect(expandedHeight).toBeGreaterThan(initialHeight);
+    const expandedWidth = Number.parseFloat(layout?.style.width || "0");
+    expect(expandedWidth).toBeGreaterThan(initialWidth);
 
     await act(async () => {
       resizeHandle?.dispatchEvent(
         new MouseEvent("mousedown", {
           bubbles: true,
-          clientY: 420,
+          clientX: 520,
         }),
       );
       window.dispatchEvent(
         new MouseEvent("mousemove", {
           bubbles: true,
-          clientY: 560,
+          clientX: 660,
         }),
       );
       window.dispatchEvent(
         new MouseEvent("mouseup", {
           bubbles: true,
-          clientY: 560,
+          clientX: 660,
         }),
       );
       await Promise.resolve();
     });
 
-    const reducedHeight = Number.parseFloat(layout?.style.height || "0");
-    expect(reducedHeight).toBeLessThan(expandedHeight);
-    expect(reducedHeight).toBeGreaterThanOrEqual(220);
+    const reducedWidth = Number.parseFloat(layout?.style.width || "0");
+    expect(reducedWidth).toBeLessThan(expandedWidth);
+    expect(reducedWidth).toBeGreaterThanOrEqual(280);
+  });
+
+  it("窄屏工作台抽屉打开后，收到聊天抽屉打开事件应自动收起", async () => {
+    const container = mount({
+      artifacts: [
+        createArtifact("artifact-new", "draft.md", "标题\n产物版本", 20),
+      ],
+      canvasState: null,
+      taskFiles: [],
+      workspaceRoot: "/workspace",
+      workspaceUnavailable: false,
+      defaultPreview: {
+        selectionKey: "artifact:artifact-new",
+        title: "draft.md",
+        content: "标题\n产物版本",
+        filePath: "draft.md",
+        absolutePath: "/workspace/draft.md",
+        previousContent: "标题\n上一版本",
+      } satisfies CanvasWorkbenchDefaultPreview,
+      loadFilePreview: vi.fn(async (path: string) => ({
+        path,
+        content: "README 内容",
+        isBinary: false,
+        size: 12,
+        error: null,
+      })),
+      onOpenPath: vi.fn(async () => undefined),
+      onRevealPath: vi.fn(async () => undefined),
+      renderPreview: (target, options) => (
+        <div data-testid="preview-panel">
+          {options?.stackedWorkbenchTrigger}
+          {target.kind}:{target.title}
+        </div>
+      ),
+    });
+
+    await flushEffects();
+    await resizeWorkbench(820, 640);
+    await flushEffects();
+
+    clickButtonByLabel(container, "展开画布工作台");
+    await flushEffects();
+
+    expect(
+      container
+        .querySelector('[data-testid="canvas-workbench-layout"]')
+        ?.getAttribute("data-panel-placement"),
+    ).toBe("overlay-right");
+
+    await act(async () => {
+      emitCompactRightPanelOpen({ source: "chat" });
+      await Promise.resolve();
+    });
+    await flushEffects();
+
+    expect(
+      container.querySelector('[data-testid="canvas-workbench-layout"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="canvas-workbench-trigger"]'),
+    ).not.toBeNull();
   });
 });

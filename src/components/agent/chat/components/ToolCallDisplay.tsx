@@ -725,7 +725,7 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
               <button
                 onClick={handleToggleExpanded}
                 className="rounded-md p-1 transition-colors hover:bg-slate-100"
-                title={isExpanded ? "收起详情" : "展开详情"}
+                title={isExpanded ? "收起结果" : "查看结果"}
               >
                 <ChevronRight
                   className={cn(
@@ -782,7 +782,7 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
               <button
                 onClick={handleToggleExpanded}
                 className="rounded-md p-1 transition-colors hover:bg-slate-100"
-                title={isExpanded ? "收起详情" : "展开详情"}
+                title={isExpanded ? "收起结果" : "查看结果"}
               >
                 <ChevronRight
                   className={cn(

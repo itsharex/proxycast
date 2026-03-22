@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CharacterMention } from "./CharacterMention";
 import type { Character } from "@/lib/api/memory";
 import type { Skill } from "@/lib/api/skills";
+import type { BuiltinInputCommand } from "./builtinCommands";
 
 vi.mock("sonner", () => ({
   toast: {
@@ -27,9 +28,33 @@ vi.mock("@/components/ui/popover", () => {
 
   const PopoverContent = React.forwardRef<
     HTMLDivElement,
-    React.HTMLAttributes<HTMLDivElement>
-  >(({ children, className, style }, ref) => (
-    <div ref={ref} className={className} style={style}>
+    React.HTMLAttributes<HTMLDivElement> & {
+      side?: string;
+      align?: string;
+      avoidCollisions?: boolean;
+      sideOffset?: number;
+      onOpenAutoFocus?: (event: Event) => void;
+    }
+  >(({
+    children,
+    className,
+    style,
+    side,
+    align,
+    avoidCollisions,
+    sideOffset: _sideOffset,
+    onOpenAutoFocus: _onOpenAutoFocus,
+    ...props
+  }, ref) => (
+    <div
+      ref={ref}
+      className={className}
+      style={style}
+      data-side={side}
+      data-align={align}
+      data-avoid-collisions={String(avoidCollisions)}
+      {...props}
+    >
       {children}
     </div>
   ));
@@ -135,6 +160,7 @@ interface HarnessProps {
   syncValue?: boolean;
   onNavigateToSettings?: () => void;
   onChangeSpy?: (value: string) => void;
+  onSelectBuiltinCommand?: (command: BuiltinInputCommand) => void;
 }
 
 const Harness: React.FC<HarnessProps> = ({
@@ -143,6 +169,7 @@ const Harness: React.FC<HarnessProps> = ({
   syncValue = true,
   onNavigateToSettings,
   onChangeSpy,
+  onSelectBuiltinCommand,
 }) => {
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -170,6 +197,7 @@ const Harness: React.FC<HarnessProps> = ({
             setValue(next);
           }
         }}
+        onSelectBuiltinCommand={onSelectBuiltinCommand}
         onNavigateToSettings={onNavigateToSettings}
       />
     </div>
@@ -264,27 +292,43 @@ describe("CharacterMention", () => {
     expect(document.body.textContent).toContain("测试角色");
   });
 
-  it("无角色和技能时仍显示空态，并可跳转技能设置", async () => {
-    const onNavigateToSettings = vi.fn<() => void>();
+  it("无角色和技能时仍应显示内建配图命令", async () => {
     const container = renderHarness({
       characters: [],
       skills: [],
-      onNavigateToSettings,
     });
     const textarea = getTextarea(container);
 
     await typeAtAndWait(textarea);
 
-    expect(document.body.textContent).toContain("暂无可用角色或技能");
-    const settingsButton = Array.from(document.body.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("去技能设置"),
-    );
+    expect(document.body.textContent).toContain("内建命令");
+    expect(document.body.textContent).toContain("@配图");
+  });
 
-    expect(settingsButton).toBeTruthy();
-    act(() => {
-      settingsButton?.click();
+  it("提供 onSelectBuiltinCommand 时，选择配图命令应交给父组件接管", async () => {
+    const onSelectBuiltinCommand = vi.fn<(command: BuiltinInputCommand) => void>();
+    const container = renderHarness({
+      onSelectBuiltinCommand,
     });
-    expect(onNavigateToSettings).toHaveBeenCalledTimes(1);
+    const textarea = getTextarea(container);
+
+    await typeAtAndWait(textarea);
+
+    const builtinButton = Array.from(document.body.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("@配图"),
+    );
+    expect(builtinButton).toBeTruthy();
+
+    act(() => {
+      builtinButton?.click();
+    });
+
+    expect(onSelectBuiltinCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: "image",
+        commandPrefix: "@配图",
+      }),
+    );
   });
 
   it("未提供 onSelectSkill 时，选择已安装技能应回填到输入框", async () => {
@@ -307,5 +351,37 @@ describe("CharacterMention", () => {
     });
 
     expect(onChangeSpy).toHaveBeenCalledWith("/skill-a ");
+  });
+
+  it("提及面板应锚定在输入框正上方，并禁止自动翻转到下方", async () => {
+    const container = renderHarness();
+    const textarea = getTextarea(container);
+    vi.spyOn(textarea, "getBoundingClientRect").mockReturnValue({
+      x: 120,
+      y: 240,
+      left: 120,
+      top: 240,
+      right: 720,
+      bottom: 360,
+      width: 600,
+      height: 120,
+      toJSON: () => ({}),
+    });
+
+    await typeAtAndWait(textarea);
+
+    const anchor = document.body.querySelector(
+      '[data-testid="mention-anchor"]',
+    ) as HTMLDivElement | null;
+    const popover = document.body.querySelector(
+      '[data-testid="mention-popover-content"]',
+    ) as HTMLDivElement | null;
+
+    expect(anchor?.style.top).toBe("240px");
+    expect(anchor?.style.left).toBe("420px");
+    expect(popover?.getAttribute("data-side")).toBe("top");
+    expect(popover?.getAttribute("data-align")).toBe("center");
+    expect(popover?.getAttribute("data-avoid-collisions")).toBe("false");
+    expect(popover?.style.width).toBe("420px");
   });
 });

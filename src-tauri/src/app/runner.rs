@@ -202,6 +202,8 @@ pub fn run() {
         .manage(lime_gateway::telegram::TelegramGatewayState::default())
         .manage(lime_gateway::discord::DiscordGatewayState::default())
         .manage(lime_gateway::feishu::FeishuGatewayState::default())
+        .manage(lime_gateway::wechat::WechatGatewayState::default())
+        .manage(lime_gateway::wechat::WechatLoginState::default())
         .manage(gateway_tunnel_state)
         .manage(crate::services::openclaw_service::OpenClawServiceState::default())
         .manage(commands::telegram_remote_cmd::TelegramRemoteState::default())
@@ -1828,6 +1830,12 @@ pub fn run() {
             commands::gateway_channel_cmd::telegram_channel_probe,
             commands::gateway_channel_cmd::feishu_channel_probe,
             commands::gateway_channel_cmd::discord_channel_probe,
+            commands::gateway_channel_cmd::wechat_channel_probe,
+            commands::wechat_channel_cmd::wechat_channel_login_start,
+            commands::wechat_channel_cmd::wechat_channel_login_wait,
+            commands::wechat_channel_cmd::wechat_channel_list_accounts,
+            commands::wechat_channel_cmd::wechat_channel_remove_account,
+            commands::wechat_channel_cmd::wechat_channel_set_runtime_model,
             commands::gateway_tunnel_cmd::gateway_tunnel_probe,
             commands::gateway_tunnel_cmd::gateway_tunnel_detect_cloudflared,
             commands::gateway_tunnel_cmd::gateway_tunnel_install_cloudflared,

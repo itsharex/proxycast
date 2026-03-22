@@ -258,16 +258,38 @@ describe("StreamingRenderer", () => {
       isStreaming: true,
       runtimeStatus: {
         phase: "preparing",
-        title: "Agent 正在准备执行",
-        detail: "正在理解请求并准备回合。",
+        title: "正在准备处理",
+        detail: "正在理解请求并准备当前阶段。",
         checkpoints: ["对话优先执行", "等待首个事件"],
       },
       showRuntimeStatusInline: true,
     });
 
-    expect(container.textContent).toContain("Agent 正在准备执行");
-    expect(container.textContent).toContain("正在理解请求并准备回合。");
+    expect(container.textContent).toContain("正在准备处理");
+    expect(container.textContent).toContain("正在理解请求并准备当前阶段。");
     expect(container.textContent).toContain("等待首个事件");
+  });
+
+  it("高风险服务进入稳妥顺序处理时，应显示稳妥处理提示", () => {
+    const { container } = renderHarness({
+      content: "",
+      isStreaming: true,
+      runtimeStatus: {
+        phase: "routing",
+        title: "当前服务较忙，稍后开始处理",
+        detail: "当前服务在同时处理过多请求时容易直接失败，系统已切换为更稳妥的顺序处理。",
+        checkpoints: ["当前服务仅同时处理 1 条此类请求"],
+        metadata: {
+          concurrency_scope: "provider_global",
+          concurrency_phase: "queued",
+          retryable_overload: true,
+        },
+      },
+      showRuntimeStatusInline: true,
+    });
+
+    expect(container.textContent).toContain("当前服务较忙，稍后开始处理");
+    expect(container.textContent).toContain("稳妥处理");
   });
 
   it("思考内容进入流式阶段后应自动展开", () => {

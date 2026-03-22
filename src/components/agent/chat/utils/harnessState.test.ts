@@ -18,8 +18,8 @@ describe("deriveHarnessSessionState", () => {
       createMessage({
         runtimeStatus: {
           phase: "preparing",
-          title: "Agent 正在准备执行",
-          detail: "正在理解请求并准备当前回合。",
+          title: "正在准备处理",
+          detail: "正在理解请求并准备当前阶段。",
           checkpoints: ["对话优先执行"],
         },
         contextTrace: [{ stage: "memory", detail: "已注入上下文" }],
@@ -70,7 +70,7 @@ describe("deriveHarnessSessionState", () => {
     const state = deriveHarnessSessionState(messages, [], items);
 
     expect(state.plan.phase).toBe("planning");
-    expect(state.runtimeStatus?.title).toBe("Agent 正在准备执行");
+    expect(state.runtimeStatus?.title).toBe("正在准备处理");
     expect(state.plan.items).toHaveLength(2);
     expect(state.pendingApprovals).toHaveLength(1);
     expect(state.pendingApprovals[0]?.requestId).toBe("approval-1");

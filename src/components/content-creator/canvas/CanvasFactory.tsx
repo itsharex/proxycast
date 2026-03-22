@@ -178,6 +178,7 @@ export const CanvasFactory: React.FC<CanvasFactoryProps> = memo(
           onClose={onClose}
           projectId={projectId}
           contentId={contentId}
+          onAddImage={onAddImage}
         />
       );
     }

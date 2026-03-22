@@ -379,12 +379,12 @@ const SUBAGENT_STATUS_META: Record<
       "border border-slate-200 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300",
   },
   queued: {
-    label: "排队中",
+    label: "稍后开始",
     badgeClassName:
       "border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200",
   },
   running: {
-    label: "运行中",
+    label: "处理中",
     badgeClassName:
       "border border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-200",
   },

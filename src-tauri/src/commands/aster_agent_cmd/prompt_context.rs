@@ -16,7 +16,7 @@ fn build_auto_continue_system_prompt(config: &AutoContinuePayload) -> String {
         "{AUTO_CONTINUE_PROMPT_MARKER}\n\
 执行来源：{source}\n\
 执行要求：\n\
-1. 本轮任务是“基于已有文稿的续写”，不得重复已有内容。\n\
+1. 当前任务是“基于已有文稿的续写”，不得重复已有内容。\n\
 2. 从现有结尾自然衔接，保持原文语气、受众和主题方向。\n\
 3. 续写长度：{}。\n\
 4. 灵敏度（{}%）：{}。\n\
@@ -102,7 +102,7 @@ fn build_elicitation_context_system_prompt(
 来源：{source}\n\
 模式：{mode}\n\
 执行要求：\n\
-1. 下列信息来自用户刚刚提交的结构化补充信息，视为本轮已确认约束。\n\
+1. 下列信息来自用户刚刚提交的结构化补充信息，视为当前已确认约束。\n\
 2. 回答与后续执行时优先吸收这些信息，不要重复追问同一字段。\n\
 3. 若仍缺关键信息，只追问尚未填写的最少字段。\n\
 已确认信息：\n\
@@ -234,12 +234,12 @@ fn render_team_roles(role_items: &[serde_json::Value]) -> Vec<String> {
 
 fn describe_turn_team_reason(reason: &str) -> &'static str {
     match reason {
-        "runtime_team_prepared" => "GUI 已完成本轮 Team 预编队",
-        "runtime_team_generation_failed" => "GUI 尝试预编队失败，当前回合降级为单 Agent",
-        "subagent_disabled" => "当前回合未开启 Team 模式",
-        "turn_purpose_override" => "当前回合属于特定目的任务，不走 Team 预编队",
-        "single_agent_direct" => "当前回合判断为直接单 Agent 执行更合适",
-        _ => "GUI 已记录本轮 Team 判定",
+        "runtime_team_prepared" => "GUI 已提前准备这次 Team 分工",
+        "runtime_team_generation_failed" => "GUI 尝试准备 Team 失败，当前任务改由主助手直接推进",
+        "subagent_disabled" => "当前任务未开启 Team 模式",
+        "turn_purpose_override" => "当前任务属于特定目的流程，这次不走 Team 分工",
+        "single_agent_direct" => "GUI 判断当前任务由主助手直接处理更合适",
+        _ => "GUI 已记录这次 Team 判定",
     }
 }
 
@@ -335,7 +335,7 @@ pub(crate) fn build_team_preference_system_prompt(
     match turn_team_decision.as_deref() {
         Some("team_prepared") => {
             lines.push(
-                "- 当前回合已经在 GUI 发送前完成 Team 预编队；这是一份本轮执行契约，不是事后建议。"
+                "- 当前任务在 GUI 发送前已经准备好协作分工；请把这份安排当成执行参考，而不是事后建议。"
                     .to_string(),
             );
             if let Some(reason) = turn_team_reason.as_deref() {
@@ -363,26 +363,33 @@ pub(crate) fn build_team_preference_system_prompt(
                     .unwrap_or_default();
 
                 if let Some(label) = blueprint_label {
-                    lines.push(format!("- 本轮 Team 蓝图：{label}。"));
+                    lines.push(format!("- 当前协作蓝图：{label}。"));
                 }
                 if let Some(description) = blueprint_description {
-                    lines.push(format!("- 本轮蓝图说明：{description}"));
+                    lines.push(format!("- 蓝图说明：{description}"));
                 }
                 if !rendered_roles.is_empty() {
-                    lines.push("- 本轮 Team 角色分工：".to_string());
+                    lines.push("- 当前协作分工：".to_string());
                     lines.extend(rendered_roles);
                 }
             }
 
             lines.push(
-                "- 如果你决定调用 spawn_agent / send_input，应在本轮开局阶段优先按上述蓝图启动角色，并把蓝图里的 id / label 映射到 blueprintRoleId / blueprintRoleLabel，让各角色承担自己的输出，不要等主 agent 整轮完成后再补做 team。"
+                "- 回复用户时，先说明为什么要拆分协作、谁会先处理哪一部分、主对话会在什么节点带着结果回来同步。不要只播报“已进入 Team 协作”。"
+                    .to_string(),
+            );
+            lines.push(
+                "- 主对话要像项目助理一样汇总目标、分工、关键进展和下一步，而不是只抛出简短状态。"
+                    .to_string(),
+            );
+            lines.push(
+                "- 如果你决定调用 spawn_agent / send_input，应尽早按上述蓝图启动角色，并把蓝图里的 id / label 映射到 blueprintRoleId / blueprintRoleLabel，让各角色承担自己的输出，不要等主 agent 完整处理结束后再补做 team。"
                     .to_string(),
             );
         }
         Some("single_agent") => {
-            lines.push(
-                "- 当前回合未在 GUI 中预编队 Team，本轮默认按单 Agent 直接推进。".to_string(),
-            );
+            lines
+                .push("- 当前任务没有在 GUI 中提前准备 Team，默认先由主助手直接推进。".to_string());
             if let Some(reason) = turn_team_reason.as_deref() {
                 lines.push(format!(
                     "- GUI 判定：{}。",

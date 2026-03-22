@@ -341,6 +341,16 @@ pub enum AgentRuntimeActionType {
     Elicitation,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentRuntimeActionScope {
+    #[serde(default, alias = "sessionId")]
+    pub session_id: Option<String>,
+    #[serde(default, alias = "threadId")]
+    pub thread_id: Option<String>,
+    #[serde(default, alias = "turnId")]
+    pub turn_id: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct AgentRuntimeRespondActionRequest {
     #[serde(alias = "sessionId")]
@@ -358,6 +368,8 @@ pub struct AgentRuntimeRespondActionRequest {
     pub metadata: Option<serde_json::Value>,
     #[serde(default, alias = "eventName")]
     pub event_name: Option<String>,
+    #[serde(default, alias = "actionScope")]
+    pub action_scope: Option<AgentRuntimeActionScope>,
 }
 
 #[derive(Debug, Deserialize)]
